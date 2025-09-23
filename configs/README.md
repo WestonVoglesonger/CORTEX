@@ -1,6 +1,19 @@
 # Configuration Files
 
-CORTEX configs define a full benchmark run: dataset replay, real‑time policy, telemetry, and which kernel plugins to execute. The harness reads this YAML and constructs a small ABI init struct for each plugin. Plugins never read YAML directly — they get only the numeric runtime + kernel params. (See proposal/plan for Fs/W/H/C defaults and ABI shape.)  :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
+CORTEX configs define a full benchmark run and how each module behaves:
+
+- **Replayer** — streams dataset samples at the true sampling rate **Fs**.
+- **Scheduler** — slices the stream into fixed windows (**W**) with hop (**H**) and assigns release times and deadlines (**H/Fs**).
+- **Harness** — loads plugins, calls `process()`, pins the worker thread, applies real-time policy, and times execution.
+- **Kernel Plugin** — compiled shared library behind a tiny **C ABI** (`init(config)`, `process(in,out)`, `teardown`) for kernels like CAR, Notch IIR, FIR, Goertzel, etc.
+- **Telemetry & Outputs** — per-window latency/throughput/jitter, memory, and energy (via RAPL); exports CSV/plots.
+- **Reference Oracles** — SciPy/MNE correctness checks before timing.
+
+The harness parses YAML and builds a small **ABI init struct** for each plugin. Plugins never read YAML; they only receive numeric runtime + kernel params via `init()`.
+
+**EEG-first defaults:** Fs = 160 Hz, W = 160, H = 80, C = 64 (public EEG loaders). Set the per-window deadline to **H/Fs**. PC-only; energy is measured via RAPL.
+
+---
 
 ## Files
 - `cortex.yaml` — canonical run config for real experiments.
@@ -8,99 +21,58 @@ CORTEX configs define a full benchmark run: dataset replay, real‑time policy, 
 
 ---
 
-## Top‑level Schema
-
-### `cortex_version: <int>`
-Config format version for compatibility checks.
+## Top-level Schema (what each module uses)
 
 ### `system:`
-- `name: <string>` — run identifier (appears in outputs).
-- `description: <string>` — freeform description.
+- `name`, `description` — run identifiers (shown in outputs).
 
-### `dataset:`
-- `path: <string>` — dataset root or file. Harness replays samples from here at the true Fs.  :contentReference[oaicite:4]{index=4}
-- `format: <string>` — e.g., `raw` (your loader decides).
-- `channels: <int>` — C; channel count expected by windows and plugins.
-- `sample_rate_hz: <int>` — Fs; **must** match the dataset (e.g., 160 for EEG in v1).  :contentReference[oaicite:5]{index=5}
+### `dataset:`  → **Replayer**
+- `path` — dataset root/file the replayer will stream.
+- `format` — loader hint (e.g., `raw`).
+- `channels` — C; must match plugin runtime.
+- `sample_rate_hz` — Fs; must match the dataset.
 
-### `realtime:`  *(harness-only)*
-Controls how the worker thread is scheduled while processing windows.
-- `scheduler: fifo | rr | deadline | other` — Linux policy (FIFO/RR are fixed‑priority; DEADLINE enforces runtime/period/deadline).
-- `priority: <1–99>` — only for `fifo/rr`. High (70–90) reduces jitter without starving the OS.
-- `cpu_affinity: [<int> ...]` — pin worker to specific cores to reduce migration/jitter.
-- `deadline_ms: <int>` — soft budget per window; typically `1000 * hop / Fs`. Your harness logs deadline misses.  :contentReference[oaicite:6]{index=6}
-- `deadline:` *(only with `scheduler: deadline`)*  
-  - `runtime_us` — CPU time granted per period.  
-  - `period_us` — window arrival period (≈ hop/Fs).  
-  - `deadline_us` — absolute completion deadline within the period.
-  
-The proposal/plan sets **release time and deadline = H/Fs** for each window and uses pinned threads with optional RT policy; mirror that here.  :contentReference[oaicite:7]{index=7} :contentReference[oaicite:8]{index=8}
+### `realtime:`  → **Harness**
+- `scheduler: fifo | rr | deadline | other` — Linux policy (FIFO/RR are fixed-priority; DEADLINE enforces runtime/period/deadline).
+- `priority: 1–99` — FIFO/RR priority (70–90 reduces jitter without starving the OS).
+- `cpu_affinity: [cores...]` — pin worker to cores to reduce migration/jitter.
+- `deadline_ms` — soft per-window budget; typically `1000 * hop / Fs`.
+- `deadline: { runtime_us, period_us, deadline_us }` — only with `scheduler: deadline` (period ≈ hop/Fs).
 
-### `power:`  *(harness-only)*
-- `governor: "performance"|...` — lock frequency for stable timing/energy.
-- `turbo: true|false` — disable turbo to reduce run‑to‑run variance.
+### `power:`  → **Harness**
+- `governor`, `turbo` — make timing/energy reproducible.
 
-### `benchmark:`  *(harness-only)*
-- `metrics: [latency, jitter, throughput, memory_usage, energy_consumption]`  
-  What gets recorded per window:
-  - **latency** — time from last input sample arrival to output‑ready (per window).
-  - **jitter** — tail‑minus‑median (report p95−p50 and p99−p50).  :contentReference[oaicite:9]{index=9}
-  - **throughput** — windows/sec or samples/sec processed.
-  - **memory_usage** — peak/steady RSS plus plugin‑reported state/workspace bytes.
-  - **energy_consumption** — `E_window` via RAPL around `process()`; derive **power** `P = E_window * Fs / H` (mW).  :contentReference[oaicite:10]{index=10}
-- `parameters:`  
-  - `duration_seconds` — total replay time.  
-  - `repeats` — number of full runs for variance estimates.  
-  - `warmup_seconds` — skipped at start to stabilise caches/branch predictors.  :contentReference[oaicite:11]{index=11}
-- `load_profile: idle|medium|heavy` — background load via stressor to test robustness.  :contentReference[oaicite:12]{index=12}
+### `benchmark:`  → **Telemetry & Outputs**
+- `metrics: [latency, jitter, throughput, memory_usage, energy_consumption]`
+  - **latency** = last-sample arrival → output-ready (per window)
+  - **jitter** = p95−p50, p99−p50
+  - **throughput** = windows/sec
+  - **memory_usage** = RSS + plugin state/workspace
+  - **energy_consumption** = per-window joules (RAPL); derive **power** `P = E_window * Fs / H`
+- `parameters: { duration_seconds, repeats, warmup_seconds }`
+- `load_profile: idle | medium | heavy` — controlled background load
 
-### `output:`  *(harness-only)*
-- `directory: <string>` — where CSV/JSON results go.
-- `format: "json"|"csv"|...` — primary format; plots are separate.
-- `include_raw_data: true|false` — include raw per‑window samples (usually false).
+### `output:`  → **Telemetry & Outputs**
+- `directory`, `format`, `include_raw_data` — where and how results are written.
+
+### `plugins:`  → **Kernel Plugin** (feeds the ABI)
+A list. Each entry defines one plugin/kernel to run.
+- `name` — e.g., `car`, `notch_iir`, `fir_bandpass`, `goertzel`
+- `status: draft | ready`, `spec_uri`, `spec_version` — bookkeeping while specs/oracles land
+- `runtime:` (shared keys for all kernels)
+  - `window_length_samples` (W), `hop_samples` (H), `channels` (C), `dtype` (`float32` now; `q15`/`q7` later), `allow_in_place`
+- `params:` (kernel-specific; keep `{}` while draft)  
+  examples: `{ f0_hz, Q }` for notch; `{ exclude_channels: [] }` for CAR
+- `tolerances:` — abs/rel error thresholds vs. oracle (null while draft)
+- `oracle:` — path to gold bundle (null while draft)
 
 ---
 
-## `plugins:`  *(feeds the C ABI init for each kernel)*
-A list. Each entry defines **one plugin** to run.
-
-- `name: <string>` — kernel identifier (e.g., `car`, `notch_iir`, `fir_bandpass`, `goertzel`).
-- `status: draft|ready` — harness can warn/skip drafts in strict modes.
-- `spec_uri: <string|null>` — link to the math spec once written.
-- `spec_version: <string|null>` — spec revision (e.g., `v0.1`).
-
-**`runtime:`** *(all kernels share these keys)*
-- `window_length_samples` — W; window size. The proposal defaults to **W=160** for EEG v1.  :contentReference[oaicite:13]{index=13}
-- `hop_samples` — H; step between consecutive windows (overlap if `H < W`). Default **H=80** for EEG v1.  :contentReference[oaicite:14]{index=14}
-- `channels` — C; must equal `dataset.channels` (e.g., 64).  :contentReference[oaicite:15]{index=15}
-- `dtype` — `"float32"` (default in v1); plan for fixed‑point (`"q15"`, `"q7"`) later.  :contentReference[oaicite:16]{index=16}
-- `allow_in_place` — whether `process(in, out)` may alias buffers.
-
-**`params:`** *(kernel‑specific; empty when draft)*  
-Examples:
-- `notch_iir`: `{ f0_hz, Q }`  
-- `car`: `{ exclude_channels: [] }`  
-- `fir_bandpass`: `{ low_hz, high_hz, num_taps, window_type }`  
-- `goertzel`: `{ bins_hz: [ ... ] }`  
-Person 2 will pin these mathematically and provide oracles/tolerances; until then, keep them `{}` with `status: draft`.  :contentReference[oaicite:17]{index=17}
-
-**`tolerances:`** *(abs/rel error thresholds vs. oracle; null while draft)*
-
-**`oracle:`** *(path to gold bundle inputs/outputs; null while draft)*
-
----
-
-## Validation Rules (what the harness should check)
-- `dataset.sample_rate_hz > 0`, `dataset.channels > 0`.
-- For each plugin:  
-  - `runtime.channels == dataset.channels`.  
-  - `0 < hop_samples ≤ window_length_samples`.  
-  - If `deadline_ms` omitted and you want one, compute `deadline_ms = 1000 * hop_samples / sample_rate_hz`.  :contentReference[oaicite:18]{index=18}
-- If `scheduler: deadline`, require `deadline.runtime_us/period_us/deadline_us`.
-- If `status: ready`, require non‑empty `params`, `tolerances`, and an `oracle`.  :contentReference[oaicite:19]{index=19}
-- Warn if privileges are insufficient to apply RT policy; fall back to `SCHED_OTHER`.
-
----
-
-## Defaults for EEG‑first v1 (for quick starts)
-The proposal/plan fixes **Fs=160 Hz, W=160, H=80, C=64** to match public EEG loaders; use these unless your dataset differs. Real‑time deadlines are set from `H/Fs`, and all runs are PC‑only on x86/Linux with per‑window energy from RAPL.  :contentReference[oaicite:20]{index=20} :contentReference[oaicite:21]{index=21}
+## Validation (harness should enforce)
+- `dataset.sample_rate_hz > 0`, `dataset.channels > 0`
+- For each plugin:
+  - `0 < hop_samples ≤ window_length_samples`
+  - `runtime.channels == dataset.channels`
+- If `scheduler: deadline`, require `{ runtime_us, period_us, deadline_us }`
+- If `status: ready`, require non-empty `params`, `tolerances`, and `oracle`
+- Warn if privileges are insufficient for RT scheduling and fall back gracefully
