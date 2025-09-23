@@ -134,7 +134,7 @@ CORTEX/
 
 ## Validation Scenarios
 
-When the system becomes functional, always test:
+**CRITICAL**: Always validate functionality after making changes. When the system becomes functional, always test:
 
 1. **Basic latency measurement**: Run a simple latency test to verify timing infrastructure
 2. **Jitter analysis**: Execute jitter measurement and validate statistical outputs
