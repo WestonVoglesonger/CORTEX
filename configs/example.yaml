@@ -1,40 +1,63 @@
-# CORTEX Example Configuration
-# This is a sample configuration file for the CORTEX benchmarking system
+cortex_version: 1
 
-# System configuration
 system:
-  name: "example-system"
-  description: "Example BCI kernel benchmarking configuration"
-  
-# Benchmark settings
-benchmark:
-  # Performance metrics to collect
-  metrics:
-    - latency
-    - jitter
-    - throughput
-    - memory_usage
-    - energy_consumption
-  
-  # Test parameters
-  parameters:
-    duration_seconds: 60
-    sample_rate_hz: 1000
-    buffer_size: 1024
-    
-# Real-time constraints
-realtime:
-  deadline_ms: 10
-  priority: 99
-  
-# Dataset configuration
+  name: "toy-run"
+  description: "Example EEG benchmark with fake data"
+
 dataset:
-  path: "datasets/example"
+  path: "datasets/fake"
   format: "raw"
-  channels: 64
-  
-# Output configuration
+  channels: 4
+  sample_rate_hz: 160
+
+realtime:
+  scheduler: fifo          # fifo | rr | other
+  priority: 85             # requires privileges to take effect
+  cpu_affinity: [0]        # pick a core that surely exists
+  deadline_ms: 50          # hop(8) / Fs(160) = 50 ms
+
+power:
+  governor: "performance"
+  turbo: false
+
+benchmark:
+  metrics: [latency, jitter, throughput, memory_usage, energy_consumption]
+  parameters:
+    duration_seconds: 5
+    repeats: 1
+    warmup_seconds: 1
+  load_profile: "idle"
+
 output:
-  directory: "results"
+  directory: "results/example"
   format: "json"
   include_raw_data: false
+
+plugins:
+  - name: "notch_iir"
+    status: draft                 # draft | ready
+    spec_uri: null                # fill when spec lands
+    spec_version: null
+    runtime:
+      window_length_samples: 16
+      hop_samples: 8
+      channels: 4
+      dtype: "float32"
+      allow_in_place: false
+    params: {}                    # TBD: f0_hz, Q
+    tolerances: null              # abs/rel once defined
+    oracle: null                  # path to gold bundle later
+
+  - name: "car"
+    status: draft
+    spec_uri: null
+    spec_version: null
+    runtime:
+      window_length_samples: 16
+      hop_samples: 8
+      channels: 4
+      dtype: "float32"
+      allow_in_place: true
+    params: {}                    # TBD: exclude_channels
+    tolerances: null
+    oracle: null
