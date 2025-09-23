@@ -1,0 +1,40 @@
+# CORTEX Example Configuration
+# This is a sample configuration file for the CORTEX benchmarking system
+
+# System configuration
+system:
+  name: "example-system"
+  description: "Example BCI kernel benchmarking configuration"
+  
+# Benchmark settings
+benchmark:
+  # Performance metrics to collect
+  metrics:
+    - latency
+    - jitter
+    - throughput
+    - memory_usage
+    - energy_consumption
+  
+  # Test parameters
+  parameters:
+    duration_seconds: 60
+    sample_rate_hz: 1000
+    buffer_size: 1024
+    
+# Real-time constraints
+realtime:
+  deadline_ms: 10
+  priority: 99
+  
+# Dataset configuration
+dataset:
+  path: "datasets/example"
+  format: "raw"
+  channels: 64
+  
+# Output configuration
+output:
+  directory: "results"
+  format: "json"
+  include_raw_data: false
