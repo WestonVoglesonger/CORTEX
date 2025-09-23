@@ -1,8 +1,6 @@
 # Configuration Files
 
-CORTEX configs define a full benchmark run: dataset replay, real-time policy, telemetry, and which kernel plugins to execute.  
-The harness reads this YAML and constructs a small ABI init struct for each plugin.  
-Plugins never read YAML directly — they get only the numeric runtime + kernel params.  
+CORTEX configs define a full benchmark run: dataset replay, real-time policy, telemetry, and which kernel plugins to execute.  The harness reads this YAML and constructs a small ABI init struct for each plugin. Plugins never read YAML directly — they get only the numeric runtime + kernel params.  
 
 **Defaults:** For EEG-first experiments we fix Fs=160 Hz, W=160 samples, H=80 samples, and C=64 channels (from public datasets). These values flow into the ABI init struct passed to each plugin. See `/docs/Proposal.pdf` and `/docs/ImplementationPlan.pdf` for the design rationale.
 
