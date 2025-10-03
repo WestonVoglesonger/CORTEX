@@ -20,8 +20,8 @@
 static pthread_t g_replayer_thread;
 static int g_replayer_running = 0;
 static int g_dropouts_enabled = 0;
-static uint32_t g_last_dtype = 0;
 static cortex_replayer_window_callback g_callback = NULL;
+static uint32_t g_dtype = 0;
 static void *g_callback_user_data = NULL;
 static cortex_replayer_config_t g_config;
 
@@ -57,7 +57,7 @@ int cortex_replayer_run(const cortex_replayer_config_t *config,
     g_config = *config;
     g_callback = callback;
     g_callback_user_data = user_data;
-    g_last_dtype = config->dtype;
+    g_dtype = config->dtype;
 
     g_replayer_running = 1;
     int rc = pthread_create(&g_replayer_thread, NULL, replayer_thread_main, NULL);
