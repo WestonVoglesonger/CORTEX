@@ -32,28 +32,28 @@ make clean          # Clean up binaries
 ## Test Coverage
 
 ### Replayer Module (5 tests)
-- ✅ Hop-sized chunk streaming
-- ✅ Timing cadence (H/Fs seconds)
-- ✅ EOF handling and rewind
-- ✅ Various configurations (MCU to HALO)
-- ✅ Data continuity
+- Hop-sized chunk streaming
+- Timing cadence (H/Fs seconds)
+- EOF handling and rewind
+- Various configurations (MCU to HALO)
+- Data continuity
 
 ### Scheduler Module (8 tests)
-- ✅ Configuration validation
-- ✅ Window formation from chunks
-- ✅ Overlapping windows (W-H retention)
-- ✅ Buffer management
-- ✅ Multiple plugin dispatch
-- ✅ Warmup period handling
-- ✅ Flush functionality
-- ✅ Data continuity
+- Configuration validation
+- Window formation from chunks
+- Overlapping windows (W-H retention)
+- Buffer management
+- Multiple plugin dispatch
+- Warmup period handling
+- Flush functionality
+- Data continuity
 
 ## Badge Status
 
 Add this to your README.md:
 
 ```markdown
-![CI](https://github.com/<username>/CORTEX/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/WestonVoglesonger/CORTEX/actions/workflows/ci.yml/badge.svg)
 ```
 
 ## Troubleshooting
