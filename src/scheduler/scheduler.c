@@ -1,12 +1,19 @@
+#ifdef __linux__
+#define _GNU_SOURCE
+#endif
+
 #include "scheduler.h"
 
 #include <errno.h>
 #include <pthread.h>
-#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 #ifdef __APPLE__
 #include <mach/mach_time.h>

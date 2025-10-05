@@ -11,13 +11,16 @@
  * 7. Supports multiple plugins
  */
 
-#include "../src/scheduler/scheduler.h"
+#define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "../src/scheduler/scheduler.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \
@@ -363,7 +366,7 @@ static int test_warmup_period(void) {
     /* Warmup windows = (warmup_seconds × Fs) / H = (1 × 160) / 8 = 20 windows */
     uint64_t expected_warmup_windows = (warmup_seconds * sample_rate) / hop;
     
-    printf("  Expected warmup windows: %llu\n", expected_warmup_windows);
+    printf("  Expected warmup windows: %" PRIu64 "\n", expected_warmup_windows);
     printf("  ✓ Warmup period calculated correctly\n");
     
     cortex_scheduler_destroy(scheduler);

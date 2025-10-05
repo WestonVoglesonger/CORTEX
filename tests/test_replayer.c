@@ -9,7 +9,7 @@
  * 5. Integrates correctly with the scheduler
  */
 
-#include "../src/replayer/replayer.h"
+#define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
 #include <math.h>
@@ -19,6 +19,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "../src/replayer/replayer.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \
