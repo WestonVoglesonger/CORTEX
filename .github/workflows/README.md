@@ -48,13 +48,6 @@ make clean          # Clean up binaries
 - Flush functionality
 - Data continuity
 
-## Badge Status
-
-Add this to your README.md:
-
-```markdown
-![CI](https://github.com/WestonVoglesonger/CORTEX/actions/workflows/ci.yml/badge.svg)
-```
 
 ## Troubleshooting
 
