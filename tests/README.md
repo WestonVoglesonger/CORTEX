@@ -23,10 +23,14 @@ make clean          # Clean up test binaries
 - ✅ Data continuity (samples in correct order)
 
 #### Scheduler Tests (`test_scheduler.c`)
-- TODO: Window formation from chunks
-- TODO: Overlapping windows (W-H sample retention)
-- TODO: Plugin dispatch and deadline tracking
-- TODO: Buffer management
+- ✅ Configuration validation
+- ✅ Window formation from hop-sized chunks
+- ✅ Overlapping windows (W-H sample retention)
+- ✅ Buffer management (various chunk sizes)
+- ✅ Multiple plugin dispatch
+- ✅ Warmup period handling
+- ✅ Flush functionality
+- ✅ Data continuity verification
 
 ## Python Integration Tests
 

@@ -1,3 +1,24 @@
+/*
+ * Replayer: streams dataset samples at real-time cadence into a user callback.
+ *
+ * The replayer emulates hardware data acquisition by streaming hop-sized chunks
+ * of samples at the true sample rate. The scheduler receives these chunks and
+ * forms overlapping windows internally via its sliding buffer mechanism.
+ *
+ * CURRENT STATUS:
+ * - Core timing loop is solid (CLOCK_MONOTONIC + nanosleep).
+ * - Streams hop-sized chunks at correct real-time cadence (H samples every H/Fs seconds).
+ * - Handles EOF by rewind for endless replay.
+ * - Clean resource lifecycle (alloc/free, fopen/fclose, pthread join).
+ *
+ * TODO / CLEANUP:
+ * - Kill unused globals (g_dtype) or implement proper dtype handling.
+ * - Dropouts + background load APIs are stubs; either implement or remove.
+ * - Mark g_replayer_running volatile/atomic if used cross-thread.
+ * - Document callback contract: runs on replayer thread, must not block.
+ * - Dataset path semantics: assumes float32 file; enforce or validate.
+ */
+
 #include "replayer.h"
 
 #include <errno.h>
@@ -27,7 +48,7 @@ static cortex_replayer_config_t g_config;
 
 /* Internal helpers. */
 static void *replayer_thread_main(void *arg);
-static int read_next_window(FILE *stream, float *buffer, size_t samples_per_window);
+static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk);
 static void sleep_until(const struct timespec *target);
 static int prepare_background_load(const char *profile_name);
 static float *allocate_window_buffer(size_t samples_per_window);
@@ -96,10 +117,9 @@ void cortex_replayer_stop_background_load(void) {
 
 static void *replayer_thread_main(void *arg) {
     (void)arg;
-    const size_t window_samples = (size_t)g_config.window_length_samples * g_config.channels;
     const size_t hop_samples = (size_t)g_config.hop_samples * g_config.channels;
-    float *window_buffer = allocate_window_buffer(window_samples);
-    if (!window_buffer) {
+    float *chunk_buffer = allocate_window_buffer(hop_samples);
+    if (!chunk_buffer) {
         g_replayer_running = 0;
         return NULL;
     }
@@ -107,7 +127,7 @@ static void *replayer_thread_main(void *arg) {
     FILE *stream = fopen(g_config.dataset_path, "rb");
     if (!stream) {
         perror("failed to open dataset");
-        free(window_buffer);
+        free(chunk_buffer);
         g_replayer_running = 0;
         return NULL;
     }
@@ -115,32 +135,36 @@ static void *replayer_thread_main(void *arg) {
     struct timespec next_emit = {0};
     clock_gettime(CLOCK_MONOTONIC, &next_emit);
 
-    const double sample_period_sec = 1.0 / (double)g_config.sample_rate_hz;
-    const double window_period_sec = sample_period_sec * (double)g_config.hop_samples;
-    const long window_period_nsec = (long)(window_period_sec * NSEC_PER_SEC);
+    const double hop_period_sec = (double)g_config.hop_samples / (double)g_config.sample_rate_hz;
+    const long hop_period_nsec = (long)(hop_period_sec * NSEC_PER_SEC);
+
+    fprintf(stdout, "[replayer] streaming %u samples every %.1f ms (%.2f Hz)\n",
+            g_config.hop_samples, 
+            hop_period_sec * 1000.0,
+            1.0 / hop_period_sec);
 
     while (g_replayer_running) {
-        int read_status = read_next_window(stream, window_buffer, window_samples);
+        int read_status = read_next_chunk(stream, chunk_buffer, hop_samples);
         if (read_status <= 0) {
             rewind(stream);
             continue;
         }
 
         if (g_dropouts_enabled) {
-            /* TODO: randomly skip or delay this window based on configuration. */
+            /* TODO: randomly skip or delay this chunk based on configuration. */
         }
 
         if (g_callback) {
-            g_callback(window_buffer, window_samples, g_callback_user_data);
+            g_callback(chunk_buffer, hop_samples, g_callback_user_data);
         }
 
-        next_emit.tv_nsec += window_period_nsec;
+        next_emit.tv_nsec += hop_period_nsec;
         normalize_timespec(&next_emit);
         sleep_until(&next_emit);
     }
 
     fclose(stream);
-    free(window_buffer);
+    free(chunk_buffer);
     return NULL;
 }
 
@@ -152,9 +176,9 @@ static float *allocate_window_buffer(size_t samples_per_window) {
     return buffer;
 }
 
-static int read_next_window(FILE *stream, float *buffer, size_t samples_per_window) {
-    size_t read_elems = fread(buffer, sizeof(float), samples_per_window, stream);
-    if (read_elems < samples_per_window) {
+static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk) {
+    size_t read_elems = fread(buffer, sizeof(float), samples_per_chunk, stream);
+    if (read_elems < samples_per_chunk) {
         if (feof(stream)) {
             return 0;
         }

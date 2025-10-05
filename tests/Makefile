@@ -14,16 +14,23 @@ TEST_SCHEDULER = test_scheduler
 
 .PHONY: all clean test test-replayer test-scheduler
 
-all: $(TEST_REPLAYER)
+all: $(TEST_REPLAYER) $(TEST_SCHEDULER)
 
 $(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: test-replayer
+$(TEST_SCHEDULER): test_scheduler.c $(SCHEDULER_SRC)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test: test-replayer test-scheduler
 
 test-replayer: $(TEST_REPLAYER)
 	@echo "Running replayer tests..."
 	@./$(TEST_REPLAYER)
+
+test-scheduler: $(TEST_SCHEDULER)
+	@echo "Running scheduler tests..."
+	@./$(TEST_SCHEDULER)
 
 clean:
 	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER)

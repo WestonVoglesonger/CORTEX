@@ -184,3 +184,17 @@ datasets/**/*.hdf5
 *.lib
 *.dll
 *.dylib
+*.o
+
+# C test binaries
+tests/test_replayer
+tests/test_scheduler
+tests/test_*
+!tests/test_*.c
+!tests/test_*.py
+
+# macOS debug symbols
+*.dSYM/
+
+# Temporary test data
+/tmp/cortex_test_*.dat
