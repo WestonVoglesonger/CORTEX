@@ -46,6 +46,10 @@ struct cortex_scheduler_t {
     uint64_t window_count;
     uint64_t warmup_windows_remaining;
     int realtime_applied;
+
+    /* Telemetry CSV (Week 3 basic) */
+    FILE *telemetry_file;
+    int telemetry_header_written;
 };
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler);
@@ -98,6 +102,16 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
         scheduler->warmup_windows_remaining = (scheduler->config.warmup_seconds * frames_per_second) / frames_per_window;
     }
 
+    /* Open telemetry CSV if requested. */
+    scheduler->telemetry_file = NULL;
+    scheduler->telemetry_header_written = 0;
+    if (config->telemetry_path && config->telemetry_path[0] != '\0') {
+        scheduler->telemetry_file = fopen(config->telemetry_path, "w");
+        if (!scheduler->telemetry_file) {
+            fprintf(stderr, "[scheduler] warning: failed to open telemetry file '%s'\n", config->telemetry_path);
+        }
+    }
+
     return scheduler;
 }
 
@@ -112,6 +126,10 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
 
     free(scheduler->plugins);
     free(scheduler->buffer);
+    if (scheduler->telemetry_file) {
+        fclose(scheduler->telemetry_file);
+        scheduler->telemetry_file = NULL;
+    }
     free(scheduler);
 }
 
@@ -350,22 +368,41 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const struct timespec *start_ts,
                                   const struct timespec *end_ts,
                                   int deadline_missed) {
-    (void)scheduler;
-    (void)plugin;
-    (void)release_ts;
-    (void)deadline_ts;
-    (void)start_ts;
-    (void)deadline_missed;
+    uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
+    uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
+    uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
+    uint64_t end_ns = (uint64_t)end_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)end_ts->tv_nsec;
+    uint64_t latency_ns = (uint64_t)((end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC) +
+                          (uint64_t)(end_ts->tv_nsec - start_ts->tv_nsec);
 
-    long latency_ns = (end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC +
-                      (end_ts->tv_nsec - start_ts->tv_nsec);
-
+    /* Print simple log */
     fprintf(stdout,
-            "[telemetry] plugin=%s latency_ns=%ld deadline_missed=%d\n",
+            "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d\n",
             plugin->info.name ? plugin->info.name : "(unnamed)",
-            latency_ns,
+            (unsigned long long)latency_ns,
             deadline_missed);
-    /* TODO: persist telemetry as CSV/JSON and integrate RAPL energy measurements. */
+
+    /* Write CSV if enabled */
+    if (scheduler->telemetry_file) {
+        FILE *f = scheduler->telemetry_file;
+        if (!scheduler->telemetry_header_written) {
+            fprintf(f, "plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs\n");
+            ((cortex_scheduler_t *)scheduler)->telemetry_header_written = 1;
+        }
+        fprintf(f, "%s,%llu,%llu,%llu,%llu,%llu,%d,%u,%u,%u,%u\n",
+                plugin->info.name ? plugin->info.name : "(unnamed)",
+                (unsigned long long)scheduler->window_count,
+                (unsigned long long)rel_ns,
+                (unsigned long long)ddl_ns,
+                (unsigned long long)sta_ns,
+                (unsigned long long)end_ns,
+                deadline_missed,
+                scheduler->config.window_length_samples,
+                scheduler->config.hop_samples,
+                scheduler->config.channels,
+                scheduler->config.sample_rate_hz);
+        fflush(f);
+    }
 }
 
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry) {
