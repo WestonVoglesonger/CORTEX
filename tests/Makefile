@@ -8,6 +8,7 @@ LDFLAGS = -pthread -lm
 REPLAYER_SRC = ../src/replayer/replayer.c
 SCHEDULER_SRC = ../src/scheduler/scheduler.c
 TELEMETRY_SRC = ../src/harness/telemetry/telemetry.c
+UTIL_SRC = ../src/harness/util/util.c
 
 # Test binaries
 TEST_REPLAYER = test_replayer
@@ -20,7 +21,7 @@ all: $(TEST_REPLAYER) $(TEST_SCHEDULER)
 $(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(TEST_SCHEDULER): test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC)
+$(TEST_SCHEDULER): test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test: test-replayer test-scheduler
