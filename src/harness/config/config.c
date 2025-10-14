@@ -79,7 +79,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 memset(&out->plugins[plugin_index], 0, sizeof(out->plugins[plugin_index]));
                 const char *v = raw + strlen("- name:");
                 while (*v == ' ' ) v++;
-                char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0'; trim(tmp); unquote(tmp);
+                char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
                 st = IN_PLUGIN;
                 continue;
@@ -142,6 +142,17 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             if (starts_with(raw, "allow_in_place:")) {
                 const char *v = raw + strlen("allow_in_place:"); while (*v==' ') v++;
                 out->plugins[plugin_index].runtime.allow_in_place = (uint8_t)parse_bool(v);
+                continue;
+            }
+            /* Check for new plugin - parse it directly */
+            if (starts_with(raw, "- name:")) {
+                plugin_index++;  /* Move to next plugin slot */
+                if (plugin_index >= CORTEX_MAX_PLUGINS) break;
+                memset(&out->plugins[plugin_index], 0, sizeof(out->plugins[plugin_index]));
+                const char *v = raw + strlen("- name:"); while (*v == ' ') v++;
+                char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0'; trim(tmp); unquote(tmp);
+                strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
+                st = IN_PLUGIN;  /* Start parsing the new plugin */
                 continue;
             }
             /* end of runtime block if dedented or new section; handled implicitly */
