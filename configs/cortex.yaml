@@ -5,16 +5,20 @@ system:
   description: "EEG-first benchmark (real config)"
 
 dataset:
-  path: "datasets/cortex"
-  format: "raw"
-  channels: 64
-  sample_rate_hz: 160        # Fs (authoritative, dataset-dependent)
+  path: "datasets/eegmmidb/converted/S001R03.float32"  # Changed from "datasets/cortex"
+  format: "float32"  # Changed from "raw"
+  channels: 64  # Unchanged
+  sample_rate_hz: 160  # Unchanged
 
 realtime:
   scheduler: fifo            # fifo | rr | deadline | other
   priority: 90               # high, but safer than 99
   cpu_affinity: [0]
   deadline_ms: 500           # hop(80)/Fs(160) = 0.5 s
+
+power:
+  governor: "performance"
+  turbo: false
 
 benchmark:
   metrics: [latency, jitter, throughput, memory_usage, energy_consumption]

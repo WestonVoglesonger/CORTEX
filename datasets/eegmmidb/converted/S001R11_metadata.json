@@ -1,0 +1,11 @@
+{
+  "source": "S001R11.edf",
+  "sample_rate_hz": 160,
+  "channels": 64,
+  "samples_per_channel": 20000,
+  "duration_seconds": 125.0,
+  "dtype": "float32",
+  "format": "interleaved [samples, channels]",
+  "units": "microvolts (\u00b5V)",
+  "notes": "Converted from EDF+ (64 EEG channels, annotation channel excluded)"
+}
