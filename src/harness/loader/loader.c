@@ -46,8 +46,8 @@ int cortex_plugin_load(const char *path, cortex_loaded_plugin_t *out) {
     out->api.process = dlsym(handle, "cortex_process");
     out->api.teardown = dlsym(handle, "cortex_teardown");
     const char *err = dlerror();
-    if (err) {
-        fprintf(stderr, "dlsym failed: %s\n", err);
+    if (err || !out->api.get_info || !out->api.init || !out->api.process || !out->api.teardown) {
+        fprintf(stderr, "dlsym failed: %s\n", err ? err : "missing required symbols");
         dlclose(handle);
         return -1;
     }

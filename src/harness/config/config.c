@@ -228,6 +228,10 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
     if (cfg->dataset.channels == 0) { if (err && err_sz) snprintf(err, err_sz, "C must be > 0"); return -1; }
     for (size_t i = 0; i < cfg->plugin_count; i++) {
         const cortex_plugin_entry_cfg_t *p = &cfg->plugins[i];
+        if (p->runtime.window_length_samples == 0) {
+            if (err && err_sz) snprintf(err, err_sz, "plugin %zu window length must be > 0", i);
+            return -1;
+        }
         if (p->runtime.hop_samples == 0 || p->runtime.hop_samples > p->runtime.window_length_samples) {
             if (err && err_sz) snprintf(err, err_sz, "plugin %zu invalid hop/window", i);
             return -1;
