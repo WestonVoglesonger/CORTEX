@@ -6,6 +6,16 @@
 
 #include "../scheduler/scheduler.h"
 
+static int validate_plugin_name(const char *name) {
+    if (!name) return -1;
+    /* Reject names containing path traversal sequences */
+    if (strstr(name, "..") != NULL) return -1;
+    if (strchr(name, '/') != NULL) return -1;
+    if (strchr(name, '\\') != NULL) return -1;
+    if (strchr(name, ':') != NULL) return -1;  /* Windows drive letters */
+    return 0;
+}
+
 static void sanitize_name(const char *in, char *out, size_t out_sz) {
     if (!in || !out || out_sz == 0) return;
     /* Copy while stripping any quote characters anywhere in the string. */
@@ -19,6 +29,11 @@ static void sanitize_name(const char *in, char *out, size_t out_sz) {
 
 int cortex_plugin_build_path(const char *name, char *out_path, size_t out_sz) {
     if (!name || !out_path || out_sz == 0) return -1;
+    /* Validate plugin name to prevent directory traversal attacks */
+    if (validate_plugin_name(name) != 0) {
+        fprintf(stderr, "invalid plugin name: %s (contains path traversal sequences)\n", name);
+        return -1;
+    }
     char clean[128];
     sanitize_name(name, clean, sizeof(clean));
     
