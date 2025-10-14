@@ -193,9 +193,9 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     }
     
     /* Step 8: Cleanup */
-    cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
-    cortex_scheduler_destroy(scheduler);
+    cortex_scheduler_destroy(scheduler);  /* Must destroy scheduler before unloading plugin */
     ctx->scheduler = NULL;
+    cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
     
     /* Step 9: After all repeats, write buffer to CSV */
     char final_telemetry_path[1024];
