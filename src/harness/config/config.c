@@ -81,6 +81,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 while (*v == ' ' ) v++;
                 char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
+                out->plugins[plugin_index].name[sizeof(out->plugins[plugin_index].name)-1] = '\0';
                 st = IN_PLUGIN;
                 continue;
             }
@@ -91,18 +92,21 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 const char *v = raw + strlen("status:"); while (*v==' ') v++;
                 char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].status, tmp, sizeof(out->plugins[plugin_index].status)-1);
+                out->plugins[plugin_index].status[sizeof(out->plugins[plugin_index].status)-1] = '\0';
                 continue;
             }
             if (starts_with(raw, "spec_uri:")) {
                 const char *v = raw + strlen("spec_uri:"); while (*v==' ') v++;
                 char tmp[256]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].spec_uri, tmp, sizeof(out->plugins[plugin_index].spec_uri)-1);
+                out->plugins[plugin_index].spec_uri[sizeof(out->plugins[plugin_index].spec_uri)-1] = '\0';
                 continue;
             }
             if (starts_with(raw, "spec_version:")) {
                 const char *v = raw + strlen("spec_version:"); while (*v==' ') v++;
                 char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].spec_version, tmp, sizeof(out->plugins[plugin_index].spec_version)-1);
+                out->plugins[plugin_index].spec_version[sizeof(out->plugins[plugin_index].spec_version)-1] = '\0';
                 continue;
             }
             if (strcmp(raw, "runtime:") == 0) { st = IN_PLUGIN_RUNTIME; continue; }
@@ -113,6 +117,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 const char *v = raw + strlen("- name:"); while (*v==' ') v++;
                 char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
+                out->plugins[plugin_index].name[sizeof(out->plugins[plugin_index].name)-1] = '\0';
                 continue;
             }
         }
@@ -152,6 +157,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 const char *v = raw + strlen("- name:"); while (*v == ' ') v++;
                 char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
+                out->plugins[plugin_index].name[sizeof(out->plugins[plugin_index].name)-1] = '\0';
                 st = IN_PLUGIN;  /* Start parsing the new plugin */
                 continue;
             }
@@ -159,14 +165,14 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
 
         if (st == IN_DATASET) {
-            if (starts_with(raw, "path:")) { const char *v = raw + strlen("path:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.path, tmp, sizeof(out->dataset.path)-1); continue; }
-            if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.format, tmp, sizeof(out->dataset.format)-1); continue; }
+            if (starts_with(raw, "path:")) { const char *v = raw + strlen("path:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.path, tmp, sizeof(out->dataset.path)-1); out->dataset.path[sizeof(out->dataset.path)-1] = '\0'; continue; }
+            if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.format, tmp, sizeof(out->dataset.format)-1); out->dataset.format[sizeof(out->dataset.format)-1] = '\0'; continue; }
             if (starts_with(raw, "channels:")) { const char *v = raw + strlen("channels:"); while (*v==' ') v++; out->dataset.channels = parse_u32(v); continue; }
             if (starts_with(raw, "sample_rate_hz:")) { const char *v = raw + strlen("sample_rate_hz:"); while (*v==' ') v++; out->dataset.sample_rate_hz = parse_u32(v); continue; }
         }
 
         if (st == IN_REALTIME) {
-            if (starts_with(raw, "scheduler:")) { const char *v = raw + strlen("scheduler:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->realtime.scheduler, tmp, sizeof(out->realtime.scheduler)-1); continue; }
+            if (starts_with(raw, "scheduler:")) { const char *v = raw + strlen("scheduler:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->realtime.scheduler, tmp, sizeof(out->realtime.scheduler)-1); out->realtime.scheduler[sizeof(out->realtime.scheduler)-1] = '\0'; continue; }
             if (starts_with(raw, "priority:")) { const char *v = raw + strlen("priority:"); while (*v==' ') v++; out->realtime.priority = (int)strtol(v, NULL, 10); continue; }
             if (starts_with(raw, "cpu_affinity:")) {
                 /* parse [0,1,2] -> bitmask */
@@ -191,7 +197,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
 
         if (st == IN_BENCH) {
-            if (starts_with(raw, "load_profile:")) { const char *v = raw + strlen("load_profile:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->benchmark.load_profile, tmp, sizeof(out->benchmark.load_profile)-1); continue; }
+            if (starts_with(raw, "load_profile:")) { const char *v = raw + strlen("load_profile:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->benchmark.load_profile, tmp, sizeof(out->benchmark.load_profile)-1); out->benchmark.load_profile[sizeof(out->benchmark.load_profile)-1] = '\0'; continue; }
             if (strcmp(raw, "parameters:") == 0) { st = IN_BENCH_PARAMS; continue; }
         }
         if (st == IN_BENCH_PARAMS) {
@@ -201,8 +207,8 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
 
         if (st == IN_OUTPUT) {
-            if (starts_with(raw, "directory:")) { const char *v = raw + strlen("directory:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->output.directory, tmp, sizeof(out->output.directory)-1); continue; }
-            if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->output.format, tmp, sizeof(out->output.format)-1); continue; }
+            if (starts_with(raw, "directory:")) { const char *v = raw + strlen("directory:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->output.directory, tmp, sizeof(out->output.directory)-1); out->output.directory[sizeof(out->output.directory)-1] = '\0'; continue; }
+            if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->output.format, tmp, sizeof(out->output.format)-1); out->output.format[sizeof(out->output.format)-1] = '\0'; continue; }
             if (starts_with(raw, "include_raw_data:")) { const char *v = raw + strlen("include_raw_data:"); while (*v==' ') v++; out->output.include_raw_data = parse_bool(v); continue; }
         }
     }
