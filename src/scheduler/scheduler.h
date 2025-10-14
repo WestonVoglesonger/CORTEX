@@ -35,6 +35,9 @@ typedef struct cortex_scheduler_config {
     uint64_t cpu_affinity_mask;      /* realtime.cpu_affinity bitmask */
     const char *scheduler_policy;    /* "fifo", "rr", or NULL for default */
     const char *telemetry_path;      /* optional path for CSV/JSON telemetry */
+    void *telemetry_buffer;          /* optional buffer for metrics (cortex_telemetry_buffer_t *) */
+    const char *run_id;              /* run identifier for telemetry records */
+    uint32_t current_repeat;         /* which repeat iteration (0 = warmup, 1+ = measurement) */
 } cortex_scheduler_config_t;
 
 /* Opaque scheduler object. */
@@ -90,6 +93,22 @@ int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
  * on success.
  */
 int cortex_scheduler_flush(cortex_scheduler_t *scheduler);
+
+/*
+ * Set telemetry buffer for the scheduler.  If provided, telemetry records will
+ * be added to this buffer instead of (or in addition to) direct file output.
+ */
+void cortex_scheduler_set_telemetry_buffer(cortex_scheduler_t *scheduler, void *telemetry_buffer);
+
+/*
+ * Set run ID for telemetry records.
+ */
+void cortex_scheduler_set_run_id(cortex_scheduler_t *scheduler, const char *run_id);
+
+/*
+ * Set current repeat number for telemetry records.
+ */
+void cortex_scheduler_set_current_repeat(cortex_scheduler_t *scheduler, uint32_t repeat);
 
 #ifdef __cplusplus
 } /* extern "C" */

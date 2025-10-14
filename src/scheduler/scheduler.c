@@ -11,6 +11,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "../harness/telemetry/telemetry.h"
+
 #ifdef __linux__
 #include <sched.h>
 #endif
@@ -46,6 +48,13 @@ struct cortex_scheduler_t {
     uint64_t window_count;
     uint64_t warmup_windows_remaining;
     int realtime_applied;
+
+    /* Telemetry CSV (Week 3 basic) */
+    FILE *telemetry_file;
+    int telemetry_header_written;
+    
+    /* Telemetry buffer integration */
+    char run_id[32];  /* Store run_id for telemetry records */
 };
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler);
@@ -98,6 +107,24 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
         scheduler->warmup_windows_remaining = (scheduler->config.warmup_seconds * frames_per_second) / frames_per_window;
     }
 
+    /* Open telemetry CSV if requested. */
+    scheduler->telemetry_file = NULL;
+    scheduler->telemetry_header_written = 0;
+    if (config->telemetry_path && config->telemetry_path[0] != '\0') {
+        scheduler->telemetry_file = fopen(config->telemetry_path, "w");
+        if (!scheduler->telemetry_file) {
+            fprintf(stderr, "[scheduler] warning: failed to open telemetry file '%s'\n", config->telemetry_path);
+        }
+    }
+
+    /* Store run_id for telemetry records */
+    if (config->run_id) {
+        strncpy(scheduler->run_id, config->run_id, sizeof(scheduler->run_id) - 1);
+        scheduler->run_id[sizeof(scheduler->run_id) - 1] = '\0';
+    } else {
+        scheduler->run_id[0] = '\0';
+    }
+
     return scheduler;
 }
 
@@ -112,6 +139,10 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
 
     free(scheduler->plugins);
     free(scheduler->buffer);
+    if (scheduler->telemetry_file) {
+        fclose(scheduler->telemetry_file);
+        scheduler->telemetry_file = NULL;
+    }
     free(scheduler);
 }
 
@@ -224,6 +255,25 @@ int cortex_scheduler_flush(cortex_scheduler_t *scheduler) {
         scheduler->buffer_fill = remaining;
     }
     return 0;
+}
+
+void cortex_scheduler_set_telemetry_buffer(cortex_scheduler_t *scheduler, void *telemetry_buffer) {
+    if (scheduler) {
+        scheduler->config.telemetry_buffer = telemetry_buffer;
+    }
+}
+
+void cortex_scheduler_set_run_id(cortex_scheduler_t *scheduler, const char *run_id) {
+    if (scheduler && run_id) {
+        strncpy(scheduler->run_id, run_id, sizeof(scheduler->run_id) - 1);
+        scheduler->run_id[sizeof(scheduler->run_id) - 1] = '\0';
+    }
+}
+
+void cortex_scheduler_set_current_repeat(cortex_scheduler_t *scheduler, uint32_t repeat) {
+    if (scheduler) {
+        scheduler->config.current_repeat = repeat;
+    }
 }
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler) {
@@ -350,22 +400,63 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const struct timespec *start_ts,
                                   const struct timespec *end_ts,
                                   int deadline_missed) {
-    (void)scheduler;
-    (void)plugin;
-    (void)release_ts;
-    (void)deadline_ts;
-    (void)start_ts;
-    (void)deadline_missed;
+    uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
+    uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
+    uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
+    uint64_t end_ns = (uint64_t)end_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)end_ts->tv_nsec;
+    uint64_t latency_ns = (uint64_t)((end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC) +
+                          (uint64_t)(end_ts->tv_nsec - start_ts->tv_nsec);
 
-    long latency_ns = (end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC +
-                      (end_ts->tv_nsec - start_ts->tv_nsec);
-
+    /* Print simple log */
     fprintf(stdout,
-            "[telemetry] plugin=%s latency_ns=%ld deadline_missed=%d\n",
+            "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d\n",
             plugin->info.name ? plugin->info.name : "(unnamed)",
-            latency_ns,
+            (unsigned long long)latency_ns,
             deadline_missed);
-    /* TODO: persist telemetry as CSV/JSON and integrate RAPL energy measurements. */
+
+    /* If buffer is provided, add record to buffer */
+    if (scheduler->config.telemetry_buffer) {
+        cortex_telemetry_buffer_t *buffer = (cortex_telemetry_buffer_t *)scheduler->config.telemetry_buffer;
+        cortex_telemetry_record_t rec = {0};
+        strncpy(rec.run_id, scheduler->run_id, sizeof(rec.run_id)-1);
+        strncpy(rec.plugin_name, plugin->info.name ? plugin->info.name : "(unnamed)", sizeof(rec.plugin_name)-1);
+        rec.window_index = scheduler->window_count;
+        rec.release_ts_ns = rel_ns;
+        rec.deadline_ts_ns = ddl_ns;
+        rec.start_ts_ns = sta_ns;
+        rec.end_ts_ns = end_ns;
+        rec.deadline_missed = deadline_missed;
+        rec.W = scheduler->config.window_length_samples;
+        rec.H = scheduler->config.hop_samples;
+        rec.C = scheduler->config.channels;
+        rec.Fs = scheduler->config.sample_rate_hz;
+        rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
+        rec.repeat = scheduler->config.current_repeat;
+        
+        cortex_telemetry_add(buffer, &rec);
+    }
+
+    /* Write CSV if enabled (keep for backward compatibility) */
+    if (scheduler->telemetry_file) {
+        FILE *f = scheduler->telemetry_file;
+        if (!scheduler->telemetry_header_written) {
+            fprintf(f, "plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs\n");
+            ((cortex_scheduler_t *)scheduler)->telemetry_header_written = 1;
+        }
+        fprintf(f, "%s,%llu,%llu,%llu,%llu,%llu,%d,%u,%u,%u,%u\n",
+                plugin->info.name ? plugin->info.name : "(unnamed)",
+                (unsigned long long)scheduler->window_count,
+                (unsigned long long)rel_ns,
+                (unsigned long long)ddl_ns,
+                (unsigned long long)sta_ns,
+                (unsigned long long)end_ns,
+                deadline_missed,
+                scheduler->config.window_length_samples,
+                scheduler->config.hop_samples,
+                scheduler->config.channels,
+                scheduler->config.sample_rate_hz);
+        fflush(f);
+    }
 }
 
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry) {

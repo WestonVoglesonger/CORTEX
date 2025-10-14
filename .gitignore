@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# CORTEX executables
+cortex
+
 # Distribution / packaging
 .Python
 build/
@@ -197,4 +200,15 @@ tests/test_*
 *.dSYM/
 
 # Temporary test data
+
+# EDF dataset files (large, don't commit)
+datasets/eegmmidb/raw/*.edf
+datasets/eegmmidb/raw/*.event
+
+# Converted float32 files (large, optional to commit)
+datasets/eegmmidb/converted/*.float32
+
+# Keep metadata and channel order (small, commit these)
+!datasets/eegmmidb/converted/*_metadata.json
+!datasets/eegmmidb/channel_order.json
 /tmp/cortex_test_*.dat
