@@ -183,6 +183,73 @@ From the project proposal and implementation plan:
 
 ---
 
+## Platform-Specific Plugin Development
+
+### Library Extensions
+
+Plugins must be built with the correct extension for each platform:
+
+- **macOS**: `lib<name>.dylib`
+- **Linux**: `lib<name>.so`
+
+The harness loader automatically detects the platform and searches for the appropriate extension.
+
+### Build Flags
+
+**macOS**:
+```makefile
+$(CC) $(CFLAGS) -dynamiclib -o libmyplugin.dylib myplugin.c
+```
+
+**Linux**:
+```makefile
+$(CC) $(CFLAGS) -shared -fPIC -o libmyplugin.so myplugin.c
+```
+
+### Cross-Platform Makefile Example
+
+```makefile
+CC = cc
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../include
+
+# Detect platform
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    SOFLAG = -dynamiclib
+    LIBEXT = .dylib
+else
+    SOFLAG = -shared
+    LIBEXT = .so
+endif
+
+# Build plugin
+libmyplugin$(LIBEXT): myplugin.c
+	$(CC) $(CFLAGS) $(SOFLAG) -o $@ $<
+```
+
+### Loading Behavior
+
+The harness uses `dlopen()` to load plugins:
+
+- Searches `plugins/` directory relative to harness binary
+- Automatically uses correct extension for platform
+- No code changes needed in plugin implementation
+- ABI is platform-independent (same `cortex_plugin.h` on all platforms)
+
+### Testing Plugins
+
+```bash
+# macOS
+./cortex run configs/example.yaml
+# Looks for plugins/lib<name>.dylib
+
+# Linux
+./cortex run configs/example.yaml
+# Looks for plugins/lib<name>.so
+```
+
+See `docs/MACOS_COMPATIBILITY.md` for comprehensive platform documentation.
+
 ## References
 
 * Implementation Plan, Weeks 1–2: specification and setup, plugin ABI definition.

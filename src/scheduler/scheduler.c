@@ -11,6 +11,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "../harness/telemetry/telemetry.h"
+
 #ifdef __linux__
 #include <sched.h>
 #endif
@@ -50,6 +52,9 @@ struct cortex_scheduler_t {
     /* Telemetry CSV (Week 3 basic) */
     FILE *telemetry_file;
     int telemetry_header_written;
+    
+    /* Telemetry buffer integration */
+    char run_id[32];  /* Store run_id for telemetry records */
 };
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler);
@@ -110,6 +115,14 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
         if (!scheduler->telemetry_file) {
             fprintf(stderr, "[scheduler] warning: failed to open telemetry file '%s'\n", config->telemetry_path);
         }
+    }
+
+    /* Store run_id for telemetry records */
+    if (config->run_id) {
+        strncpy(scheduler->run_id, config->run_id, sizeof(scheduler->run_id) - 1);
+        scheduler->run_id[sizeof(scheduler->run_id) - 1] = '\0';
+    } else {
+        scheduler->run_id[0] = '\0';
     }
 
     return scheduler;
@@ -242,6 +255,25 @@ int cortex_scheduler_flush(cortex_scheduler_t *scheduler) {
         scheduler->buffer_fill = remaining;
     }
     return 0;
+}
+
+void cortex_scheduler_set_telemetry_buffer(cortex_scheduler_t *scheduler, void *telemetry_buffer) {
+    if (scheduler) {
+        scheduler->config.telemetry_buffer = telemetry_buffer;
+    }
+}
+
+void cortex_scheduler_set_run_id(cortex_scheduler_t *scheduler, const char *run_id) {
+    if (scheduler && run_id) {
+        strncpy(scheduler->run_id, run_id, sizeof(scheduler->run_id) - 1);
+        scheduler->run_id[sizeof(scheduler->run_id) - 1] = '\0';
+    }
+}
+
+void cortex_scheduler_set_current_repeat(cortex_scheduler_t *scheduler, uint32_t repeat) {
+    if (scheduler) {
+        scheduler->config.current_repeat = repeat;
+    }
 }
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler) {
@@ -382,7 +414,29 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
             (unsigned long long)latency_ns,
             deadline_missed);
 
-    /* Write CSV if enabled */
+    /* If buffer is provided, add record to buffer */
+    if (scheduler->config.telemetry_buffer) {
+        cortex_telemetry_buffer_t *buffer = (cortex_telemetry_buffer_t *)scheduler->config.telemetry_buffer;
+        cortex_telemetry_record_t rec = {0};
+        strncpy(rec.run_id, scheduler->run_id, sizeof(rec.run_id)-1);
+        strncpy(rec.plugin_name, plugin->info.name ? plugin->info.name : "(unnamed)", sizeof(rec.plugin_name)-1);
+        rec.window_index = scheduler->window_count;
+        rec.release_ts_ns = rel_ns;
+        rec.deadline_ts_ns = ddl_ns;
+        rec.start_ts_ns = sta_ns;
+        rec.end_ts_ns = end_ns;
+        rec.deadline_missed = deadline_missed;
+        rec.W = scheduler->config.window_length_samples;
+        rec.H = scheduler->config.hop_samples;
+        rec.C = scheduler->config.channels;
+        rec.Fs = scheduler->config.sample_rate_hz;
+        rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
+        rec.repeat = scheduler->config.current_repeat;
+        
+        cortex_telemetry_add(buffer, &rec);
+    }
+
+    /* Write CSV if enabled (keep for backward compatibility) */
     if (scheduler->telemetry_file) {
         FILE *f = scheduler->telemetry_file;
         if (!scheduler->telemetry_header_written) {
