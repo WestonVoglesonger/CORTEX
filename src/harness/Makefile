@@ -1,6 +1,15 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil
-LDFLAGS = -ldl -lpthread -lm
+
+# Platform-specific linker flags
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    # macOS: dlopen is in libSystem, no -ldl needed
+    LDFLAGS = -lpthread -lm
+else
+    # Linux: requires explicit -ldl for dlopen/dlsym
+    LDFLAGS = -ldl -lpthread -lm
+endif
 
 APP_SOURCES = app/main.c
 CFG_SOURCES = config/config.c

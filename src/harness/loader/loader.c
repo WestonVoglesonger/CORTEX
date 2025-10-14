@@ -21,8 +21,14 @@ int cortex_plugin_build_path(const char *name, char *out_path, size_t out_sz) {
     if (!name || !out_path || out_sz == 0) return -1;
     char clean[128];
     sanitize_name(name, clean, sizeof(clean));
-    /* Default search: plugins/lib<name>.so under project root; adjust as needed. */
+    
+    /* Platform-specific extension: .dylib on macOS, .so on Linux */
+#ifdef __APPLE__
+    snprintf(out_path, out_sz, "plugins/lib%s.dylib", clean);
+#else
     snprintf(out_path, out_sz, "plugins/lib%s.so", clean);
+#endif
+    
     return 0;
 }
 
