@@ -5,7 +5,7 @@ system:
   description: "EEG-first benchmark (real config)"
 
 dataset:
-  path: "/Users/westonvoglesonger/Projects/CORTEX/datasets/eegmmidb/converted/S001R03.float32"
+  path: "datasets/eegmmidb/converted/S001R03.float32"
   format: "float32"
   channels: 64  # Unchanged
   sample_rate_hz: 160  # Unchanged
