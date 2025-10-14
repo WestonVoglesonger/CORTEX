@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# CORTEX executables
+cortex
+
 # Distribution / packaging
 .Python
 build/
