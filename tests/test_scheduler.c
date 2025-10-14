@@ -454,7 +454,67 @@ static int test_config_validation(void) {
     return 0;
 }
 
-/* Test 8: Data continuity through scheduler */
+/* Test 8: Sequential scheduler execution (simulates sequential plugin execution) */
+static int test_sequential_execution(void) {
+    printf("TEST: sequential scheduler execution\n");
+
+    const uint32_t window_length = 16;
+    const uint32_t hop = 8;
+    const uint32_t channels = 2;
+
+    cortex_scheduler_config_t config = {0};
+    config.sample_rate_hz = 160;
+    config.window_length_samples = window_length;
+    config.hop_samples = hop;
+    config.channels = channels;
+    config.dtype = 1;
+
+    /* Simulate sequential execution: create and destroy schedulers one by one */
+    for (int plugin_id = 0; plugin_id < 3; plugin_id++) {
+        printf("  Testing plugin %d sequential execution\n", plugin_id);
+
+        /* Create scheduler for this "plugin" */
+        cortex_scheduler_t *scheduler = cortex_scheduler_create(&config);
+        TEST_ASSERT(scheduler != NULL, "Scheduler creation failed for plugin");
+
+        /* Register a plugin to this scheduler */
+        cortex_scheduler_plugin_api_t api = {
+            .get_info = mock_get_info,
+            .init = mock_init,
+            .process = mock_process,
+            .teardown = mock_teardown
+        };
+
+        cortex_plugin_config_t plugin_config = {0};
+        plugin_config.abi_version = 1;
+        plugin_config.struct_size = sizeof(cortex_plugin_config_t);
+        plugin_config.sample_rate_hz = 160;
+        plugin_config.window_length_samples = window_length;
+        plugin_config.hop_samples = hop;
+        plugin_config.channels = channels;
+        plugin_config.dtype = 1;
+
+        int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
+        TEST_ASSERT_EQ(0, rc, "Plugin registration should succeed");
+
+        /* Feed some data to trigger processing */
+        float chunk[16];
+        for (int i = 0; i < 16; i++) chunk[i] = (float)(i + plugin_id * 100);  /* Different data per "plugin" */
+
+        /* Feed 2 hops to trigger window */
+        cortex_scheduler_feed_samples(scheduler, chunk, 16);
+        cortex_scheduler_feed_samples(scheduler, chunk, 16);
+
+        /* Clean up this scheduler before moving to next "plugin" */
+        cortex_scheduler_destroy(scheduler);
+        printf("  ✓ Plugin %d scheduler cleaned up successfully\n", plugin_id);
+    }
+
+    printf("  ✓ Sequential execution completed without interference\n");
+    return 0;
+}
+
+/* Test 9: Data continuity through scheduler */
 static int test_data_continuity(void) {
     printf("TEST: data continuity through scheduler\n");
     
@@ -538,11 +598,13 @@ int main(void) {
     RUN_TEST(test_multiple_plugins);
     RUN_TEST(test_warmup_period);
     RUN_TEST(test_flush);
+    RUN_TEST(test_sequential_execution);
     RUN_TEST(test_data_continuity);
     
     printf("=== Test Results ===\n");
     printf("Passed: %d\n", passed);
     printf("Failed: %d\n", failed);
+    printf("Total: %d\n", passed + failed);
     
     return failed > 0 ? 1 : 0;
 }
