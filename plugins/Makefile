@@ -9,13 +9,23 @@ else
     LIBEXT = .so
 endif
 
-# Placeholder Makefile (no plugins to build while specs are being written)
+# Automatic plugin detection and building
+PLUGIN_NAMES = $(basename $(wildcard *.c))
+PLUGIN_LIBS = $(addprefix lib, $(addsuffix $(LIBEXT), $(PLUGIN_NAMES)))
+PLUGIN_OBJS = $(PLUGIN_NAMES:=.o)
 
-all:
-	@echo "No plugins to build. Specs in progress."
+all: $(PLUGIN_LIBS)
+
+# Pattern rule for building plugin libraries
+lib%$(LIBEXT): %.o
+	$(CC) $(SOFLAG) -o $@ $^
+
+# Pattern rule for compiling plugin objects
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	@true
+	rm -f $(PLUGIN_OBJS) $(PLUGIN_LIBS)
 
 .PHONY: all clean
 

@@ -24,12 +24,16 @@ CORTEX is designed for cross-platform development and testing:
 ### Building
 
 ```bash
-# Clone and build (works on both macOS and Linux)
-cd src/harness
+# Clone and build entire pipeline (works on both macOS and Linux)
 make clean && make
 
+# Or build individual components:
+make harness    # Build benchmarking harness
+make plugins    # Build plugins (when available)
+make tests      # Build and run unit tests
+
 # Verify build
-./cortex run <config.yaml>
+./src/harness/cortex run configs/cortex.yaml
 ```
 
 ### Platform-Specific Notes

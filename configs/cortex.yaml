@@ -5,8 +5,8 @@ system:
   description: "EEG-first benchmark (real config)"
 
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"  # Changed from "datasets/cortex"
-  format: "float32"  # Changed from "raw"
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  format: "float32"
   channels: 64  # Unchanged
   sample_rate_hz: 160  # Unchanged
 
@@ -23,7 +23,7 @@ power:
 benchmark:
   metrics: [latency, jitter, throughput, memory_usage, energy_consumption]
   parameters:
-    duration_seconds: 60
+    duration_seconds: 1
     repeats: 3
     warmup_seconds: 5
   load_profile: "medium"
@@ -34,31 +34,5 @@ output:
   include_raw_data: false
 
 # --- Plugin definitions (feed into ABI init, placeholders right now) ---
-plugins:
-  - name: "notch_iir"
-    status: draft           # draft | ready
-    spec_uri: null          # link to docs once written
-    spec_version: null
-    runtime:
-      window_length_samples: 160
-      hop_samples: 80
-      channels: 64
-      dtype: "float32"
-      allow_in_place: false
-    params: {}              # TBD: f0_hz, Q
-    tolerances: null        # will be set from spec (abs/rel)
-    oracle: null            # path to gold bundle once generated
-
-  - name: "car"
-    status: draft
-    spec_uri: null
-    spec_version: null
-    runtime:
-      window_length_samples: 160
-      hop_samples: 80
-      channels: 64
-      dtype: "float32"
-      allow_in_place: true
-    params: {}              # TBD: exclude_channels
-    tolerances: null
-    oracle: null
+# Note: No plugins configured yet - add plugin entries here when implementing kernels
+plugins: []

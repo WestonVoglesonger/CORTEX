@@ -74,6 +74,22 @@ This document tracks the architectural changes needed to align the harness imple
 - Replayer adapts to each plugin's hop/window requirements
 - Telemetry tracks shape per plugin
 
+### 7. Multi-Session Dataset Configuration
+**Current**: Single dataset path per run
+**New**: Support multiple dataset files for comprehensive benchmarking
+
+**Rationale**:
+- PhysioNet dataset provides 3 sessions (S001R03, S001R07, S001R11) with different motor tasks
+- Enables statistical validation across different neural conditions
+- One-command execution of full test matrix
+- Better CI/CD automation and regression testing
+
+**Implementation**:
+- Config accepts `datasets: [path1, path2, path3]` array
+- Replayer concatenates sessions or runs them sequentially
+- Telemetry tags records with `session_id`
+- Results organized by session in output directory
+
 ## Implementation Priority
 
 ### Phase 1 (Critical)
@@ -90,6 +106,7 @@ This document tracks the architectural changes needed to align the harness imple
 1. Summary generation
 2. Energy/power metrics
 3. Background load profiles
+4. Multi-session dataset configuration
 
 ## Testing Strategy
 - Unit tests for config parsing/validation

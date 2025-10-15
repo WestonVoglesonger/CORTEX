@@ -1,4 +1,5 @@
 #include "telemetry.h"
+#include "../util/util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +37,12 @@ int cortex_telemetry_add(cortex_telemetry_buffer_t *tb, const cortex_telemetry_r
 
 int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t *tb) {
     if (!path || !tb) return -1;
+
+    /* Create parent directories */
+    if (cortex_create_directories(path) != 0) {
+        return -1;
+    }
+
     FILE *f = fopen(path, "w");
     if (!f) return -1;
     fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
