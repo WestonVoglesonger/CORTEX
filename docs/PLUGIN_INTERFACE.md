@@ -55,12 +55,13 @@ scheduler, harness settings, telemetry, and plugin list. Modules interact as:
   enforcing deadlines, CPU affinity, and scheduling. It records latency,
   jitter, throughput, memory, and energy.  
 - **Reference oracles** (SciPy/MNE) verify correctness before timing; tolerances
-  are defined per-kernel.  
+  are defined per-kernel. Kernel specs are versioned in `kernels/v1/{name}@{dtype}/`.
 - **Telemetry & outputs** are written to CSV/JSON. Energy (J) and power (mW)
   are computed via RAPL.
 
 Plugins never see YAML or dataset paths. The harness extracts numeric fields
-and populates the configuration struct.
+and populates the configuration struct. Kernel specifications are maintained
+in the versioned `kernels/` registry for reproducibility and validation.
 
 ---
 

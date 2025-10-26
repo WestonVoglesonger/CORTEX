@@ -1,5 +1,6 @@
 # Kernel Specifications
 
+**Machine-readable specs and oracles**: See `kernels/v1/{name}@{dtype}/` for versioned kernel specifications and reference implementations.
 
 ## Spec Fields
  * Signal model and input/output domain: x\[*t, c*] defined over windows of length *W* with C channels, units (µV) and assumed sampling rate.

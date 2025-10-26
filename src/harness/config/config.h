@@ -25,6 +25,8 @@ typedef struct cortex_plugin_entry_cfg {
     char spec_uri[256];
     char spec_version[32];
     cortex_plugin_runtime_cfg_t runtime;
+    /* Kernel-specific parameters (optional) */
+    char params[1024];  /* JSON-like string for kernel params */
 } cortex_plugin_entry_cfg_t;
 
 typedef struct cortex_dataset_cfg {
@@ -67,6 +69,9 @@ typedef struct cortex_run_config {
     cortex_plugin_entry_cfg_t plugins[CORTEX_MAX_PLUGINS];
     size_t plugin_count;
 } cortex_run_config_t;
+
+/* Load kernel spec from spec.yaml. Returns 0 on success. */
+int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cortex_plugin_runtime_cfg_t *runtime);
 
 /* Load config from YAML-like file. Returns 0 on success. */
 int cortex_config_load(const char *path, cortex_run_config_t *out);

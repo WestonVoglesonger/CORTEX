@@ -4,6 +4,27 @@ Authoritative schema for `cortex.yaml` and `example.yaml`. The harness MUST
 validate these fields, then translate a subset into `cortex_plugin_config_t`
 for plugins. Plugins never read YAML.
 
+## Implementation Status
+
+**Not Yet Implemented** (Parsed but not used by harness):
+- `system.name`, `system.description` - Run identification metadata
+- `power.governor`, `power.turbo` - CPU power management settings
+- `benchmark.metrics` array - Metric selection (currently collects all metrics)
+- `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters
+- `plugins[].tolerances` - Per-plugin numerical tolerance specifications (loaded from kernel spec.yaml)
+- `plugins[].oracle` - Per-plugin oracle reference paths (referenced via kernel spec.yaml)
+- `output.include_raw_data` - Raw telemetry data export flag
+- `benchmark.load_profile` - Background load profile (parsed but stress-ng integration pending)
+
+**Fully Implemented**:
+- `dataset.*` - Used by replayer for streaming EEG data
+- `realtime.scheduler`, `realtime.priority`, `realtime.cpu_affinity`, `realtime.deadline_ms` - Used by scheduler
+- `benchmark.parameters.*` (duration_seconds, repeats, warmup_seconds) - Used by harness lifecycle
+- `output.directory`, `output.format` - Used by telemetry writer
+- `plugins[].name`, `plugins[].status`, `plugins[].spec_uri`, `plugins[].spec_version`, `plugins[].params` - Used by harness
+
+See `docs/ROADMAP.md` for implementation timeline.
+
 ## Versioning
 - `cortex_version: <int>` — bump on breaking changes.
 
@@ -64,8 +85,8 @@ Array of objects:
 |---|---|---|
 | name | string | `car`, `notch_iir`, `fir_bandpass`, `goertzel`, … |
 | status | enum | `draft` \| `ready` |
-| spec_uri | string\|null | Link to spec |
-| spec_version | string\|null | e.g., `v0.1` |
+| spec_uri | string\|null | Path to kernel spec (e.g., `kernels/v1/car@f32`) |
+| spec_version | string\|null | Kernel spec version (e.g., `1.0.0`) |
 
 **plugins[i].runtime**
 | Key | Type | Notes |

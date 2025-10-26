@@ -55,9 +55,9 @@ static int load_plugin(const char *plugin_name,
                        uint32_t sample_rate_hz,
                        cortex_scheduler_t *scheduler,
                        cortex_loaded_plugin_t *out_loaded) {
-    /* Build plugin path */
+    /* Build plugin path from spec_uri */
     char plugin_path[1024];
-    if (cortex_plugin_build_path(plugin_name, plugin_path, sizeof(plugin_path)) != 0) {
+    if (cortex_plugin_build_path(plugin_cfg->spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
         fprintf(stderr, "[harness] failed to build plugin path for '%s'\n", plugin_name);
         return -1;
     }

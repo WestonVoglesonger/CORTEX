@@ -1,0 +1,24 @@
+kernel:
+  name: "notch_iir"
+  version: "1.0.0"
+  dtype: "float32"
+
+abi:
+  input_shape: [160, null]  # W from spec, C from dataset
+  output_shape: [160, null] # W from spec, C from dataset
+  stateful: true
+
+numerical:
+  tolerances:
+    float32:
+      rtol: 1.0e-5
+      atol: 1.0e-6
+    quantized:
+      rtol: 1.0e-3
+      atol: 1.0e-3
+
+oracle:
+  path: "oracle.py"
+  function: "notch_ref"
+  dependencies: ["scipy"]
+

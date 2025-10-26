@@ -50,6 +50,64 @@ static uint32_t map_dtype(const char *s) {
     return 1u; /* default float32 */
 }
 
+/* Load kernel spec from spec.yaml and populate runtime config */
+int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cortex_plugin_runtime_cfg_t *runtime) {
+    if (!spec_uri || !runtime) return -1;
+
+    /* Build spec path: kernels/v1/{name}@{dtype}/spec.yaml */
+    char spec_path[512];
+    snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
+
+    FILE *f = fopen(spec_path, "r");
+    if (!f) {
+        /* Spec not found, return defaults based on dataset */
+        runtime->window_length_samples = 160;
+        runtime->hop_samples = 80;
+        runtime->channels = dataset_channels;  /* Use dataset channels */
+        runtime->dtype = 1; /* float32 */
+        runtime->allow_in_place = 0;
+        return 0;
+    }
+
+    char line[1024];
+    char dtype_str[32] = "";
+    uint32_t window_length = 160; /* Default W */
+
+    /* Simple spec parser - look for key fields */
+    while (fgets(line, sizeof(line), f)) {
+        trim(line);
+        if (line[0] == '\0' || line[0] == '#') continue;
+
+        if (starts_with(line, "  dtype:")) {
+            const char *v = line + strlen("  dtype:");
+            while (*v == ' ') v++;
+            char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
+            trim(tmp); unquote(tmp);
+            strncpy(dtype_str, tmp, sizeof(dtype_str)-1);
+        }
+        else if (starts_with(line, "  input_shape:")) {
+            /* Parse [W, null] format - extract W only, ignore C (comes from dataset) */
+            const char *v = line + strlen("  input_shape:");
+            while (*v == ' ') v++;
+            if (*v == '[') {
+                v++;
+                window_length = (uint32_t)strtoul(v, (char**)&v, 10);
+            }
+        }
+    }
+
+    fclose(f);
+
+    /* Set runtime config from spec, using dataset channels */
+    runtime->window_length_samples = window_length;
+    runtime->hop_samples = window_length / 2; /* Default: 50% overlap */
+    runtime->channels = dataset_channels;     /* Always use dataset channels */
+    runtime->dtype = map_dtype(dtype_str[0] ? dtype_str : "float32");
+    runtime->allow_in_place = 1; /* Most kernels can be in-place */
+
+    return 0;
+}
+
 int cortex_config_load(const char *path, cortex_run_config_t *out) {
     if (!path || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -58,7 +116,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
     if (!f) return -1;
 
     char line[1024];
-    enum { TOP, IN_DATASET, IN_REALTIME, IN_BENCH, IN_BENCH_PARAMS, IN_OUTPUT, IN_PLUGINS, IN_PLUGIN, IN_PLUGIN_RUNTIME } st = TOP;
+    enum { TOP, IN_DATASET, IN_REALTIME, IN_BENCH, IN_BENCH_PARAMS, IN_OUTPUT, IN_PLUGINS, IN_PLUGIN } st = TOP;
     size_t plugin_index = 0;
 
     while (fgets(line, sizeof(line), f)) {
@@ -100,6 +158,8 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 char tmp[256]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp);
                 strncpy(out->plugins[plugin_index].spec_uri, tmp, sizeof(out->plugins[plugin_index].spec_uri)-1);
                 out->plugins[plugin_index].spec_uri[sizeof(out->plugins[plugin_index].spec_uri)-1] = '\0';
+
+                /* Note: spec loading deferred until after dataset parsing */
                 continue;
             }
             if (starts_with(raw, "spec_version:")) {
@@ -109,7 +169,18 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 out->plugins[plugin_index].spec_version[sizeof(out->plugins[plugin_index].spec_version)-1] = '\0';
                 continue;
             }
-            if (strcmp(raw, "runtime:") == 0) { st = IN_PLUGIN_RUNTIME; continue; }
+            if (starts_with(raw, "params:")) {
+                /* Parse kernel-specific parameters (simple approach for now) */
+                const char *v = raw + strlen("params:");
+                while (*v == ' ') v++;
+                /* For now, just store the raw string - plugins can parse it */
+                char tmp[1024]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
+                trim(tmp);
+                strncpy(out->plugins[plugin_index].params, tmp, sizeof(out->plugins[plugin_index].params)-1);
+                out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params)-1] = '\0';
+                continue;
+            }
+            /* runtime: no longer parsed - loaded from spec.yaml */
             if (starts_with(raw, "- name:")) { /* next plugin */
                 plugin_index++;
                 if (plugin_index >= CORTEX_MAX_PLUGINS) break;
@@ -122,34 +193,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             }
         }
 
-        if (st == IN_PLUGIN_RUNTIME) {
-            if (starts_with(raw, "window_length_samples:")) {
-                const char *v = raw + strlen("window_length_samples:"); while (*v==' ') v++;
-                out->plugins[plugin_index].runtime.window_length_samples = parse_u32(v);
-                continue;
-            }
-            if (starts_with(raw, "hop_samples:")) {
-                const char *v = raw + strlen("hop_samples:"); while (*v==' ') v++;
-                out->plugins[plugin_index].runtime.hop_samples = parse_u32(v);
-                continue;
-            }
-            if (starts_with(raw, "channels:")) {
-                const char *v = raw + strlen("channels:"); while (*v==' ') v++;
-                out->plugins[plugin_index].runtime.channels = parse_u32(v);
-                continue;
-            }
-            if (starts_with(raw, "dtype:")) {
-                const char *v = raw + strlen("dtype:"); while (*v==' ') v++;
-                char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp);
-                out->plugins[plugin_index].runtime.dtype = map_dtype(tmp);
-                continue;
-            }
-            if (starts_with(raw, "allow_in_place:")) {
-                const char *v = raw + strlen("allow_in_place:"); while (*v==' ') v++;
-                out->plugins[plugin_index].runtime.allow_in_place = (uint8_t)parse_bool(v);
-                continue;
-            }
-            /* Check for new plugin - parse it directly */
+            /* Runtime config now loaded from spec.yaml, not YAML */
             if (starts_with(raw, "- name:")) {
                 plugin_index++;  /* Move to next plugin slot */
                 if (plugin_index >= CORTEX_MAX_PLUGINS) break;
@@ -161,8 +205,6 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 st = IN_PLUGIN;  /* Start parsing the new plugin */
                 continue;
             }
-            /* end of runtime block if dedented or new section; handled implicitly */
-        }
 
         if (st == IN_DATASET) {
             if (starts_with(raw, "path:")) { const char *v = raw + strlen("path:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.path, tmp, sizeof(out->dataset.path)-1); out->dataset.path[sizeof(out->dataset.path)-1] = '\0'; continue; }
@@ -213,10 +255,24 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
     }
 
-    if (st == IN_PLUGIN || st == IN_PLUGIN_RUNTIME) {
+    if (st == IN_PLUGIN) {
         plugin_index++;
     }
     out->plugin_count = plugin_index;
+
+    /* Load kernel specs for all plugins now that we have dataset info */
+    for (size_t i = 0; i < out->plugin_count; i++) {
+        if (out->plugins[i].spec_uri[0] != '\0') {
+            cortex_load_kernel_spec(out->plugins[i].spec_uri, out->dataset.channels, &out->plugins[i].runtime);
+        } else {
+            /* No spec provided, use defaults */
+            out->plugins[i].runtime.window_length_samples = 160;
+            out->plugins[i].runtime.hop_samples = 80;
+            out->plugins[i].runtime.channels = out->dataset.channels;
+            out->plugins[i].runtime.dtype = 1; /* float32 */
+            out->plugins[i].runtime.allow_in_place = 0;
+        }
+    }
 
     fclose(f);
     return 0;
@@ -226,8 +282,17 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
     if (!cfg) { if (err && err_sz) snprintf(err, err_sz, "null cfg"); return -1; }
     if (cfg->dataset.sample_rate_hz == 0) { if (err && err_sz) snprintf(err, err_sz, "Fs must be > 0"); return -1; }
     if (cfg->dataset.channels == 0) { if (err && err_sz) snprintf(err, err_sz, "C must be > 0"); return -1; }
+
     for (size_t i = 0; i < cfg->plugin_count; i++) {
         const cortex_plugin_entry_cfg_t *p = &cfg->plugins[i];
+
+        /* Check that ready plugins have spec_uri */
+        if (strcmp(p->status, "ready") == 0 && strlen(p->spec_uri) == 0) {
+            if (err && err_sz) snprintf(err, err_sz, "plugin %zu status=ready but no spec_uri", i);
+            return -1;
+        }
+
+        /* Validate runtime config from spec */
         if (p->runtime.window_length_samples == 0) {
             if (err && err_sz) snprintf(err, err_sz, "plugin %zu window length must be > 0", i);
             return -1;
@@ -237,8 +302,17 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
             return -1;
         }
         if (p->runtime.channels != cfg->dataset.channels) {
-            if (err && err_sz) snprintf(err, err_sz, "plugin %zu channels mismatch", i);
+            if (err && err_sz) snprintf(err, err_sz, "plugin %zu channels mismatch dataset", i);
             return -1;
+        }
+
+        /* Check deadline calculation is valid */
+        if (cfg->dataset.sample_rate_hz > 0 && p->runtime.hop_samples > 0) {
+            double expected_deadline_ms = 1000.0 * p->runtime.hop_samples / cfg->dataset.sample_rate_hz;
+            if (cfg->realtime.deadline_ms > 0 && cfg->realtime.deadline_ms < expected_deadline_ms) {
+                if (err && err_sz) snprintf(err, err_sz, "plugin %zu deadline too tight (%.1f ms needed)", i, expected_deadline_ms);
+                return -1;
+            }
         }
     }
     return 0;

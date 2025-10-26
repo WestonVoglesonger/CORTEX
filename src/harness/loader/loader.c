@@ -27,21 +27,32 @@ static void sanitize_name(const char *in, char *out, size_t out_sz) {
     out[j] = '\0';
 }
 
-int cortex_plugin_build_path(const char *name, char *out_path, size_t out_sz) {
-    if (!name || !out_path || out_sz == 0) return -1;
-    /* Validate plugin name to prevent directory traversal attacks */
-    if (validate_plugin_name(name) != 0) {
-        fprintf(stderr, "invalid plugin name: %s (contains path traversal sequences)\n", name);
-        return -1;
-    }
-    char clean[128];
-    sanitize_name(name, clean, sizeof(clean));
+int cortex_plugin_build_path(const char *spec_uri, char *out_path, size_t out_sz) {
+    if (!spec_uri || !out_path || out_sz == 0) return -1;
     
-    /* Platform-specific extension: .dylib on macOS, .so on Linux */
+    /* spec_uri is like "kernels/v1/car@f32" - build path to libcar.dylib in that directory */
+    char clean[256];
+    sanitize_name(spec_uri, clean, sizeof(clean));
+    
+    /* Extract kernel name from spec_uri (e.g., "car" from "kernels/v1/car@f32") */
+    const char *name_start = strrchr(spec_uri, '/');
+    if (!name_start) name_start = spec_uri;
+    else name_start++; /* Skip the '/' */
+    
+    /* Trim @f32 or @dtype suffix to get just the kernel name */
+    char kernel_name[64];
+    size_t i = 0;
+    while (name_start[i] != '\0' && name_start[i] != '@' && i < sizeof(kernel_name)-1) {
+        kernel_name[i] = name_start[i];
+        i++;
+    }
+    kernel_name[i] = '\0';
+    
+    /* Build full path: {spec_uri}/lib{name}.{ext} */
 #ifdef __APPLE__
-    snprintf(out_path, out_sz, "plugins/lib%s.dylib", clean);
+    snprintf(out_path, out_sz, "%s/lib%s.dylib", spec_uri, kernel_name);
 #else
-    snprintf(out_path, out_sz, "plugins/lib%s.so", clean);
+    snprintf(out_path, out_sz, "%s/lib%s.so", spec_uri, kernel_name);
 #endif
     
     return 0;
