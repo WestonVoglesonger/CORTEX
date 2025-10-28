@@ -4,9 +4,9 @@ Defines what the harness records per window and how it is written to disk.
 Use this spec to interpret CSV/JSON and build plots consistently.
 
 ## Files
-- `results/<run_id>/telemetry.csv`
-- `results/<run_id>/telemetry.json`
-- Optional plots in `results/<run_id>/plots/`
+- `results/<run_id>/telemetry.csv` - Per-window telemetry data
+- `results/<run_id>/telemetry.json` - JSON format telemetry (planned)
+- `results/<run_id>/report.html` - Interactive HTML report with visualizations (auto-generated)
 
 ## Common columns (per window)
 | Column | Unit | Notes |
@@ -69,6 +69,19 @@ Use this spec to interpret CSV/JSON and build plots consistently.
 - deadline_miss_rate (%)
 - mean/median power (mW)
 - summary table written to `results/<run_id>/summary.csv`
+
+## HTML Report
+
+After all plugins complete execution, the harness automatically generates an interactive HTML report at `results/<run_id>/report.html` containing:
+
+- **Summary table**: Key metrics (P50/P95/P99 latency, jitter, deadline miss rate) for all kernels
+- **Per-kernel visualizations**:
+  - Latency distribution histogram
+  - Latency over time line plot
+  - Deadline misses highlighted
+- **Self-contained**: Embedded SVG plots, no external dependencies
+
+The report is generated automatically after the plugin execution loop completes, providing a comprehensive overview of benchmark results with both summary statistics and detailed visualizations.
 
 ## Reproducibility notes
 - Record git commit, build flags, CPU model, governor, turbo, and RT settings.

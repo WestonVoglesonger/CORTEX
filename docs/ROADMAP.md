@@ -46,7 +46,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ### Midterm Deliverables (Week 7)
 - Complete all kernel C implementations
 - Run initial experiment matrix (2-3 kernels × load profiles)
-- Generate preliminary comparison plots
+- Generate preliminary comparison plots ✅ **COMPLETED** - HTML report generator
 - Live demonstration of harness running multiple kernels
 - Midterm demo presentation
 
@@ -99,6 +99,24 @@ These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the co
 - Mark g_replayer_running as volatile/atomic for cross-thread safety (replayer.c:14-19)
 - Document callback contract: replayer thread, must not block (replayer.c:14-19)
 - Enforce or validate dataset file format assumptions (replayer.c:14-19)
+
+#### Capability Assessment System
+**Future Approach: Pre-computed Capability Database**
+
+Instead of dynamically generating synthetic data for each user capability query (which is slow and complex), implement a pre-computed capability assessment system:
+
+- **Synthetic Dataset Generation**: Pre-generate realistic EEG-like datasets for standard configurations (64ch→2048ch, 160Hz→500Hz) using controlled statistical properties
+- **System Capability Benchmarking**: Run comprehensive benchmarks once per system to determine maximum supported channel counts and sampling rates for each kernel
+- **Capability Database**: Store results in a queryable database with system specifications and performance limits
+- **Instant Queries**: Answer user questions like "Can my system handle 512 channels at 500Hz with kernel X?" in milliseconds rather than minutes
+
+**Benefits:**
+- Fast capability queries (no data generation overhead)
+- Reproducible benchmarks across different systems
+- Scalable to high channel counts without runtime complexity
+- Enables user-friendly "system compatibility checker" interface
+
+**Implementation Location**: `scripts/` directory with tools for dataset generation, benchmarking, and capability querying.
 
 ## Phase 3: Next Semester (HIL Extension)
 

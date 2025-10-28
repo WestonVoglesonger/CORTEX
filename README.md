@@ -42,3 +42,15 @@ make tests      # Build and run unit tests
 - **Linux**: Uses `.so` extension for plugins
 - Plugin developers: Use `$(LIBEXT)` variable in Makefiles
 - See `docs/MACOS_COMPATIBILITY.md` for detailed platform information
+
+## Future: Capability Assessment System
+
+**Current Limitation**: Users asking "Can my system handle X channels at Y Hz?" requires generating synthetic data on-demand, which is slow and complex.
+
+**Future Solution**: Pre-computed capability database approach:
+- Generate synthetic EEG datasets once for standard configurations (64→2048 channels, 160→500 Hz)
+- Benchmark each system once to determine maximum capabilities per kernel
+- Store results in queryable database with instant answers
+- Benefits: Fast queries, reproducible benchmarks, scalable to high channel counts
+
+**Implementation**: Planned for `scripts/` directory with dataset generation, benchmarking, and capability query tools.

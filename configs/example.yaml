@@ -43,6 +43,6 @@ plugins:
     status: ready
     spec_uri: "kernels/v1/notch_iir@f32"
     spec_version: "1.0.0"
-    params:  # Optional: kernel-specific parameters
-      f0_hz: 60.0
-      Q: 30.0
+    params:  # FUTURE: kernel-specific parameters (currently hardcoded defaults)
+      f0_hz: 60.0  # Notch frequency (50Hz for Europe, 60Hz for Americas)
+      Q: 30.0      # Quality factor (higher = narrower notch, lower = wider)

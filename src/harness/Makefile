@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil
+CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil -Ireport
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)
@@ -16,8 +16,9 @@ CFG_SOURCES = config/config.c
 LOD_SOURCES = loader/loader.c
 TEL_SOURCES = telemetry/telemetry.c
 UTL_SOURCES = util/util.c
+RPT_SOURCES = report/report.c
 
-SOURCES = $(APP_SOURCES) $(CFG_SOURCES) $(LOD_SOURCES) $(TEL_SOURCES) $(UTL_SOURCES)
+SOURCES = $(APP_SOURCES) $(CFG_SOURCES) $(LOD_SOURCES) $(TEL_SOURCES) $(UTL_SOURCES) $(RPT_SOURCES)
 OBJECTS = $(SOURCES:.c=.o)
 
 all: cortex

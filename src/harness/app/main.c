@@ -8,6 +8,7 @@
 #include "loader.h"
 #include "telemetry.h"
 #include "util.h"
+#include "../report/report.h"
 
 #include "../scheduler/scheduler.h"
 #include "../replayer/replayer.h"
@@ -204,8 +205,20 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
              ctx->run_cfg.output.directory, ctx->run_id, plugin_name);
     cortex_telemetry_write_csv(final_telemetry_path, &ctx->telemetry);
     
-    /* Step 10: Clear buffer for next plugin */
-    ctx->telemetry.count = 0;  /* Reset for next plugin */
+    /* Also write to subdirectory for report */
+    char run_dir[1024];
+    snprintf(run_dir, sizeof(run_dir), "%s/%s",
+             ctx->run_cfg.output.directory, ctx->run_id);
+    if (cortex_create_directories(run_dir) == 0) {
+        char subdir_path[1024];
+        snprintf(subdir_path, sizeof(subdir_path),
+                 "%s/%s/%s_telemetry.csv",
+                 ctx->run_cfg.output.directory, ctx->run_id, plugin_name);
+        cortex_telemetry_write_csv(subdir_path, &ctx->telemetry);
+    }
+    
+    /* Step 10: Keep buffer for report generation (don't reset) */
+    /* Buffer will accumulate records from all plugins */
     
     printf("[harness] Completed plugin: %s\n", plugin_name);
     return 0;
@@ -251,6 +264,25 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Plugin %s failed\n", ctx.run_cfg.plugins[i].name);
             // For now: continue to next plugin (collect partial results)
             // Future: add benchmark.fail_fast config option to abort on first failure
+        }
+    }
+
+    /* Generate HTML report after all plugins complete */
+    char report_dir[1024];
+    snprintf(report_dir, sizeof(report_dir), "%s/%s",
+             ctx.run_cfg.output.directory, ctx.run_id);
+    
+    /* Ensure report directory exists */
+    if (cortex_create_directories(report_dir) == 0) {
+        char report_path[1024];
+        snprintf(report_path, sizeof(report_path), "%s/report.html",
+                 report_dir);
+        
+        printf("[harness] Generating HTML report: %s\n", report_path);
+        if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
+            printf("[harness] Report generated successfully\n");
+        } else {
+            fprintf(stderr, "[harness] Failed to generate report\n");
         }
     }
 

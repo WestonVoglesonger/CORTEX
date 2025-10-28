@@ -52,4 +52,12 @@ output:
 #
 # The harness loads dimensions (W, H, C) from the kernel spec.yaml
 # and dtype from the spec. Dataset channels must match spec channels.
-plugins: []
+plugins:
+  - name: "notch_iir"
+    status: ready
+    spec_uri: "kernels/v1/notch_iir@f32"
+    spec_version: "1.0.0"
+    # FUTURE: params section for runtime kernel parameters
+    # params:
+    #   f0_hz: 60.0  # Notch frequency
+    #   Q: 30.0      # Quality factor
