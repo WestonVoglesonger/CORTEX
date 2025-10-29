@@ -26,7 +26,7 @@ $(PLUGIN_OBJ): $(PLUGIN_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PLUGIN_LIB): $(PLUGIN_OBJ)
-	$(CC) $(SOFLAG) -o $@ $^
+	$(CC) $(SOFLAG) -o $@ $^ -lm
 
 clean:
 	rm -f $(PLUGIN_OBJ) $(PLUGIN_LIB)
