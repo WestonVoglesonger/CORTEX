@@ -157,16 +157,18 @@ static void test_latency_measurement_simulation(void) {
         
         /* Simulate kernel work - busy wait for ~6µs */
         #ifdef __x86_64__
-        uint64_t start_cycle = 0;
-        __asm__ __volatile__("rdtsc" : "=A" (start_cycle));
+        uint32_t start_low, start_high;
+        __asm__ __volatile__("rdtsc" : "=a" (start_low), "=d" (start_high));
+        uint64_t start_cycle = ((uint64_t)start_high << 32) | start_low;
         #else
         volatile uint64_t dummy = 0;
         #endif
         
         while (1) {
             #ifdef __x86_64__
-            uint64_t end_cycle;
-            __asm__ __volatile__("rdtsc" : "=A" (end_cycle));
+            uint32_t end_low, end_high;
+            __asm__ __volatile__("rdtsc" : "=a" (end_low), "=d" (end_high));
+            uint64_t end_cycle = ((uint64_t)end_high << 32) | end_low;
             if ((end_cycle - start_cycle) > 10000) break;  // Rough calibration for ~6µs
             #else
             dummy++;
