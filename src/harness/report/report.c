@@ -12,7 +12,8 @@
 /* Statistics structure for a single kernel */
 typedef struct {
     char plugin_name[64];
-    uint64_t *latencies_ns;
+    uint64_t *latencies_ns;        /* Sorted for percentile calculations */
+    uint64_t *latencies_ns_chrono;  /* Unsorted, chronological order for "Latency Over Time" plot */
     size_t count;
     uint32_t deadline_misses;
     double deadline_miss_rate;
@@ -56,9 +57,14 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
 
     if (filtered_count == 0) return -1;
 
-    /* Allocate latency array */
+    /* Allocate latency arrays (sorted and chronological) */
     uint64_t *latencies = (uint64_t *)malloc(filtered_count * sizeof(uint64_t));
-    if (!latencies) return -1;
+    uint64_t *latencies_chrono = (uint64_t *)malloc(filtered_count * sizeof(uint64_t));
+    if (!latencies || !latencies_chrono) {
+        free(latencies);
+        free(latencies_chrono);
+        return -1;
+    }
 
     uint32_t misses = 0;
     size_t idx = 0;
@@ -69,7 +75,9 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
         if (r->warmup) continue;
         if (!plugin_filter || strcmp(r->plugin_name, plugin_filter) == 0) {
             uint64_t latency = r->end_ts_ns - r->start_ts_ns;
-            latencies[idx++] = latency;
+            latencies[idx] = latency;
+            latencies_chrono[idx] = latency;  /* Keep chronological copy */
+            idx++;
             if (r->deadline_missed) misses++;
         }
     }
@@ -80,6 +88,7 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     /* Calculate statistics */
     strncpy(stats->plugin_name, plugin_filter ? plugin_filter : "all", sizeof(stats->plugin_name) - 1);
     stats->latencies_ns = latencies;
+    stats->latencies_ns_chrono = latencies_chrono;
     stats->count = filtered_count;
     stats->deadline_misses = misses;
     stats->deadline_miss_rate = 100.0 * (double)misses / (double)filtered_count;
@@ -94,8 +103,9 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
 
 /* Free kernel statistics */
 static void free_kernel_stats(kernel_stats_t *stats) {
-    if (stats && stats->latencies_ns) {
+    if (stats) {
         free(stats->latencies_ns);
+        free(stats->latencies_ns_chrono);
         memset(stats, 0, sizeof(*stats));
     }
 }
@@ -323,7 +333,7 @@ int cortex_report_generate(const char *output_path,
         fprintf(f, "<h3>Latency Over Time</h3>\n");
         fprintf(f, "<div class=\"plot\">\n");
         fprintf(f, "<svg width=\"600\" height=\"300\">\n");
-        generate_line_plot_svg(f, stats[p].latencies_ns, stats[p].count, 600, 300);
+        generate_line_plot_svg(f, stats[p].latencies_ns_chrono, stats[p].count, 600, 300);
         fprintf(f, "</svg>\n</div>\n");
 
         fprintf(f, "</div>\n");
