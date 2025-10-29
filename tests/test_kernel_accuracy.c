@@ -309,8 +309,18 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     
     /* 3. Load plugin */
     char plugin_path[512];
-    snprintf(plugin_path, sizeof(plugin_path),
-             "kernels/v1/%s@f32/lib%s.dylib", kernel_name, kernel_name);
+    char spec_uri[256];
+    snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+    
+    if (cortex_plugin_build_path(spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
+        fprintf(stderr, "  Failed to build plugin path for '%s'\n", kernel_name);
+        for (size_t i = 0; i < num_windows; i++) {
+            free(windows[i].window_data);
+        }
+        free(windows);
+        free(data.data);
+        return -1;
+    }
     
     cortex_loaded_plugin_t plugin;
     if (cortex_plugin_load(plugin_path, &plugin) != 0) {
