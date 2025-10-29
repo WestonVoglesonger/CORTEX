@@ -65,6 +65,38 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
     return 0;
 }
 
+int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
+                                         size_t start_idx, size_t end_idx) {
+    if (!path || !tb) return -1;
+    if (start_idx > end_idx || end_idx > tb->count) return -1;
+
+    /* Create parent directories */
+    if (cortex_create_directories(path) != 0) {
+        return -1;
+    }
+
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
+    for (size_t i = start_idx; i < end_idx; i++) {
+        const cortex_telemetry_record_t *r = &tb->records[i];
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u\n",
+                r->run_id,
+                r->plugin_name,
+                r->window_index,
+                (unsigned long long)r->release_ts_ns,
+                (unsigned long long)r->deadline_ts_ns,
+                (unsigned long long)r->start_ts_ns,
+                (unsigned long long)r->end_ts_ns,
+                (unsigned)r->deadline_missed,
+                r->W, r->H, r->C, r->Fs,
+                (unsigned)r->warmup,
+                r->repeat);
+    }
+    fclose(f);
+    return 0;
+}
+
 
 
 

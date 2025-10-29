@@ -122,6 +122,14 @@ static int load_eeg_data(const char *path, eeg_data_t *out) {
 /* Extract windows from EEG data */
 static int extract_windows(const eeg_data_t *data, size_t W, size_t H,
                           test_window_t **out_windows, size_t *out_count) {
+    /* Guard against underflow: if num_samples < W, we can only create at most 1 window */
+    if (data->num_samples < W) {
+        /* Dataset too short for even one full window - return empty or error */
+        *out_windows = NULL;
+        *out_count = 0;
+        return -1;
+    }
+    
     size_t max_windows = (data->num_samples - W) / H + 1;
     if (max_windows == 0) {
         max_windows = 1;
