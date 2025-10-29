@@ -39,12 +39,26 @@ if __name__ == "__main__":
     # CLI test mode
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         if len(sys.argv) < 3:
-            print("Usage: python3 oracle.py --test <input_file>")
+            print("Usage: python3 oracle.py --test <input_file> [--output <output_file>] [--state <state_file>]")
             sys.exit(1)
 
         input_path = sys.argv[2]
+        # Default paths (backward compatible)
         output_path = "/tmp/test_output.bin"
         state_path = "/tmp/notch_state.npy"
+        
+        # Parse optional --output and --state arguments
+        i = 3
+        while i < len(sys.argv):
+            if sys.argv[i] == "--output" and i + 1 < len(sys.argv):
+                output_path = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--state" and i + 1 < len(sys.argv):
+                state_path = sys.argv[i + 1]
+                i += 2
+            else:
+                print(f"Warning: Unknown argument {sys.argv[i]}")
+                i += 1
 
         # Load input data (interleaved: [sample0_ch0, sample0_ch1, ..., sample0_ch63, sample1_ch0, ...])
         x = np.fromfile(input_path, dtype=np.float32)

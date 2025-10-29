@@ -204,20 +204,22 @@ static int compare_outputs(const float *c_output, const float *py_output,
 
 /* Run Python oracle via subprocess */
 static int run_python_oracle(const char *kernel_name, const float *input,
-                             size_t W, size_t C, float *output) {
+                             size_t W, size_t C, float *output,
+                             const char *state_path) {
     char input_file[] = "/tmp/test_input_XXXXXX";
-    char command[512];
+    char output_file[] = "/tmp/test_output_XXXXXX";
+    char command[1024];
     
     /* Create temporary input file */
-    int fd = mkstemp(input_file);
-    if (fd < 0) {
-        perror("mkstemp failed");
+    int fd_in = mkstemp(input_file);
+    if (fd_in < 0) {
+        perror("mkstemp failed for input");
         return -1;
     }
     
-    FILE *f = fdopen(fd, "wb");
+    FILE *f = fdopen(fd_in, "wb");
     if (!f) {
-        close(fd);
+        close(fd_in);
         unlink(input_file);
         return -1;
     }
@@ -230,10 +232,19 @@ static int run_python_oracle(const char *kernel_name, const float *input,
         return -1;
     }
     
-    /* Build command */
+    /* Create temporary output file */
+    int fd_out = mkstemp(output_file);
+    if (fd_out < 0) {
+        perror("mkstemp failed for output");
+        unlink(input_file);
+        return -1;
+    }
+    close(fd_out);  /* Close it, Python will write to it */
+    
+    /* Build command with unique paths */
     snprintf(command, sizeof(command),
-             "python3 kernels/v1/%s@f32/oracle.py --test %s > /dev/null 2>&1",
-             kernel_name, input_file);
+             "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+             kernel_name, input_file, output_file, state_path);
     
     /* Execute oracle */
     int status = system(command);
@@ -243,19 +254,27 @@ static int run_python_oracle(const char *kernel_name, const float *input,
     
     if (status != 0) {
         fprintf(stderr, "Python oracle failed for %s\n", kernel_name);
+        unlink(output_file);
         return -1;
     }
     
-    /* Read output */
-    FILE *out = fopen("/tmp/test_output.bin", "rb");
+    /* Read output from unique temp file */
+    FILE *out = fopen(output_file, "rb");
     if (!out) {
-        fprintf(stderr, "Failed to read oracle output\n");
+        fprintf(stderr, "Failed to read oracle output from %s\n", output_file);
+        unlink(output_file);
         return -1;
     }
     
-    fread(output, sizeof(float), W * C, out);
+    size_t read_count = fread(output, sizeof(float), W * C, out);
     fclose(out);
-    unlink("/tmp/test_output.bin");
+    unlink(output_file);
+    
+    if (read_count != W * C) {
+        fprintf(stderr, "Partial read: got %zu floats, expected %zu\n", 
+                read_count, W * C);
+        return -1;
+    }
     
     return 0;
 }
@@ -289,8 +308,19 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     printf("\nTesting kernel: %s\n", kernel_name);
     printf("  Loading data: %s\n", config->data_path);
 
-    /* Clear any persistent state from previous runs */
-    unlink("/tmp/notch_state.npy");
+    /* Create unique state file for this test process */
+    char state_file_template[] = "/tmp/notch_state_XXXXXX";
+    int state_fd = mkstemp(state_file_template);
+    if (state_fd < 0) {
+        perror("mkstemp failed for state file");
+        return -1;
+    }
+    close(state_fd);  /* Close it, Python will write to .npy version */
+    unlink(state_file_template);  /* Remove temp, we'll use .npy extension */
+    
+    /* Construct .npy filename */
+    char state_file[512];
+    snprintf(state_file, sizeof(state_file), "%s.npy", state_file_template);
     
     /* 1. Load EEG data */
     eeg_data_t data;
@@ -372,7 +402,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         
         /* Run Python oracle */
         if (run_python_oracle(kernel_name, windows[i].window_data,
-                             W, 64, py_output) != 0) {
+                             W, 64, py_output, state_file) != 0) {
             fprintf(stderr, "  Window %d: Oracle execution failed\n", i);
             failures++;
             free(c_output);
@@ -408,6 +438,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     }
     free(windows);
     free(data.data);
+    
+    /* Clean up unique state file */
+    unlink(state_file);
     
     /* 8. Report */
     if (failures == 0) {
