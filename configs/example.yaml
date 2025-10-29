@@ -34,11 +34,11 @@ output:
   include_raw_data: false
 
 plugins:
-  - name: "car"
-    status: ready
-    spec_uri: "kernels/v1/car@f32"
-    spec_version: "1.0.0"
-  
+  # - name: "car"
+  #   status: ready
+  #   spec_uri: "kernels/v1/car@f32"
+  #   spec_version: "1.0.0"
+
   - name: "notch_iir"
     status: ready
     spec_uri: "kernels/v1/notch_iir@f32"

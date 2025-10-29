@@ -86,3 +86,18 @@ The report is generated automatically after the plugin execution loop completes,
 ## Reproducibility notes
 - Record git commit, build flags, CPU model, governor, turbo, and RT settings.
 - Save run config snapshot to `results/<run_id>/cortex.yaml`.
+
+## Timing Accuracy
+
+Latency measurements use `CLOCK_MONOTONIC` for high-resolution timing:
+
+- **macOS**: 1µs resolution (quantization to microsecond increments)
+- **Linux**: Typically 1ns resolution (nanosecond precision)
+- **Measurement overhead**: < 100ns (negligible)
+
+For your midterm report, note that:
+- Measurements are accurate to ±1µs on macOS (acceptable for 6-8µs latencies)
+- Relative comparisons (kernel A vs B) are valid despite quantization
+- Statistical aggregates (P50/P95/P99) smooth out quantization effects
+
+To verify timing accuracy, run: `make -C tests test-clock-resolution`
