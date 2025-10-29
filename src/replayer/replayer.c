@@ -19,6 +19,8 @@
  * - Dataset path semantics: assumes float32 file; enforce or validate.
  */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include "replayer.h"
 
 #include <errno.h>

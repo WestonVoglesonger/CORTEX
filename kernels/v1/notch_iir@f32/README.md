@@ -73,5 +73,6 @@ See `docs/KERNELS.md` section "Notch IIR (biquad) at 50/60 Hz" for the complete 
 
 - ✅ Specification defined
 - ✅ Oracle implementation (`oracle.py`)
-- ⏳ C implementation pending
+- ✅ C implementation complete
+- ✅ Parameterization support (awaiting harness implementation)
 
