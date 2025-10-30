@@ -27,6 +27,9 @@ typedef struct {
     double mean_latency_us;
     double stddev_latency_us;
     double throughput_windows_per_s;
+    double normalized_p50_us_per_ch_sample;  /* P50 latency per channel-sample */
+    double deadline_ms;                      /* Deadline in milliseconds */
+    double utilization_pct;                 /* Utilization percentage (P99/deadline) */
     uint32_t W;  /* Window length */
     uint32_t H;  /* Hop length */
     uint32_t C;  /* Channels */
@@ -148,6 +151,34 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     stats->H = H;
     stats->C = C;
     stats->Fs = Fs;
+    
+    /* Normalized metrics: microseconds per channel-sample */
+    if (W > 0 && C > 0) {
+        stats->normalized_p50_us_per_ch_sample = stats->p50_latency_us / ((double)W * (double)C);
+    } else {
+        stats->normalized_p50_us_per_ch_sample = 0.0;
+    }
+    
+    /* Extract deadline from telemetry */
+    double deadline_ms = 0.0;
+    for (size_t i = 0; i < telemetry->count; i++) {
+        const cortex_telemetry_record_t *r = &telemetry->records[i];
+        if (r->warmup) continue;
+        if (!plugin_filter || strcmp(r->plugin_name, plugin_filter) == 0) {
+            if (r->deadline_ts_ns > r->release_ts_ns) {
+                deadline_ms = ((double)(r->deadline_ts_ns - r->release_ts_ns)) / 1e6;
+            }
+            break;  /* Use first non-warmup record */
+        }
+    }
+    stats->deadline_ms = deadline_ms;
+    
+    /* Utilization percentage: P99 latency as percentage of deadline */
+    if (deadline_ms > 0) {
+        stats->utilization_pct = (stats->p99_latency_us / (deadline_ms * 1000.0)) * 100.0;
+    } else {
+        stats->utilization_pct = 0.0;
+    }
 
     return 0;
 }
@@ -238,18 +269,43 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
     double main_range = p99_us - min_us;
     double tail_range = max_us - p99_us;
 
-    for (size_t i = 0; i < count; i++) {
-        int bin;
-        if (latencies_us[i] <= p99_us) {
-            // Main distribution: linear bins within P99
-            bin = (int)((latencies_us[i] - min_us) / main_range * num_main_bins);
-            if (bin >= num_main_bins) bin = num_main_bins - 1;
-        } else {
-            // Outliers: linear bins above P99
-            bin = num_main_bins + (int)((latencies_us[i] - p99_us) / tail_range * num_tail_bins);
-            if (bin >= num_bins) bin = num_bins - 1;
+    /* Guard against division by zero when main_range is zero
+     * (happens when 99%+ of samples have identical latency) */
+    if (main_range <= 0.0 || tail_range < 0.0) {
+        /* Fallback: use simple linear binning across full range */
+        double full_range = max_us - min_us;
+        if (full_range <= 0.0) {
+            /* All values identical - should have been caught earlier, but handle gracefully */
+            free(bins);
+            free(latencies_us);
+            return;
         }
-        bins[bin]++;
+        /* Use all bins for linear distribution */
+        for (size_t i = 0; i < count; i++) {
+            int bin = (int)((latencies_us[i] - min_us) / full_range * num_bins);
+            if (bin >= num_bins) bin = num_bins - 1;
+            bins[bin]++;
+        }
+    } else {
+        /* Normal case: adaptive binning */
+        for (size_t i = 0; i < count; i++) {
+            int bin;
+            if (latencies_us[i] <= p99_us) {
+                // Main distribution: linear bins within P99
+                bin = (int)((latencies_us[i] - min_us) / main_range * num_main_bins);
+                if (bin >= num_main_bins) bin = num_main_bins - 1;
+            } else {
+                // Outliers: linear bins above P99
+                if (tail_range > 0.0) {
+                    bin = num_main_bins + (int)((latencies_us[i] - p99_us) / tail_range * num_tail_bins);
+                    if (bin >= num_bins) bin = num_bins - 1;
+                } else {
+                    /* All outliers go to first tail bin */
+                    bin = num_main_bins;
+                }
+            }
+            bins[bin]++;
+        }
     }
 
     /* Find max bin count for scaling */
@@ -273,9 +329,26 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
 
     /* Draw percentile markers */
     double p50_us = latencies_us[count / 2];
-    double p95_x = (p95_us - min_us) / main_range * num_main_bins * scale_x;
-    double p99_x = num_main_bins * scale_x;
-    double p50_x = (p50_us - min_us) / main_range * num_main_bins * scale_x;
+    double p95_x, p99_x, p50_x;
+    
+    /* Handle percentile marker positions based on binning strategy */
+    if (main_range <= 0.0 || tail_range < 0.0) {
+        /* Fallback case: use full range for positioning */
+        double full_range = max_us - min_us;
+        if (full_range > 0.0) {
+            p50_x = ((p50_us - min_us) / full_range) * width;
+            p95_x = ((p95_us - min_us) / full_range) * width;
+            p99_x = ((p99_us - min_us) / full_range) * width;
+        } else {
+            /* All identical - center markers */
+            p50_x = p95_x = p99_x = width / 2.0;
+        }
+    } else {
+        /* Normal case: adaptive binning */
+        p95_x = (p95_us - min_us) / main_range * num_main_bins * scale_x;
+        p99_x = num_main_bins * scale_x;
+        p50_x = (p50_us - min_us) / main_range * num_main_bins * scale_x;
+    }
 
     fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\" opacity=\"0.8\"/>\n",
             p50_x, height - 40, p50_x, height - 35);
@@ -482,6 +555,51 @@ int cortex_report_generate(const char *output_path,
     struct tm *tm_info = localtime(&now);
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
     fprintf(f, "<p><strong>Generated:</strong> %s</p>\n", time_str);
+    
+    /* Extract run metadata from telemetry */
+    size_t warmup_records = 0;
+    size_t collected_windows = 0;
+    uint32_t max_repeat = 0;
+    uint64_t first_release_ts = 0;
+    uint64_t last_release_ts = 0;
+    
+    if (telemetry->count > 0) {
+        first_release_ts = telemetry->records[0].release_ts_ns;
+        last_release_ts = telemetry->records[0].release_ts_ns;
+    }
+    
+    for (size_t i = 0; i < telemetry->count; i++) {
+        const cortex_telemetry_record_t *r = &telemetry->records[i];
+        if (r->warmup) {
+            warmup_records++;
+        } else {
+            collected_windows++;
+        }
+        if (r->repeat > max_repeat) {
+            max_repeat = r->repeat;
+        }
+        if (r->release_ts_ns < first_release_ts) {
+            first_release_ts = r->release_ts_ns;
+        }
+        if (r->release_ts_ns > last_release_ts) {
+            last_release_ts = r->release_ts_ns;
+        }
+    }
+    
+    double benchmark_duration_sec = 0.0;
+    if (last_release_ts > first_release_ts) {
+        benchmark_duration_sec = ((double)(last_release_ts - first_release_ts)) / 1e9;
+    }
+    
+    /* Display run metadata in header */
+    fprintf(f, "<p><strong>Benchmark Duration:</strong> %.1f seconds</p>\n", benchmark_duration_sec);
+    if (max_repeat > 0) {
+        fprintf(f, "<p><strong>Repeats:</strong> %u</p>\n", max_repeat);
+    }
+    if (warmup_records > 0) {
+        fprintf(f, "<p><strong>Warmup Period:</strong> %zu windows discarded</p>\n", warmup_records);
+    }
+    fprintf(f, "<p><strong>Collected Windows:</strong> %zu</p>\n", collected_windows);
     fprintf(f, "</div>\n");
 
     /* Get unique plugin names */
@@ -510,8 +628,8 @@ int cortex_report_generate(const char *output_path,
     fprintf(f, "<div class=\"summary\">\n<h2>Summary Statistics</h2>\n");
     fprintf(f, "<table>\n");
     fprintf(f, "<tr><th>Kernel</th><th>Windows</th><th>Min</th><th>P50</th><th>Mean</th><th>P95</th><th>P99</th><th>Max</th>"
-            "<th>Std Dev</th><th>Jitter</th><th>Miss Rate</th><th>Throughput</th></tr>\n");
-    fprintf(f, "<tr><th></th><th></th><th colspan=\"7\">Latency (µs)</th><th>µs</th><th>µs</th><th>%%</th><th>win/s</th></tr>\n");
+            "<th>Std Dev</th><th>µs/Ch-Samp</th><th>Deadline</th><th>Utilization</th><th>Jitter</th><th>Miss Rate</th><th>Throughput</th></tr>\n");
+    fprintf(f, "<tr><th></th><th></th><th colspan=\"7\">Latency (µs)</th><th>µs</th><th>µs</th><th>ms</th><th>%%</th><th>µs</th><th>%%</th><th>win/s</th></tr>\n");
 
     for (size_t i = 0; i < plugin_count; i++) {
         fprintf(f, "<tr>");
@@ -524,6 +642,9 @@ int cortex_report_generate(const char *output_path,
         fprintf(f, "<td>%.2f</td>", stats[i].p99_latency_us);
         fprintf(f, "<td>%.2f</td>", stats[i].max_latency_us);
         fprintf(f, "<td>%.2f</td>", stats[i].stddev_latency_us);
+        fprintf(f, "<td>%.5f</td>", stats[i].normalized_p50_us_per_ch_sample);
+        fprintf(f, "<td>%.1f</td>", stats[i].deadline_ms);
+        fprintf(f, "<td>%.2f</td>", stats[i].utilization_pct);
         fprintf(f, "<td>%.2f</td>", stats[i].jitter_p95_us);
         fprintf(f, "<td>%.2f</td>", stats[i].deadline_miss_rate);
         fprintf(f, "<td>%.2f</td>", stats[i].throughput_windows_per_s);
@@ -568,6 +689,10 @@ int cortex_report_generate(const char *output_path,
         fprintf(f, "<td>P95 Latency</td><td>%.2f µs</td></tr>\n", stats[p].p95_latency_us);
         fprintf(f, "<tr><td>P99 Latency</td><td>%.2f µs</td>", stats[p].p99_latency_us);
         fprintf(f, "<td>Jitter (P95-P50)</td><td>%.2f µs</td></tr>\n", stats[p].jitter_p95_us);
+        fprintf(f, "<tr><td>P50 Normalized</td><td>%.5f µs/channel-sample</td>", stats[p].normalized_p50_us_per_ch_sample);
+        fprintf(f, "<td>Calculation</td><td>%.2f µs / (%u × %u)</td></tr>\n", stats[p].p50_latency_us, stats[p].W, stats[p].C);
+        fprintf(f, "<tr><td>Deadline</td><td>%.1f ms</td>", stats[p].deadline_ms);
+        fprintf(f, "<td>Utilization (P99/deadline)</td><td>%.2f%%</td></tr>\n", stats[p].utilization_pct);
         fprintf(f, "<tr><td>Throughput</td><td>%.2f windows/s</td>", stats[p].throughput_windows_per_s);
         fprintf(f, "<td>Miss Rate</td><td>%.2f%%</td></tr>\n", stats[p].deadline_miss_rate);
         fprintf(f, "</table>\n");
