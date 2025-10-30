@@ -315,12 +315,14 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
     }
 
     /* Draw histogram bars */
-    double scale_x = (double)width / num_bins;
+    int left_margin = 40;
+    int plot_width = width - left_margin;
+    double scale_x = (double)plot_width / num_bins;
     double scale_y = (double)(height - 60) / max_bin_count;  // Leave room for percentile lines
 
     for (int i = 0; i < num_bins; i++) {
         int bar_height = (int)(bins[i] * scale_y);
-        double x = i * scale_x;
+        double x = left_margin + i * scale_x;
         const char* fill_color = (i < num_main_bins) ? "#4a90e2" : "#e74c3c";  // Blue for main, red for outliers
         fprintf(f, "<rect x=\"%.0f\" y=\"%d\" width=\"%.0f\" height=\"%d\" "
                 "fill=\"%s\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
@@ -336,57 +338,109 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
         /* Fallback case: use full range for positioning */
         double full_range = max_us - min_us;
         if (full_range > 0.0) {
-            p50_x = ((p50_us - min_us) / full_range) * width;
-            p95_x = ((p95_us - min_us) / full_range) * width;
-            p99_x = ((p99_us - min_us) / full_range) * width;
+            p50_x = left_margin + ((p50_us - min_us) / full_range) * plot_width;
+            p95_x = left_margin + ((p95_us - min_us) / full_range) * plot_width;
+            p99_x = left_margin + ((p99_us - min_us) / full_range) * plot_width;
         } else {
             /* All identical - center markers */
-            p50_x = p95_x = p99_x = width / 2.0;
+            p50_x = p95_x = p99_x = left_margin + plot_width / 2.0;
         }
     } else {
         /* Normal case: adaptive binning */
-        p95_x = (p95_us - min_us) / main_range * num_main_bins * scale_x;
-        p99_x = num_main_bins * scale_x;
-        p50_x = (p50_us - min_us) / main_range * num_main_bins * scale_x;
+        p95_x = left_margin + (p95_us - min_us) / main_range * num_main_bins * scale_x;
+        p99_x = left_margin + num_main_bins * scale_x;
+        p50_x = left_margin + (p50_us - min_us) / main_range * num_main_bins * scale_x;
     }
 
-    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\" opacity=\"0.8\"/>\n",
-            p50_x, height - 40, p50_x, height - 35);
-    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"2\" opacity=\"0.8\"/>\n",
-            p95_x, height - 40, p95_x, height - 35);
-    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"2\" opacity=\"0.8\"/>\n",
-            p99_x, height - 40, p99_x, height - 35);
+    /* More noticeable percentile markers - taller and thicker */
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p50_x, height - 40, p50_x, height - 25);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p95_x, height - 40, p95_x, height - 25);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p99_x, height - 40, p99_x, height - 25);
 
     /* Draw axes */
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 40, width, height - 40);
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"0\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 40, 20);
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", left_margin, height - 40, width, height - 40);
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", left_margin, height - 40, left_margin, 20);
+
+    /* Y-axis tick marks and labels */
+    int plot_top = 20;
+    int plot_bottom = height - 40;
+    int plot_height = plot_bottom - plot_top;
+    int num_ticks = 5;
+    
+    /* Determine nice round numbers for ticks */
+    int tick_interval = (max_bin_count + num_ticks - 1) / num_ticks;
+    /* Round to nice numbers */
+    if (tick_interval > 0) {
+        int magnitude = 1;
+        while (tick_interval >= 10) {
+            tick_interval /= 10;
+            magnitude *= 10;
+        }
+        if (tick_interval <= 1) tick_interval = 1;
+        else if (tick_interval <= 2) tick_interval = 2;
+        else if (tick_interval <= 5) tick_interval = 5;
+        else tick_interval = 10;
+        tick_interval *= magnitude;
+    }
+    if (tick_interval == 0) tick_interval = 1;
+    
+    for (int i = 0; i <= num_ticks; i++) {
+        int tick_value = i * tick_interval;
+        if (tick_value > max_bin_count) tick_value = max_bin_count;
+        
+        double y_pos = plot_bottom - ((double)tick_value / max_bin_count) * plot_height;
+        
+        /* Draw tick mark */
+        fprintf(f, "<line x1=\"35\" y1=\"%.0f\" x2=\"40\" y2=\"%.0f\" "
+                "stroke=\"#333\" stroke-width=\"1\"/>\n", y_pos, y_pos);
+        
+        /* Draw tick label */
+        fprintf(f, "<text x=\"30\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\" "
+                "dominant-baseline=\"middle\">%d</text>\n", y_pos, tick_value);
+    }
 
     /* Axis labels */
     fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\">"
-            "Latency (µs)</text>\n", width / 2, height - 5);
-    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\" "
-            "transform=\"rotate(-90 %d %d)\">Frequency</text>\n", 15, height / 2, 15, height / 2);
+            "Latency (µs)</text>\n", left_margin + plot_width / 2, height - 5);
+    fprintf(f, "<text x=\"15\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\" "
+            "transform=\"rotate(-90 15 %d)\">Frequency</text>\n", height / 2, height / 2);
 
-    /* Percentile labels */
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\" text-anchor=\"middle\">P50: %.0f</text>\n",
-            p50_x, height - 20, p50_us);
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\" text-anchor=\"middle\">P95: %.0f</text>\n",
-            p95_x, height - 20, p95_us);
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\" text-anchor=\"middle\">P99: %.0f</text>\n",
-            p99_x, height - 20, p99_us);
-
-    /* Legend */
+    /* Legend - Histogram bars and Percentiles */
+    int legend_x = width - 140;
+    int legend_y = 25;
+    
+    /* Histogram bar legend */
     fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#4a90e2\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
-            width - 120, 25, 12, 12);
+            legend_x, legend_y, 12, 12);
     fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Main distribution</text>\n",
-            width - 100, 35);
+            legend_x + 15, legend_y + 10);
 
     fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#e74c3c\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
-            width - 120, 40, 12, 12);
-    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Outliers (>%0.f µs)</text>\n",
-            width - 100, 50, p99_us);
+            legend_x, legend_y + 15, 12, 12);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Outliers (>%.0f µs)</text>\n",
+            legend_x + 15, legend_y + 25, p99_us);
+
+    /* Percentile legend */
+    legend_y += 45;
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y, legend_x + 15, legend_y);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\">P50: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 3, p50_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y + 15, legend_x + 15, legend_y + 15);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\">P95: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 18, p95_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y + 30, legend_x + 15, legend_y + 30);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\">P99: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 33, p99_us);
 
     free(bins);
     free(latencies_us);
@@ -488,13 +542,28 @@ static void generate_cdf_plot_svg(FILE *f, uint64_t *data, size_t count,
             "transform=\"rotate(-90 %d %d)\">Cumulative Probability</text>\n", 
             10, plot_center_y, 10, plot_center_y);
 
-    /* Percentile labels on X-axis */
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\" text-anchor=\"middle\">P50: %.0f</text>\n",
-            p50_x, height - 20, p50_us);
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\" text-anchor=\"middle\">P95: %.0f</text>\n",
-            p95_x, height - 20, p95_us);
-    fprintf(f, "<text x=\"%.0f\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\" text-anchor=\"middle\">P99: %.0f</text>\n",
-            p99_x, height - 20, p99_us);
+    /* Percentile legend on the bottom right corner */
+    int legend_x = width - 140;
+    int legend_y = height - 100;
+    
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"11\">Percentiles</text>\n",
+            legend_x, legend_y);
+    
+    legend_y += 15;
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y, legend_x + 15, legend_y);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\">P50: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 3, p50_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y + 15, legend_x + 15, legend_y + 15);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\">P95: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 18, p95_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y + 30, legend_x + 15, legend_y + 30);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\">P99: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 33, p99_us);
 
     /* Percentile labels on Y-axis */
     fprintf(f, "<text x=\"%d\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\">50%%</text>\n",
