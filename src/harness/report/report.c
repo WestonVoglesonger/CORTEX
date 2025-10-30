@@ -22,6 +22,18 @@ typedef struct {
     double p99_latency_us;
     double jitter_p95_us;
     double jitter_p99_us;
+    double min_latency_us;
+    double max_latency_us;
+    double mean_latency_us;
+    double stddev_latency_us;
+    double throughput_windows_per_s;
+    double normalized_p50_us_per_ch_sample;  /* P50 latency per channel-sample */
+    double deadline_ms;                      /* Deadline in milliseconds */
+    double utilization_pct;                 /* Utilization percentage (P99/deadline) */
+    uint32_t W;  /* Window length */
+    uint32_t H;  /* Hop length */
+    uint32_t C;  /* Channels */
+    uint32_t Fs; /* Sample rate */
 } kernel_stats_t;
 
 /* Helper function to compute percentile */
@@ -68,6 +80,8 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
 
     uint32_t misses = 0;
     size_t idx = 0;
+    uint64_t sum_latency_ns = 0;
+    uint32_t W = 0, H = 0, C = 0, Fs = 0;
 
     /* Extract latencies and count misses */
     for (size_t i = 0; i < telemetry->count; i++) {
@@ -77,8 +91,17 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
             uint64_t latency = r->end_ts_ns - r->start_ts_ns;
             latencies[idx] = latency;
             latencies_chrono[idx] = latency;  /* Keep chronological copy */
+            sum_latency_ns += latency;
             idx++;
             if (r->deadline_missed) misses++;
+            
+            /* Get configuration from first record */
+            if (idx == 1) {
+                W = r->W;
+                H = r->H;
+                C = r->C;
+                Fs = r->Fs;
+            }
         }
     }
 
@@ -92,11 +115,70 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     stats->count = filtered_count;
     stats->deadline_misses = misses;
     stats->deadline_miss_rate = 100.0 * (double)misses / (double)filtered_count;
+    
+    /* Percentiles */
     stats->p50_latency_us = compute_percentile(latencies, filtered_count, 50.0) / 1000.0;
     stats->p95_latency_us = compute_percentile(latencies, filtered_count, 95.0) / 1000.0;
     stats->p99_latency_us = compute_percentile(latencies, filtered_count, 99.0) / 1000.0;
     stats->jitter_p95_us = (stats->p95_latency_us - stats->p50_latency_us);
     stats->jitter_p99_us = (stats->p99_latency_us - stats->p50_latency_us);
+    
+    /* Min/Max */
+    stats->min_latency_us = (double)latencies[0] / 1000.0;
+    stats->max_latency_us = (double)latencies[filtered_count - 1] / 1000.0;
+    
+    /* Mean */
+    stats->mean_latency_us = (double)sum_latency_ns / (double)filtered_count / 1000.0;
+    
+    /* Standard deviation */
+    double variance_sum = 0.0;
+    double mean_ns = stats->mean_latency_us * 1000.0;
+    for (size_t i = 0; i < filtered_count; i++) {
+        double diff = (double)latencies[i] - mean_ns;
+        variance_sum += diff * diff;
+    }
+    stats->stddev_latency_us = sqrt(variance_sum / (double)filtered_count) / 1000.0;
+    
+    /* Throughput: windows per second = Fs / H */
+    if (H > 0 && Fs > 0) {
+        stats->throughput_windows_per_s = (double)Fs / (double)H;
+    } else {
+        stats->throughput_windows_per_s = 0.0;
+    }
+    
+    /* Configuration */
+    stats->W = W;
+    stats->H = H;
+    stats->C = C;
+    stats->Fs = Fs;
+    
+    /* Normalized metrics: microseconds per channel-sample */
+    if (W > 0 && C > 0) {
+        stats->normalized_p50_us_per_ch_sample = stats->p50_latency_us / ((double)W * (double)C);
+    } else {
+        stats->normalized_p50_us_per_ch_sample = 0.0;
+    }
+    
+    /* Extract deadline from telemetry */
+    double deadline_ms = 0.0;
+    for (size_t i = 0; i < telemetry->count; i++) {
+        const cortex_telemetry_record_t *r = &telemetry->records[i];
+        if (r->warmup) continue;
+        if (!plugin_filter || strcmp(r->plugin_name, plugin_filter) == 0) {
+            if (r->deadline_ts_ns > r->release_ts_ns) {
+                deadline_ms = ((double)(r->deadline_ts_ns - r->release_ts_ns)) / 1e6;
+            }
+            break;  /* Use first non-warmup record */
+        }
+    }
+    stats->deadline_ms = deadline_ms;
+    
+    /* Utilization percentage: P99 latency as percentage of deadline */
+    if (deadline_ms > 0) {
+        stats->utilization_pct = (stats->p99_latency_us / (deadline_ms * 1000.0)) * 100.0;
+    } else {
+        stats->utilization_pct = 0.0;
+    }
 
     return 0;
 }
@@ -140,102 +222,369 @@ static int get_unique_plugins(const cortex_telemetry_buffer_t *telemetry,
     return 0;
 }
 
-/* Generate SVG histogram */
-static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count, 
+/* Generate SVG histogram with logarithmic binning for latency data */
+static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
                                     int width, int height) {
     if (count == 0) return;
 
-    /* Find min and max */
-    uint64_t min_val = data[0];
-    uint64_t max_val = data[0];
-    for (size_t i = 1; i < count; i++) {
-        if (data[i] < min_val) min_val = data[i];
-        if (data[i] > max_val) max_val = data[i];
+    /* Convert to microseconds for display */
+    double *latencies_us = (double *)malloc(count * sizeof(double));
+    if (!latencies_us) return;
+
+    for (size_t i = 0; i < count; i++) {
+        latencies_us[i] = (double)data[i] / 1000.0;
     }
 
-    if (min_val == max_val) {
-        fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\">No variation</text>", 
+    /* Find min and max in microseconds */
+    double min_us = latencies_us[0];
+    double max_us = latencies_us[0];
+    for (size_t i = 1; i < count; i++) {
+        if (latencies_us[i] < min_us) min_us = latencies_us[i];
+        if (latencies_us[i] > max_us) max_us = latencies_us[i];
+    }
+
+    if (min_us == max_us) {
+        fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\">No variation</text>",
                 width/2, height/2);
+        free(latencies_us);
         return;
     }
 
-    /* Create histogram bins (20 bins) */
-    int num_bins = 20;
+    /* For latency data, use adaptive binning based on data distribution */
+    /* Focus on the main distribution (P99) and use wider bins for outliers */
+    double p99_us = latencies_us[(size_t)(count * 0.99)];  // 99th percentile
+    double p95_us = latencies_us[(size_t)(count * 0.95)];  // 95th percentile
+
+    int num_main_bins = 15;  // Bins for main distribution (up to P99)
+    int num_tail_bins = 5;   // Bins for outliers (P99+)
+    int num_bins = num_main_bins + num_tail_bins;
+
     int *bins = (int *)calloc(num_bins, sizeof(int));
-    if (!bins) return;
+    if (!bins) {
+        free(latencies_us);
+        return;
+    }
 
-    double bin_width = (double)(max_val - min_val) / num_bins;
+    /* Create bins: fine-grained for main distribution, coarse for outliers */
+    double main_range = p99_us - min_us;
+    double tail_range = max_us - p99_us;
 
-    for (size_t i = 0; i < count; i++) {
-        int bin = (int)((data[i] - min_val) / bin_width);
-        if (bin >= num_bins) bin = num_bins - 1;
-        bins[bin]++;
+    /* Guard against division by zero when main_range is zero
+     * (happens when 99%+ of samples have identical latency) */
+    if (main_range <= 0.0 || tail_range < 0.0) {
+        /* Fallback: use simple linear binning across full range */
+        double full_range = max_us - min_us;
+        if (full_range <= 0.0) {
+            /* All values identical - should have been caught earlier, but handle gracefully */
+            free(bins);
+            free(latencies_us);
+            return;
+        }
+        /* Use all bins for linear distribution */
+        for (size_t i = 0; i < count; i++) {
+            int bin = (int)((latencies_us[i] - min_us) / full_range * num_bins);
+            if (bin >= num_bins) bin = num_bins - 1;
+            bins[bin]++;
+        }
+    } else {
+        /* Normal case: adaptive binning */
+        for (size_t i = 0; i < count; i++) {
+            int bin;
+            if (latencies_us[i] <= p99_us) {
+                // Main distribution: linear bins within P99
+                bin = (int)((latencies_us[i] - min_us) / main_range * num_main_bins);
+                if (bin >= num_main_bins) bin = num_main_bins - 1;
+            } else {
+                // Outliers: linear bins above P99
+                if (tail_range > 0.0) {
+                    bin = num_main_bins + (int)((latencies_us[i] - p99_us) / tail_range * num_tail_bins);
+                    if (bin >= num_bins) bin = num_bins - 1;
+                } else {
+                    /* All outliers go to first tail bin */
+                    bin = num_main_bins;
+                }
+            }
+            bins[bin]++;
+        }
     }
 
     /* Find max bin count for scaling */
-    int max_bin = bins[0];
-    for (int i = 1; i < num_bins; i++) {
-        if (bins[i] > max_bin) max_bin = bins[i];
+    int max_bin_count = 0;
+    for (int i = 0; i < num_bins; i++) {
+        if (bins[i] > max_bin_count) max_bin_count = bins[i];
     }
 
     /* Draw histogram bars */
-    double scale_x = (double)width / num_bins;
-    double scale_y = (double)(height - 40) / max_bin;
+    int left_margin = 40;
+    int plot_width = width - left_margin;
+    double scale_x = (double)plot_width / num_bins;
+    double scale_y = (double)(height - 60) / max_bin_count;  // Leave room for percentile lines
 
     for (int i = 0; i < num_bins; i++) {
         int bar_height = (int)(bins[i] * scale_y);
-        double x = i * scale_x;
+        double x = left_margin + i * scale_x;
+        const char* fill_color = (i < num_main_bins) ? "#4a90e2" : "#e74c3c";  // Blue for main, red for outliers
         fprintf(f, "<rect x=\"%.0f\" y=\"%d\" width=\"%.0f\" height=\"%d\" "
-                "fill=\"#4a90e2\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
-                x, height - bar_height - 20, scale_x, bar_height);
+                "fill=\"%s\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
+                x, height - bar_height - 40, scale_x - 1, bar_height, fill_color);
     }
 
-    /* Draw axes and labels */
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 20, width, height - 20);
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"0\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 20, 0);
+    /* Draw percentile markers */
+    double p50_us = latencies_us[count / 2];
+    double p95_x, p99_x, p50_x;
+    
+    /* Handle percentile marker positions based on binning strategy */
+    if (main_range <= 0.0 || tail_range < 0.0) {
+        /* Fallback case: use full range for positioning */
+        double full_range = max_us - min_us;
+        if (full_range > 0.0) {
+            p50_x = left_margin + ((p50_us - min_us) / full_range) * plot_width;
+            p95_x = left_margin + ((p95_us - min_us) / full_range) * plot_width;
+            p99_x = left_margin + ((p99_us - min_us) / full_range) * plot_width;
+        } else {
+            /* All identical - center markers */
+            p50_x = p95_x = p99_x = left_margin + plot_width / 2.0;
+        }
+    } else {
+        /* Normal case: adaptive binning */
+        p95_x = left_margin + (p95_us - min_us) / main_range * num_main_bins * scale_x;
+        p99_x = left_margin + num_main_bins * scale_x;
+        p50_x = left_margin + (p50_us - min_us) / main_range * num_main_bins * scale_x;
+    }
 
-    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\">Max: %.0f µs</text>",
-            width - 100, height - 5, (double)max_val / 1000.0);
+    /* More noticeable percentile markers - taller and thicker */
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p50_x, height - 40, p50_x, height - 25);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p95_x, height - 40, p95_x, height - 25);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"3\" opacity=\"0.9\"/>\n",
+            p99_x, height - 40, p99_x, height - 25);
+
+    /* Draw axes */
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", left_margin, height - 40, width, height - 40);
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", left_margin, height - 40, left_margin, 20);
+
+    /* Y-axis tick marks and labels */
+    int plot_top = 20;
+    int plot_bottom = height - 40;
+    int plot_height = plot_bottom - plot_top;
+    int num_ticks = 5;
+    
+    /* Determine nice round numbers for ticks */
+    int tick_interval = (max_bin_count + num_ticks - 1) / num_ticks;
+    /* Round to nice numbers */
+    if (tick_interval > 0) {
+        int magnitude = 1;
+        while (tick_interval >= 10) {
+            tick_interval /= 10;
+            magnitude *= 10;
+        }
+        if (tick_interval <= 1) tick_interval = 1;
+        else if (tick_interval <= 2) tick_interval = 2;
+        else if (tick_interval <= 5) tick_interval = 5;
+        else tick_interval = 10;
+        tick_interval *= magnitude;
+    }
+    if (tick_interval == 0) tick_interval = 1;
+    
+    for (int i = 0; i <= num_ticks; i++) {
+        int tick_value = i * tick_interval;
+        if (tick_value > max_bin_count) tick_value = max_bin_count;
+        
+        double y_pos = plot_bottom - ((double)tick_value / max_bin_count) * plot_height;
+        
+        /* Draw tick mark */
+        fprintf(f, "<line x1=\"35\" y1=\"%.0f\" x2=\"40\" y2=\"%.0f\" "
+                "stroke=\"#333\" stroke-width=\"1\"/>\n", y_pos, y_pos);
+        
+        /* Draw tick label */
+        fprintf(f, "<text x=\"30\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\" "
+                "dominant-baseline=\"middle\">%d</text>\n", y_pos, tick_value);
+    }
+
+    /* Axis labels */
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\">"
+            "Latency (µs)</text>\n", left_margin + plot_width / 2, height - 5);
+    fprintf(f, "<text x=\"15\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\" "
+            "transform=\"rotate(-90 15 %d)\">Frequency</text>\n", height / 2, height / 2);
+
+    /* Legend - Histogram bars and Percentiles */
+    int legend_x = width - 140;
+    int legend_y = 25;
+    
+    /* Histogram bar legend */
+    fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#4a90e2\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
+            legend_x, legend_y, 12, 12);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Main distribution</text>\n",
+            legend_x + 15, legend_y + 10);
+
+    fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#e74c3c\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
+            legend_x, legend_y + 15, 12, 12);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Outliers (>%.0f µs)</text>\n",
+            legend_x + 15, legend_y + 25, p99_us);
+
+    /* Percentile legend */
+    legend_y += 45;
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y, legend_x + 15, legend_y);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\">P50: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 3, p50_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y + 15, legend_x + 15, legend_y + 15);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\">P95: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 18, p95_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"2\"/>\n",
+            legend_x, legend_y + 30, legend_x + 15, legend_y + 30);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\">P99: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 33, p99_us);
 
     free(bins);
+    free(latencies_us);
 }
 
-/* Generate SVG line plot */
-static void generate_line_plot_svg(FILE *f, uint64_t *data, size_t count,
-                                   int width, int height) {
+/* Comparison function for qsort with doubles */
+static int compare_double(const void *a, const void *b) {
+    double da = *(const double *)a;
+    double db = *(const double *)b;
+    return (da > db) - (da < db);
+}
+
+/* Generate Cumulative Distribution Function (CDF) plot - more useful than timeline */
+static void generate_cdf_plot_svg(FILE *f, uint64_t *data, size_t count,
+                                  int width, int height) {
     if (count < 2) return;
 
-    /* Find min and max for scaling */
-    uint64_t min_val = data[0];
-    uint64_t max_val = data[0];
-    for (size_t i = 1; i < count; i++) {
-        if (data[i] < min_val) min_val = data[i];
-        if (data[i] > max_val) max_val = data[i];
+    /* Convert to microseconds and sort for CDF */
+    double *latencies_us = (double *)malloc(count * sizeof(double));
+    if (!latencies_us) return;
+
+    for (size_t i = 0; i < count; i++) {
+        latencies_us[i] = (double)data[i] / 1000.0;
     }
 
-    if (min_val == max_val) {
-        fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
-                "stroke=\"#4a90e2\" stroke-width=\"2\"/>\n", height/2, width, height/2);
+    /* Sort for CDF calculation */
+    qsort(latencies_us, count, sizeof(double), compare_double);
+
+    double min_us = latencies_us[0];
+    double max_us = latencies_us[count - 1];
+
+    if (min_us == max_us) {
+        fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\">No variation</text>",
+                width/2, height/2);
+        free(latencies_us);
         return;
     }
 
-    /* Draw line */
+    /* Calculate percentiles for reference */
+    double p50_us = latencies_us[count / 2];
+    double p95_us = latencies_us[(size_t)(count * 0.95)];
+    double p99_us = latencies_us[(size_t)(count * 0.99)];
+
+    /* Draw CDF curve */
     fprintf(f, "<polyline points=\"");
+    double x_range = max_us - min_us;
+    double y_range = height - 60;
+    
     for (size_t i = 0; i < count; i++) {
-        double x = (double)i * width / (count - 1);
-        double y = height - 20 - ((double)(data[i] - min_val) / (max_val - min_val)) * (height - 40);
+        double x = ((latencies_us[i] - min_us) / x_range) * (width - 40) + 20;
+        double y = height - 40 - ((double)i / (count - 1)) * y_range;
         if (i > 0) fprintf(f, " ");
-        fprintf(f, "%.0f,%.0f", x, y);
+        fprintf(f, "%.1f,%.1f", x, y);
     }
-    fprintf(f, "\" fill=\"none\" stroke=\"#4a90e2\" stroke-width=\"2\"/>\n");
+    fprintf(f, "\" fill=\"none\" stroke=\"#4a90e2\" stroke-width=\"2.5\"/>\n");
+
+    /* Draw percentile reference lines and markers */
+    double p50_x = ((p50_us - min_us) / x_range) * (width - 40) + 20;
+    double p95_x = ((p95_us - min_us) / x_range) * (width - 40) + 20;
+    double p99_x = ((p99_us - min_us) / x_range) * (width - 40) + 20;
+    double p50_y = height - 40 - 0.50 * y_range;
+    double p95_y = height - 40 - 0.95 * y_range;
+    double p99_y = height - 40 - 0.99 * y_range;
+
+    /* Vertical percentile lines */
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" "
+            "stroke=\"#27ae60\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            p50_x, 20, p50_x, height - 40);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" "
+            "stroke=\"#f39c12\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            p95_x, 20, p95_x, height - 40);
+    fprintf(f, "<line x1=\"%.0f\" y1=\"%d\" x2=\"%.0f\" y2=\"%d\" "
+            "stroke=\"#e74c3c\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            p99_x, 20, p99_x, height - 40);
+
+    /* Horizontal percentile lines */
+    fprintf(f, "<line x1=\"%d\" y1=\"%.0f\" x2=\"%d\" y2=\"%.0f\" "
+            "stroke=\"#27ae60\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            20, p50_y, width - 20, p50_y);
+    fprintf(f, "<line x1=\"%d\" y1=\"%.0f\" x2=\"%d\" y2=\"%.0f\" "
+            "stroke=\"#f39c12\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            20, p95_y, width - 20, p95_y);
+    fprintf(f, "<line x1=\"%d\" y1=\"%.0f\" x2=\"%d\" y2=\"%.0f\" "
+            "stroke=\"#e74c3c\" stroke-width=\"1.5\" stroke-dasharray=\"4,4\" opacity=\"0.8\"/>\n",
+            20, p99_y, width - 20, p99_y);
 
     /* Draw axes */
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 20, width, height - 20);
-    fprintf(f, "<line x1=\"0\" y1=\"%d\" x2=\"0\" y2=\"%d\" "
-            "stroke=\"#333\" stroke-width=\"2\"/>\n", height - 20, 0);
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", 20, height - 40, width - 20, height - 40);
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+            "stroke=\"#333\" stroke-width=\"2\"/>\n", 20, height - 40, 20, 20);
+
+    /* Axis labels */
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\">"
+            "Latency (µs)</text>\n", width / 2, height - 5);
+    /* Y-axis label: center in plot area vertically, with padding from left edge */
+    int plot_center_y = 20 + (height - 60) / 2;  /* Center of plot area (between y=20 and y=height-40) */
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"12\" text-anchor=\"middle\" "
+            "transform=\"rotate(-90 %d %d)\">Cumulative Probability</text>\n", 
+            10, plot_center_y, 10, plot_center_y);
+
+    /* Percentile legend on the bottom right corner */
+    int legend_x = width - 140;
+    int legend_y = height - 100;
+    
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"11\">Percentiles</text>\n",
+            legend_x, legend_y);
+    
+    legend_y += 15;
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#27ae60\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y, legend_x + 15, legend_y);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#27ae60\" font-size=\"10\">P50: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 3, p50_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#f39c12\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y + 15, legend_x + 15, legend_y + 15);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#f39c12\" font-size=\"10\">P95: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 18, p95_us);
+
+    fprintf(f, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#e74c3c\" stroke-width=\"2\" stroke-dasharray=\"4,4\"/>\n",
+            legend_x, legend_y + 30, legend_x + 15, legend_y + 30);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#e74c3c\" font-size=\"10\">P99: %.0f µs</text>\n",
+            legend_x + 20, legend_y + 33, p99_us);
+
+    /* Percentile labels on Y-axis */
+    fprintf(f, "<text x=\"%d\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\">50%%</text>\n",
+            15, p50_y + 3);
+    fprintf(f, "<text x=\"%d\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\">95%%</text>\n",
+            15, p95_y + 3);
+    fprintf(f, "<text x=\"%d\" y=\"%.0f\" fill=\"#333\" font-size=\"10\" text-anchor=\"end\">99%%</text>\n",
+            15, p99_y + 3);
+
+    /* Min/Max labels */
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\" font-size=\"9\">%.0f µs</text>",
+            25, height - 25, min_us);
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\" font-size=\"9\" text-anchor=\"end\">%.0f µs</text>",
+            width - 25, height - 25, max_us);
+
+    /* Explanation text */
+    fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\" font-size=\"10\" font-style=\"italic\">"
+            "Shows what percentage of operations complete by each latency threshold</text>\n",
+            width / 2, 15);
+
+    free(latencies_us);
 }
 
 /* Generate HTML report */
@@ -259,7 +608,9 @@ int cortex_report_generate(const char *output_path,
     fprintf(f, "th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }\n");
     fprintf(f, "th { background: #3498db; color: white; }\n");
     fprintf(f, ".kernel-section { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; }\n");
-    fprintf(f, ".plot { margin: 20px 0; }\n");
+    fprintf(f, ".plot { margin: 20px 0; background: #fafafa; padding: 15px; border-radius: 5px; }\n");
+    fprintf(f, "tr:nth-child(even) { background: #f9f9f9; }\n");
+    fprintf(f, ".stat-label { color: #7f8c8d; font-size: 0.9em; }\n");
     fprintf(f, "</style>\n</head>\n<body>\n");
 
     /* Write header */
@@ -273,6 +624,49 @@ int cortex_report_generate(const char *output_path,
     struct tm *tm_info = localtime(&now);
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
     fprintf(f, "<p><strong>Generated:</strong> %s</p>\n", time_str);
+    
+    /* Extract run metadata from telemetry */
+    size_t warmup_records = 0;
+    size_t collected_windows = 0;
+    uint32_t max_repeat = 0;
+    uint64_t first_release_ts = 0;
+    uint64_t last_release_ts = 0;
+    
+    if (telemetry->count > 0) {
+        first_release_ts = telemetry->records[0].release_ts_ns;
+        last_release_ts = telemetry->records[0].release_ts_ns;
+    }
+    
+    for (size_t i = 0; i < telemetry->count; i++) {
+        const cortex_telemetry_record_t *r = &telemetry->records[i];
+        if (r->warmup) {
+            warmup_records++;
+        } else {
+            collected_windows++;
+        }
+        if (r->repeat > max_repeat) {
+            max_repeat = r->repeat;
+        }
+        if (r->release_ts_ns < first_release_ts) {
+            first_release_ts = r->release_ts_ns;
+        }
+        if (r->release_ts_ns > last_release_ts) {
+            last_release_ts = r->release_ts_ns;
+        }
+    }
+    
+    double benchmark_duration_sec = 0.0;
+    if (last_release_ts > first_release_ts) {
+        benchmark_duration_sec = ((double)(last_release_ts - first_release_ts)) / 1e9;
+    }
+    
+    /* Display run metadata in header */
+    fprintf(f, "<p><strong>Benchmark Duration:</strong> %.1f seconds</p>\n", benchmark_duration_sec);
+    if (max_repeat > 0) {
+        fprintf(f, "<p><strong>Repeats:</strong> %u</p>\n", max_repeat);
+    }
+    fprintf(f, "<p><strong>Warmup Period:</strong> %zu windows discarded</p>\n", warmup_records);
+    fprintf(f, "<p><strong>Collected Windows:</strong> %zu</p>\n", collected_windows);
     fprintf(f, "</div>\n");
 
     /* Get unique plugin names */
@@ -300,17 +694,27 @@ int cortex_report_generate(const char *output_path,
     /* Summary table */
     fprintf(f, "<div class=\"summary\">\n<h2>Summary Statistics</h2>\n");
     fprintf(f, "<table>\n");
-    fprintf(f, "<tr><th>Kernel</th><th>P50 Latency (µs)</th><th>P95 Latency (µs)</th>"
-            "<th>P99 Latency (µs)</th><th>Jitter P95-P50 (µs)</th><th>Miss Rate (%%)</th></tr>\n");
+    fprintf(f, "<tr><th>Kernel</th><th>Windows</th><th>Min</th><th>P50</th><th>Mean</th><th>P95</th><th>P99</th><th>Max</th>"
+            "<th>Std Dev</th><th>µs/Ch-Samp</th><th>Deadline</th><th>Utilization</th><th>Jitter</th><th>Miss Rate</th><th>Throughput</th></tr>\n");
+    fprintf(f, "<tr><th></th><th></th><th colspan=\"7\">Latency (µs)</th><th>µs</th><th>ms</th><th>%%</th><th>µs</th><th>%%</th><th>win/s</th></tr>\n");
 
     for (size_t i = 0; i < plugin_count; i++) {
         fprintf(f, "<tr>");
-        fprintf(f, "<td>%s</td>", stats[i].plugin_name);
+        fprintf(f, "<td><strong>%s</strong></td>", stats[i].plugin_name);
+        fprintf(f, "<td>%zu</td>", stats[i].count);
+        fprintf(f, "<td>%.2f</td>", stats[i].min_latency_us);
         fprintf(f, "<td>%.2f</td>", stats[i].p50_latency_us);
+        fprintf(f, "<td>%.2f</td>", stats[i].mean_latency_us);
         fprintf(f, "<td>%.2f</td>", stats[i].p95_latency_us);
         fprintf(f, "<td>%.2f</td>", stats[i].p99_latency_us);
+        fprintf(f, "<td>%.2f</td>", stats[i].max_latency_us);
+        fprintf(f, "<td>%.2f</td>", stats[i].stddev_latency_us);
+        fprintf(f, "<td>%.5f</td>", stats[i].normalized_p50_us_per_ch_sample);
+        fprintf(f, "<td>%.1f</td>", stats[i].deadline_ms);
+        fprintf(f, "<td>%.2f</td>", stats[i].utilization_pct);
         fprintf(f, "<td>%.2f</td>", stats[i].jitter_p95_us);
         fprintf(f, "<td>%.2f</td>", stats[i].deadline_miss_rate);
+        fprintf(f, "<td>%.2f</td>", stats[i].throughput_windows_per_s);
         fprintf(f, "</tr>\n");
     }
     fprintf(f, "</table>\n</div>\n");
@@ -321,19 +725,57 @@ int cortex_report_generate(const char *output_path,
 
         fprintf(f, "<div class=\"kernel-section\">\n");
         fprintf(f, "<h2>%s</h2>\n", stats[p].plugin_name);
+        
+        /* Configuration summary */
+        fprintf(f, "<div style=\"background: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px;\">\n");
+        fprintf(f, "<h3 style=\"margin-top: 0;\">Configuration</h3>\n");
+        fprintf(f, "<table style=\"margin: 0;\">\n");
+        fprintf(f, "<tr><th>Parameter</th><th>Value</th><th>Parameter</th><th>Value</th></tr>\n");
+        fprintf(f, "<tr><td>Window Length (W)</td><td>%u samples</td>", stats[p].W);
+        fprintf(f, "<td>Hop Length (H)</td><td>%u samples</td></tr>\n", stats[p].H);
+        fprintf(f, "<tr><td>Channels (C)</td><td>%u</td>", stats[p].C);
+        fprintf(f, "<td>Sample Rate (Fs)</td><td>%u Hz</td></tr>\n", stats[p].Fs);
+        fprintf(f, "<tr><td>Window Period</td><td>%.3f ms</td>", 
+                (double)stats[p].W / (double)stats[p].Fs * 1000.0);
+        fprintf(f, "<td>Hop Period</td><td>%.3f ms</td></tr>\n",
+                (double)stats[p].H / (double)stats[p].Fs * 1000.0);
+        fprintf(f, "</table>\n");
+        fprintf(f, "</div>\n");
+        
+        /* Detailed statistics */
+        fprintf(f, "<h3>Detailed Statistics</h3>\n");
+        fprintf(f, "<table>\n");
+        fprintf(f, "<tr><th>Metric</th><th>Value</th><th>Metric</th><th>Value</th></tr>\n");
+        fprintf(f, "<tr><td>Total Windows</td><td>%zu</td>", stats[p].count);
+        fprintf(f, "<td>Deadline Misses</td><td>%u</td></tr>\n", stats[p].deadline_misses);
+        fprintf(f, "<tr><td>Min Latency</td><td>%.2f µs</td>", stats[p].min_latency_us);
+        fprintf(f, "<td>Max Latency</td><td>%.2f µs</td></tr>\n", stats[p].max_latency_us);
+        fprintf(f, "<tr><td>Mean Latency</td><td>%.2f µs</td>", stats[p].mean_latency_us);
+        fprintf(f, "<td>Std Deviation</td><td>%.2f µs</td></tr>\n", stats[p].stddev_latency_us);
+        fprintf(f, "<tr><td>P50 Latency</td><td>%.2f µs</td>", stats[p].p50_latency_us);
+        fprintf(f, "<td>P95 Latency</td><td>%.2f µs</td></tr>\n", stats[p].p95_latency_us);
+        fprintf(f, "<tr><td>P99 Latency</td><td>%.2f µs</td>", stats[p].p99_latency_us);
+        fprintf(f, "<td>Jitter (P95-P50)</td><td>%.2f µs</td></tr>\n", stats[p].jitter_p95_us);
+        fprintf(f, "<tr><td>P50 Normalized</td><td>%.5f µs/channel-sample</td>", stats[p].normalized_p50_us_per_ch_sample);
+        fprintf(f, "<td>Calculation</td><td>%.2f µs / (%u × %u)</td></tr>\n", stats[p].p50_latency_us, stats[p].W, stats[p].C);
+        fprintf(f, "<tr><td>Deadline</td><td>%.1f ms</td>", stats[p].deadline_ms);
+        fprintf(f, "<td>Utilization (P99/deadline)</td><td>%.2f%%</td></tr>\n", stats[p].utilization_pct);
+        fprintf(f, "<tr><td>Throughput</td><td>%.2f windows/s</td>", stats[p].throughput_windows_per_s);
+        fprintf(f, "<td>Miss Rate</td><td>%.2f%%</td></tr>\n", stats[p].deadline_miss_rate);
+        fprintf(f, "</table>\n");
 
         /* Latency distribution histogram */
         fprintf(f, "<h3>Latency Distribution</h3>\n");
         fprintf(f, "<div class=\"plot\">\n");
-        fprintf(f, "<svg width=\"600\" height=\"300\">\n");
-        generate_histogram_svg(f, stats[p].latencies_ns, stats[p].count, 600, 300);
+        fprintf(f, "<svg width=\"700\" height=\"350\">\n");
+        generate_histogram_svg(f, stats[p].latencies_ns, stats[p].count, 700, 350);
         fprintf(f, "</svg>\n</div>\n");
 
-        /* Latency over time line plot */
-        fprintf(f, "<h3>Latency Over Time</h3>\n");
+        /* Cumulative Distribution Function - more useful than timeline */
+        fprintf(f, "<h3>Cumulative Distribution Function (CDF)</h3>\n");
         fprintf(f, "<div class=\"plot\">\n");
-        fprintf(f, "<svg width=\"600\" height=\"300\">\n");
-        generate_line_plot_svg(f, stats[p].latencies_ns_chrono, stats[p].count, 600, 300);
+        fprintf(f, "<svg width=\"700\" height=\"350\">\n");
+        generate_cdf_plot_svg(f, stats[p].latencies_ns, stats[p].count, 700, 350);
         fprintf(f, "</svg>\n</div>\n");
 
         fprintf(f, "</div>\n");
