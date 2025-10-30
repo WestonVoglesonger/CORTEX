@@ -140,10 +140,13 @@ static void *replayer_thread_main(void *arg) {
     const double hop_period_sec = (double)g_config.hop_samples / (double)g_config.sample_rate_hz;
     const long hop_period_nsec = (long)(hop_period_sec * NSEC_PER_SEC);
 
-    fprintf(stdout, "[replayer] streaming %u samples every %.1f ms (%.2f Hz)\n",
-            g_config.hop_samples, 
+    fprintf(stdout, "[replayer] streaming %u samples/channel × %u channels = %zu total samples every %.1f ms (%.2f Hz chunk rate, %.0f samples/s total)\n",
+            g_config.hop_samples,
+            g_config.channels,
+            hop_samples,
             hop_period_sec * 1000.0,
-            1.0 / hop_period_sec);
+            1.0 / hop_period_sec,
+            (double)hop_samples / hop_period_sec);
 
     while (g_replayer_running) {
         int read_status = read_next_chunk(stream, chunk_buffer, hop_samples);
