@@ -596,9 +596,7 @@ int cortex_report_generate(const char *output_path,
     if (max_repeat > 0) {
         fprintf(f, "<p><strong>Repeats:</strong> %u</p>\n", max_repeat);
     }
-    if (warmup_records > 0) {
-        fprintf(f, "<p><strong>Warmup Period:</strong> %zu windows discarded</p>\n", warmup_records);
-    }
+    fprintf(f, "<p><strong>Warmup Period:</strong> %zu windows discarded</p>\n", warmup_records);
     fprintf(f, "<p><strong>Collected Windows:</strong> %zu</p>\n", collected_windows);
     fprintf(f, "</div>\n");
 
@@ -629,7 +627,7 @@ int cortex_report_generate(const char *output_path,
     fprintf(f, "<table>\n");
     fprintf(f, "<tr><th>Kernel</th><th>Windows</th><th>Min</th><th>P50</th><th>Mean</th><th>P95</th><th>P99</th><th>Max</th>"
             "<th>Std Dev</th><th>µs/Ch-Samp</th><th>Deadline</th><th>Utilization</th><th>Jitter</th><th>Miss Rate</th><th>Throughput</th></tr>\n");
-    fprintf(f, "<tr><th></th><th></th><th colspan=\"7\">Latency (µs)</th><th>µs</th><th>µs</th><th>ms</th><th>%%</th><th>µs</th><th>%%</th><th>win/s</th></tr>\n");
+    fprintf(f, "<tr><th></th><th></th><th colspan=\"7\">Latency (µs)</th><th>µs</th><th>ms</th><th>%%</th><th>µs</th><th>%%</th><th>win/s</th></tr>\n");
 
     for (size_t i = 0; i < plugin_count; i++) {
         fprintf(f, "<tr>");
