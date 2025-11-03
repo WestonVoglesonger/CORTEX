@@ -132,19 +132,38 @@ if __name__ == "__main__":
                 # Shift: move samples [hop_samples:tail_len] to [0:keep_amount]
                 zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
                 zf[:keep_amount, :] = zi[hop_samples:, :]
-                # Append first hop_samples from current window
-                zf[keep_amount:, :] = x[:hop_samples, :]
+                # Append first hop_samples from current window (clamped to available samples)
+                # Clamp to window_length to prevent out-of-bounds reads
+                samples_to_copy = min(hop_samples, x.shape[0])
+                zf[keep_amount:keep_amount + samples_to_copy, :] = x[:samples_to_copy, :]
+                # Remaining positions stay zero (already zero-initialized)
             else:
-                # hop_samples >= tail_len, replace entire tail with last tail_len samples of current window
-                zf = x[-tail_len:, :].copy()
+                # hop_samples >= tail_len, replace entire tail with samples from current window
+                if x.shape[0] >= tail_len:
+                    # Normal case: replace entire tail with last tail_len samples of current window
+                    zf = x[-tail_len:, :].copy()
+                else:
+                    # Short window case: copy all available samples, pad remainder with zeros
+                    zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+                    zf[:x.shape[0], :] = x[:, :].copy()
+                    # Remaining tail[x.shape[0]:tail_len] is already zero
         else:
             # First window: pad with zeros, then append first hop_samples
             zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
             if hop_samples <= tail_len:
-                zf[-hop_samples:, :] = x[:hop_samples, :]
+                # Clamp to window_length to prevent out-of-bounds reads
+                samples_to_copy = min(hop_samples, x.shape[0])
+                zf[-samples_to_copy:, :] = x[:samples_to_copy, :]
+                # Remaining positions stay zero (already zero-initialized)
             else:
-                # hop_samples > tail_len (shouldn't happen with 50% overlap)
-                zf = x[-tail_len:, :].copy()
+                # hop_samples > tail_len
+                if x.shape[0] >= tail_len:
+                    # Normal case: use last tail_len samples of current window
+                    zf = x[-tail_len:, :].copy()
+                else:
+                    # Short window case: copy all available samples
+                    zf[:x.shape[0], :] = x[:, :].copy()
+                    # Remaining tail[x.shape[0]:tail_len] is already zero
 
         # Save state for next window
         np.save(state_path, zf)

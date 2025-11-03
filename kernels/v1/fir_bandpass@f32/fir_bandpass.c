@@ -314,8 +314,10 @@ void cortex_process(void *handle, const void *input, void *output) {
         memmove(s->tail, &s->tail[shift_amount * s->channels],
                 keep_amount * s->channels * sizeof(float));
 
-        /* Append new samples to the end: window[0:hop_samples] -> tail[keep_amount:tail_len] */
-        for (size_t sample = 0; sample < (size_t)s->hop_samples; sample++) {
+        /* Append new samples to the end: window[0:min(hop_samples, window_length)] -> tail[keep_amount:keep_amount+available] */
+        /* Clamp to window_length to prevent out-of-bounds reads */
+        const size_t samples_to_copy = (s->hop_samples < s->window_length) ? s->hop_samples : s->window_length;
+        for (size_t sample = 0; sample < samples_to_copy; sample++) {
             for (uint32_t ch = 0; ch < s->channels; ch++) {
                 const uint32_t src_idx = sample * s->channels + ch;
                 const float tail_input = in[src_idx];
@@ -324,18 +326,35 @@ void cortex_process(void *handle, const void *input, void *output) {
                     (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
             }
         }
+        /* If samples_to_copy < hop_samples, remaining tail positions stay zero (from calloc init) */
     } else {
-        /* Non-overlapping or large hop case: replace entire tail with last tail_len samples of current window */
-        /* Copy window[window_length - tail_len:window_length] -> tail[0:tail_len] */
-        const size_t src_start_sample = s->window_length - tail_len;
-        for (size_t sample = 0; sample < tail_len; sample++) {
-            for (uint32_t ch = 0; ch < s->channels; ch++) {
-                const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
-                const float tail_input = in[src_idx];
-                /* Sanitize NaNs when writing to tail buffer */
-                s->tail[sample * s->channels + ch] =
-                    (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+        /* Non-overlapping or large hop case: replace entire tail with samples from current window */
+        if (s->window_length >= tail_len) {
+            /* Normal case: replace entire tail with last tail_len samples of current window */
+            /* Copy window[window_length - tail_len:window_length] -> tail[0:tail_len] */
+            const size_t src_start_sample = s->window_length - tail_len;
+            for (size_t sample = 0; sample < tail_len; sample++) {
+                for (uint32_t ch = 0; ch < s->channels; ch++) {
+                    const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
+                    const float tail_input = in[src_idx];
+                    /* Sanitize NaNs when writing to tail buffer */
+                    s->tail[sample * s->channels + ch] =
+                        (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+                }
             }
+        } else {
+            /* Short window case: copy all available samples, pad remainder with zeros */
+            /* Copy window[0:window_length] -> tail[0:window_length] */
+            for (size_t sample = 0; sample < s->window_length; sample++) {
+                for (uint32_t ch = 0; ch < s->channels; ch++) {
+                    const uint32_t src_idx = sample * s->channels + ch;
+                    const float tail_input = in[src_idx];
+                    /* Sanitize NaNs when writing to tail buffer */
+                    s->tail[sample * s->channels + ch] =
+                        (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+                }
+            }
+            /* Remaining tail[window_length:tail_len] is already zero from calloc init */
         }
     }
 
