@@ -309,7 +309,8 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     printf("  Loading data: %s\n", config->data_path);
 
     /* Create unique state file for this test process */
-    char state_file_template[] = "/tmp/notch_state_XXXXXX";
+    char state_file_template[512];
+    snprintf(state_file_template, sizeof(state_file_template), "/tmp/%s_state_XXXXXX", kernel_name);
     int state_fd = mkstemp(state_file_template);
     if (state_fd < 0) {
         perror("mkstemp failed for state file");
@@ -458,7 +459,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
 static void show_usage(const char *program_name) {
     printf("Usage: %s [options]\n", program_name);
     printf("\nOptions:\n");
-    printf("  --kernel <name>     Test specific kernel (e.g., \"notch_iir\")\n");
+    printf("  --kernel <name>     Test specific kernel (e.g., \"notch_iir\", \"fir_bandpass\")\n");
     printf("  --all               Test all kernels in registry (default)\n");
     printf("  --data <path>       Path to dataset\n");
     printf("  --windows <N>       Number of windows to test (default: 10)\n");
@@ -511,7 +512,7 @@ int main(int argc, char **argv) {
     printf("Kernel Accuracy Test\n");
     printf("====================\n");
     
-    /* For now, only test notch_iir if --kernel specified */
+    /* Test specified kernel if --kernel provided */
     if (config.test_all) {
         printf("Testing all kernels not yet implemented\n");
         return 0;

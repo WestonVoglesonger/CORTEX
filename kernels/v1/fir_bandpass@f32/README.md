@@ -70,9 +70,94 @@ plugins:
 
 See `docs/KERNELS.md` section "Band-pass FIR (8–30 Hz)" for the complete mathematical specification.
 
+## Implementation Details
+
+### Coefficient Precision
+
+The FIR coefficients are **stored as `double` precision** in the C implementation to match Python's `lfilter` internal precision. This ensures exact numerical agreement with the oracle reference implementation, which uses `scipy.signal.lfilter` that operates with double precision coefficients internally.
+
+**Key points:**
+- Coefficients are pre-computed using `scipy.signal.firwin(129, [8, 30], pass_zero=False, fs=160, window='hamming')`
+- Stored as `double` precision constants in `fir_bandpass.c`
+- Output is still `float32` (matching the spec requirement)
+- Accumulation performed in `double` precision for accuracy
+- Final result cast to `float32` for output
+
+### State Management
+
+The filter maintains a **tail buffer** of the last `numtaps-1` (128) input samples per channel across windows. This enables continuous filtering without discontinuities.
+
+**Implementation:**
+- Tail buffer: `(numtaps-1) × channels` float32 values
+- Tail is zero-initialized on first window
+- After processing each window, the last `numtaps-1` input samples are copied to the tail buffer
+- During convolution, samples from before the current window are read from the tail buffer
+
+**Convolution algorithm:**
+- For sample `t` at position `n` in the current window:
+  - For `k ≤ t`: Use sample from current window at position `(t-k)`
+  - For `k > t`: Use sample from tail buffer at index `tail_len - (k - t)`
+
+This ensures proper state persistence across windows and matches the oracle's behavior when prepending the tail to the input.
+
+## Correctness Validation
+
+### Test Methodology
+
+The C implementation is validated against the Python oracle reference implementation using the `test_kernel_accuracy` test suite. The validation process:
+
+1. **Data Loading**: Loads real EEG data from the test dataset (e.g., `S001R03.float32`)
+2. **Parallel Processing**: Processes the same windows through both the C kernel and Python oracle
+3. **State Management**: Maintains identical tail buffer state across windows for both implementations
+4. **Numerical Comparison**: Compares outputs sample-by-sample with strict tolerances
+
+### Tolerances
+
+The implementation must match the oracle within:
+- **Relative tolerance**: `rtol = 1e-5` (0.00001)
+- **Absolute tolerance**: `atol = 1e-6` (0.000001)
+
+A sample passes if both conditions are met:
+- `abs_err > atol AND rel_err > rtol` → mismatch
+- Otherwise → match
+
+### Validation Results
+
+**Status**: ✅ **All tests pass** with exact numerical agreement
+
+The implementation achieves exact matches with the oracle when:
+- Coefficients are stored as `double` precision (matching Python's `lfilter` internal precision)
+- Accumulation is performed in `double` precision
+- Final result is cast to `float32` for output
+
+**Test coverage:**
+- ✅ Multi-window state persistence (tail buffer management)
+- ✅ First window handling (zero-initialized tail)
+- ✅ Subsequent windows (carried tail state)
+- ✅ Edge cases (NaN handling, boundary conditions)
+- ✅ Real EEG data (not just synthetic test cases)
+
+### Running Tests
+
+```bash
+# Test FIR bandpass accuracy
+./tests/test_kernel_accuracy --kernel fir_bandpass --windows 10 --verbose
+
+# Test registry (validates kernel structure)
+./tests/test_kernel_registry
+```
+
+### Oracle Reference
+
+The oracle (`oracle.py`) uses `scipy.signal.firwin` to generate coefficients and `scipy.signal.lfilter` for filtering. The C implementation matches this reference exactly, including:
+- Same filter design parameters (`numtaps=129`, `passband=[8, 30] Hz`, `window='hamming'`)
+- Same state management approach (tail buffer persistence)
+- Same numerical precision (double precision coefficients internally)
+
 ## Implementation Status
 
 - ✅ Specification defined
 - ✅ Oracle implementation (`oracle.py`)
-- ⏳ C implementation pending
+- ✅ C implementation complete
+- ✅ Correctness validated (all tests pass)
 
