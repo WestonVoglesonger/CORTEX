@@ -302,41 +302,27 @@ void cortex_process(void *handle, const void *input, void *output) {
      */
 
 
-    /* Update tail buffer for all channels (equivalent to oracle logic) */
+    /* Update tail buffer in-place (no heap allocation, per ABI requirement) */
     /* Shift existing tail left by hop_samples and append new samples */
     if (s->hop_samples < tail_len) {
         const size_t shift_amount = s->hop_samples;
         const size_t keep_amount = tail_len - shift_amount;
 
-        /* Create a temporary buffer for the new tail */
-        float *new_tail = (float *)malloc(tail_len * s->channels * sizeof(float));
-        if (!new_tail) {
-            /* Fallback: don't update tail if malloc fails */
-            return;
-        }
+        /* Shift kept samples to the beginning of the tail buffer */
+        /* Move tail[shift_amount:tail_len] -> tail[0:keep_amount] */
+        memmove(s->tail, &s->tail[shift_amount * s->channels],
+                keep_amount * s->channels * sizeof(float));
 
-        /* Copy kept portion: tail[shift_amount:tail_len] -> new_tail[0:keep_amount] */
-        for (size_t sample = 0; sample < keep_amount; sample++) {
-            for (uint32_t ch = 0; ch < s->channels; ch++) {
-                new_tail[sample * s->channels + ch] =
-                    s->tail[(shift_amount + sample) * s->channels + ch];
-            }
-        }
-
-        /* Append new samples: window[0:hop_samples] -> new_tail[keep_amount:tail_len] */
+        /* Append new samples to the end: window[0:hop_samples] -> tail[keep_amount:tail_len] */
         for (size_t sample = 0; sample < (size_t)s->hop_samples; sample++) {
             for (uint32_t ch = 0; ch < s->channels; ch++) {
                 const uint32_t src_idx = sample * s->channels + ch;
                 const float tail_input = in[src_idx];
                 /* Sanitize NaNs when writing to tail buffer */
-                new_tail[(keep_amount + sample) * s->channels + ch] =
+                s->tail[(keep_amount + sample) * s->channels + ch] =
                     (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
             }
         }
-
-        /* Copy new tail back to state */
-        memcpy(s->tail, new_tail, tail_len * s->channels * sizeof(float));
-        free(new_tail);
     }
 
 }

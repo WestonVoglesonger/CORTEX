@@ -5,6 +5,7 @@ FIR Bandpass Filter Oracle
 Reference implementation for FIR bandpass kernel validation.
 """
 
+import numpy as np
 from scipy.signal import firwin, lfilter
 
 
@@ -42,7 +43,6 @@ def fir_bp_ref(x, fs=160.0, numtaps=129, zi=None):
 
 
 if __name__ == "__main__":
-    import numpy as np
     import sys
     import os
     
