@@ -245,10 +245,11 @@ void cortex_process(void *handle, const void *input, void *output) {
     if (!handle || !input || !output) {
         return;
     }
-    
+
     fir_bandpass_state_t *s = (fir_bandpass_state_t *)handle;
     const float *in = (const float *)input;
     float *out = (float *)output;
+
     
     const size_t tail_len = FIR_NUMTAPS - 1;
     
@@ -257,11 +258,11 @@ void cortex_process(void *handle, const void *input, void *output) {
         /* Process each sample in the window */
         for (uint32_t t = 0; t < s->window_length; t++) {
             double sum = 0.0;
-            
+
             /* Convolution: y[n] = sum(k=0 to numtaps-1) b[k] * x[n-k] */
             for (uint32_t k = 0; k < FIR_NUMTAPS; k++) {
                 float x_val;
-                
+
                 /* Get x[n-k]: use tail for history, current window for recent */
                 if (k <= t) {
                     /* Use current window: x[t-k] */
@@ -280,48 +281,64 @@ void cortex_process(void *handle, const void *input, void *output) {
                         x_val = 0.0f;
                     }
                 }
-                
+
                 /* Use pre-computed coefficient (already double precision)
                  * Accumulate in double precision for better accuracy */
                 sum += FIR_COEFFICIENTS[k] * (double)x_val;
             }
-            
+
             /* Convert final result to float - ensure consistent rounding */
             out[t * s->channels + ch] = (float)sum;
         }
-        
-        /* Update tail buffer for overlapping windows
-         * The tail should contain the last (FIR_NUMTAPS-1) samples BEFORE the start
-         * of the next window. Since windows overlap by (window_length - hop_samples),
-         * we need to:
-         * 1. Shift existing tail left by hop_samples (discard oldest hop_samples)
-         * 2. Append the first hop_samples of current window to the right
-         * This ensures the tail contains the correct samples BEFORE the next window starts.
-         */
-        /* Shift tail buffer left by hop_samples */
-        if (s->hop_samples < tail_len) {
-            const size_t shift_amount = s->hop_samples;
-            const size_t keep_amount = tail_len - shift_amount;
-            memmove(&s->tail[0 * s->channels + ch],
-                   &s->tail[shift_amount * s->channels + ch],
-                   keep_amount * s->channels * sizeof(float));
+    }
+
+    /* Update tail buffer once per window (after all channels processed) */
+    /* The tail should contain the last (FIR_NUMTAPS-1) samples BEFORE the start
+     * of the next window. Since windows overlap by (window_length - hop_samples),
+     * we need to:
+     * 1. Shift existing tail left by hop_samples (discard oldest hop_samples)
+     * 2. Append the first hop_samples of current window to the right
+     * This ensures the tail contains the correct samples BEFORE the next window starts.
+     */
+
+
+    /* Update tail buffer for all channels (equivalent to oracle logic) */
+    /* Shift existing tail left by hop_samples and append new samples */
+    if (s->hop_samples < tail_len) {
+        const size_t shift_amount = s->hop_samples;
+        const size_t keep_amount = tail_len - shift_amount;
+
+        /* Create a temporary buffer for the new tail */
+        float *new_tail = (float *)malloc(tail_len * s->channels * sizeof(float));
+        if (!new_tail) {
+            /* Fallback: don't update tail if malloc fails */
+            return;
         }
-        
-        /* Append first hop_samples from current window to tail buffer */
-        /* The tail should contain samples BEFORE the start of the next window */
-        /* Since next window starts hop_samples ahead, we need the first hop_samples */
-        /* Only append if hop_samples > 0 and we have space */
-        if (s->hop_samples > 0 && s->hop_samples <= tail_len) {
-            const size_t append_start = tail_len - s->hop_samples;
-            for (uint32_t i = 0; i < s->hop_samples; i++) {
-                const uint32_t src_idx = i * s->channels + ch;  /* First hop_samples, not last */
+
+        /* Copy kept portion: tail[shift_amount:tail_len] -> new_tail[0:keep_amount] */
+        for (size_t sample = 0; sample < keep_amount; sample++) {
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                new_tail[sample * s->channels + ch] =
+                    s->tail[(shift_amount + sample) * s->channels + ch];
+            }
+        }
+
+        /* Append new samples: window[0:hop_samples] -> new_tail[keep_amount:tail_len] */
+        for (size_t sample = 0; sample < (size_t)s->hop_samples; sample++) {
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                const uint32_t src_idx = sample * s->channels + ch;
                 const float tail_input = in[src_idx];
                 /* Sanitize NaNs when writing to tail buffer */
-                s->tail[(append_start + i) * s->channels + ch] = 
+                new_tail[(keep_amount + sample) * s->channels + ch] =
                     (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
             }
         }
+
+        /* Copy new tail back to state */
+        memcpy(s->tail, new_tail, tail_len * s->channels * sizeof(float));
+        free(new_tail);
     }
+
 }
 
 /* Teardown plugin instance */
