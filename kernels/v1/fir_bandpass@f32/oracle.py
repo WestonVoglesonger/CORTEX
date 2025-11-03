@@ -110,8 +110,41 @@ if __name__ == "__main__":
         # Extract only the new window output (skip tail portion)
         y = y_full[numtaps-1:, :]
         
-        # Extract new tail: last numtaps-1 INPUT samples (for next window)
-        zf = x[-numtaps+1:, :].copy()
+        # Extract new tail for overlapping windows
+        # The tail should contain samples BEFORE the start of the next window
+        # Since windows overlap, we need to handle hop size
+        # For now, assume hop_samples = window_length / 2 (50% overlap)
+        # TODO: Make hop_samples configurable in oracle
+        hop_samples = x.shape[0] // 2  # Assume 50% overlap
+        numtaps = 129
+        tail_len = numtaps - 1
+        
+        # For overlapping windows with hop_samples < tail_len:
+        # 1. Shift existing tail left by hop_samples (if we had previous tail)
+        # 2. Append first hop_samples from current window
+        # For first window, tail is zeros, so we just append first hop_samples
+        
+        if zi is not None:
+            # Shift existing tail left by hop_samples
+            # Keep the last (tail_len - hop_samples) samples from old tail
+            keep_amount = tail_len - hop_samples
+            if keep_amount > 0:
+                # Shift: move samples [hop_samples:tail_len] to [0:keep_amount]
+                zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+                zf[:keep_amount, :] = zi[hop_samples:, :]
+                # Append first hop_samples from current window
+                zf[keep_amount:, :] = x[:hop_samples, :]
+            else:
+                # hop_samples >= tail_len, replace entire tail
+                zf = x[:tail_len, :].copy()
+        else:
+            # First window: pad with zeros, then append first hop_samples
+            zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+            if hop_samples <= tail_len:
+                zf[-hop_samples:, :] = x[:hop_samples, :]
+            else:
+                # hop_samples > tail_len (shouldn't happen with 50% overlap)
+                zf = x[-tail_len:, :].copy()
 
         # Save state for next window
         np.save(state_path, zf)
