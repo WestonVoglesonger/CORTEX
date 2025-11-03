@@ -135,8 +135,8 @@ if __name__ == "__main__":
                 # Append first hop_samples from current window
                 zf[keep_amount:, :] = x[:hop_samples, :]
             else:
-                # hop_samples >= tail_len, replace entire tail
-                zf = x[:tail_len, :].copy()
+                # hop_samples >= tail_len, replace entire tail with last tail_len samples of current window
+                zf = x[-tail_len:, :].copy()
         else:
             # First window: pad with zeros, then append first hop_samples
             zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)

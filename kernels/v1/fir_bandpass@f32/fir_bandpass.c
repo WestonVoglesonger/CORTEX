@@ -303,8 +303,9 @@ void cortex_process(void *handle, const void *input, void *output) {
 
 
     /* Update tail buffer in-place (no heap allocation, per ABI requirement) */
-    /* Shift existing tail left by hop_samples and append new samples */
+    /* Always maintain the most recent tail_len samples before the current window */
     if (s->hop_samples < tail_len) {
+        /* Overlapping case: shift existing tail left by hop_samples and append new samples */
         const size_t shift_amount = s->hop_samples;
         const size_t keep_amount = tail_len - shift_amount;
 
@@ -320,6 +321,19 @@ void cortex_process(void *handle, const void *input, void *output) {
                 const float tail_input = in[src_idx];
                 /* Sanitize NaNs when writing to tail buffer */
                 s->tail[(keep_amount + sample) * s->channels + ch] =
+                    (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+            }
+        }
+    } else {
+        /* Non-overlapping or large hop case: replace entire tail with last tail_len samples of current window */
+        /* Copy window[window_length - tail_len:window_length] -> tail[0:tail_len] */
+        const size_t src_start_sample = s->window_length - tail_len;
+        for (size_t sample = 0; sample < tail_len; sample++) {
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
+                const float tail_input = in[src_idx];
+                /* Sanitize NaNs when writing to tail buffer */
+                s->tail[sample * s->channels + ch] =
                     (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
             }
         }
