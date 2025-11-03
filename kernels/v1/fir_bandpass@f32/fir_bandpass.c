@@ -271,7 +271,8 @@ void cortex_process(void *handle, const void *input, void *output) {
                     /* Tail buffer index: tail_len - (k - t) */
                     const size_t tail_idx = tail_len - (k - t);
                     if (tail_idx < tail_len) {
-                        x_val = s->tail[tail_idx * s->channels + ch];
+                        const float tail_raw = s->tail[tail_idx * s->channels + ch];
+                        x_val = (tail_raw == tail_raw) ? tail_raw : 0.0f;  /* NaN handling */
                     } else {
                         /* Should not happen, but handle gracefully */
                         x_val = 0.0f;
@@ -288,9 +289,11 @@ void cortex_process(void *handle, const void *input, void *output) {
         }
         
         /* Update tail: copy last (FIR_NUMTAPS-1) samples from current window */
+        /* Sanitize NaNs when writing to tail buffer to prevent propagation */
         for (uint32_t i = 0; i < tail_len; i++) {
             const uint32_t src_idx = (s->window_length - tail_len + i) * s->channels + ch;
-            s->tail[i * s->channels + ch] = in[src_idx];
+            const float tail_input = in[src_idx];
+            s->tail[i * s->channels + ch] = (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
         }
     }
 }
