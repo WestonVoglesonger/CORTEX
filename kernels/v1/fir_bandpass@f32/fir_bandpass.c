@@ -328,18 +328,34 @@ void cortex_process(void *handle, const void *input, void *output) {
         }
         /* If samples_to_copy < hop_samples, remaining tail positions stay zero (from calloc init) */
     } else {
-        /* Non-overlapping or large hop case: replace entire tail with samples from current window */
+        /* hop_samples >= tail_len: replace entire tail with samples from current window */
         if (s->window_length >= tail_len) {
-            /* Normal case: replace entire tail with last tail_len samples of current window */
-            /* Copy window[window_length - tail_len:window_length] -> tail[0:tail_len] */
-            const size_t src_start_sample = s->window_length - tail_len;
-            for (size_t sample = 0; sample < tail_len; sample++) {
-                for (uint32_t ch = 0; ch < s->channels; ch++) {
-                    const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
-                    const float tail_input = in[src_idx];
-                    /* Sanitize NaNs when writing to tail buffer */
-                    s->tail[sample * s->channels + ch] =
-                        (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+            if (s->hop_samples < s->window_length) {
+                /* Overlapping windows with large hop: tail should end at hop_samples */
+                /* Copy window[hop_samples - tail_len:hop_samples] -> tail[0:tail_len] */
+                /* This ensures tail contains samples immediately preceding the next window start */
+                const size_t src_start_sample = s->hop_samples - tail_len;
+                for (size_t sample = 0; sample < tail_len; sample++) {
+                    for (uint32_t ch = 0; ch < s->channels; ch++) {
+                        const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
+                        const float tail_input = in[src_idx];
+                        /* Sanitize NaNs when writing to tail buffer */
+                        s->tail[sample * s->channels + ch] =
+                            (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+                    }
+                }
+            } else {
+                /* hop_samples >= window_length: windows don't overlap */
+                /* Copy window[window_length - tail_len:window_length] -> tail[0:tail_len] */
+                const size_t src_start_sample = s->window_length - tail_len;
+                for (size_t sample = 0; sample < tail_len; sample++) {
+                    for (uint32_t ch = 0; ch < s->channels; ch++) {
+                        const uint32_t src_idx = (src_start_sample + sample) * s->channels + ch;
+                        const float tail_input = in[src_idx];
+                        /* Sanitize NaNs when writing to tail buffer */
+                        s->tail[sample * s->channels + ch] =
+                            (tail_input == tail_input) ? tail_input : 0.0f;  /* NaN handling */
+                    }
                 }
             }
         } else {
