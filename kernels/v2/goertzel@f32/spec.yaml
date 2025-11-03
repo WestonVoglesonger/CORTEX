@@ -1,0 +1,24 @@
+kernel:
+  name: "goertzel"
+  version: "2.0.0"
+  dtype: "float32"
+
+abi:
+  input_shape: [160, null]  # W from spec, C from dataset
+  output_shape: [2, null]   # B=2 bands from spec, C from dataset
+  stateful: false
+
+numerical:
+  tolerances:
+    float32:
+      rtol: 1.0e-5
+      atol: 1.0e-6
+    quantized:
+      rtol: 1.0e-3
+      atol: 1.0e-3
+
+oracle:
+  path: "oracle.py"
+  function: "goertzel_bandpower_ref"
+  dependencies: ["numpy"]
+

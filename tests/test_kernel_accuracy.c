@@ -242,9 +242,21 @@ static int run_python_oracle(const char *kernel_name, const float *input,
     close(fd_out);  /* Close it, Python will write to it */
     
     /* Build command with unique paths */
-    snprintf(command, sizeof(command),
-             "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
-             kernel_name, input_file, output_file, state_path);
+    /* Detect v2 kernels and use appropriate oracle path */
+    if (strlen(kernel_name) > 3 && strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+        /* Extract base name for v2 kernels */
+        char base_name[64];
+        size_t base_len = strlen(kernel_name) - 3;
+        strncpy(base_name, kernel_name, base_len);
+        base_name[base_len] = '\0';
+        snprintf(command, sizeof(command),
+                 "python3 kernels/v2/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 base_name, input_file, output_file, state_path);
+    } else {
+        snprintf(command, sizeof(command),
+                 "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 kernel_name, input_file, output_file, state_path);
+    }
     
     /* Execute oracle */
     int status = system(command);
@@ -349,7 +361,17 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     /* 3. Load plugin */
     char plugin_path[512];
     char spec_uri[256];
-    snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+    /* Detect v2 kernels (name ends with _v2) and use v2 path */
+    if (strlen(kernel_name) > 3 && strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+        /* Extract base name (e.g., "goertzel" from "goertzel_v2") */
+        char base_name[64];
+        size_t base_len = strlen(kernel_name) - 3;
+        strncpy(base_name, kernel_name, base_len);
+        base_name[base_len] = '\0';
+        snprintf(spec_uri, sizeof(spec_uri), "kernels/v2/%s@f32", base_name);
+    } else {
+        snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+    }
     
     if (cortex_plugin_build_path(spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
         fprintf(stderr, "  Failed to build plugin path for '%s'\n", kernel_name);
