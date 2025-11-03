@@ -5,28 +5,190 @@ FIR Bandpass Filter Oracle
 Reference implementation for FIR bandpass kernel validation.
 """
 
+import numpy as np
 from scipy.signal import firwin, lfilter
 
 
-def fir_bp_ref(x, fs=160.0, numtaps=129):
+def fir_bp_ref(x, fs=160.0, numtaps=129, zi=None):
     """
-    Apply FIR bandpass filter.
+    Apply FIR bandpass filter with state management.
     
     Args:
         x: Input array of shape (W, C) in µV (float32)
         fs: Sampling rate (Hz). Default: 160.0
         numtaps: Number of filter taps. Default: 129
+        zi: Initial filter state (tail). Shape (numtaps-1, C). Optional.
     
     Returns:
         y: Filtered output of shape (W, C) in µV (float32)
+        zf: Final filter state (tail) for state persistence
         b: Filter coefficients
     """
     b = firwin(numtaps, [8, 30], pass_zero=False, fs=fs, window='hamming')
-    return lfilter(b, [1.0], x, axis=0).astype('float32'), b
+    
+    # For FIR filters (a=[1.0]), lfilter doesn't use zi in the standard way
+    # Instead, we manually prepend tail to input for continuous filtering
+    # This matches the C implementation's approach
+    
+    if zi is not None:
+        # Prepend tail to input for continuous filtering
+        x_extended = np.vstack([zi, x])
+        y_full = lfilter(b, [1.0], x_extended, axis=0)
+        # Extract only the new window output (skip tail portion)
+        y = y_full[zi.shape[0]:, :]
+    else:
+        y = lfilter(b, [1.0], x, axis=0)
+    
+    return y.astype('float32'), None, b
 
 
 if __name__ == "__main__":
-    import numpy as np
+    import sys
+    import os
+    
+    # CLI test mode
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        if len(sys.argv) < 3:
+            print("Usage: python3 oracle.py --test <input_file> [--output <output_file>] [--state <state_file>]")
+            sys.exit(1)
+
+        input_path = sys.argv[2]
+        # Default paths (backward compatible)
+        output_path = "/tmp/test_output.bin"
+        state_path = "/tmp/fir_state.npy"
+        
+        # Parse optional --output and --state arguments
+        i = 3
+        while i < len(sys.argv):
+            if sys.argv[i] == "--output" and i + 1 < len(sys.argv):
+                output_path = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--state" and i + 1 < len(sys.argv):
+                state_path = sys.argv[i + 1]
+                i += 2
+            else:
+                print(f"Warning: Unknown argument {sys.argv[i]}")
+                i += 1
+
+        # Load input data (interleaved: [sample0_ch0, sample0_ch1, ..., sample0_ch63, sample1_ch0, ...])
+        x = np.fromfile(input_path, dtype=np.float32)
+        # Reshape to (W, C) assuming W=160, C=64 for now
+        if x.size % 64 != 0:
+            print(f"Error: Input size {x.size} not divisible by 64 channels")
+            sys.exit(1)
+
+        # Assume single window of 160 samples × 64 channels
+        if x.size != 160 * 64:
+            print(f"Error: Expected 10240 floats (160×64), got {x.size}")
+            sys.exit(1)
+
+        x = x.reshape(160, 64)
+
+        # Load persistent state if it exists (tail buffer for FIR)
+        numtaps = 129
+        zi = None
+        if os.path.exists(state_path):
+            zi_loaded = np.load(state_path)
+            # zi should be (numtaps-1, C) = (128, 64) for FIR filter tail
+            if zi_loaded.shape == (numtaps - 1, 64):
+                zi = zi_loaded
+            else:
+                print(f"Warning: State shape {zi_loaded.shape} != expected {(numtaps-1, 64)}, ignoring")
+
+        # Apply filter with persistent state
+        # FIR filter tail is the last numtaps-1 INPUT samples (not output)
+        # Prepend tail to input for continuous filtering
+        if zi is not None:
+            x_with_tail = np.vstack([zi, x])
+        else:
+            # First window: no tail, but pad with zeros for consistency
+            x_with_tail = np.vstack([np.zeros((numtaps - 1, 64), dtype=np.float32), x])
+        
+        # Apply filter to extended input
+        y_full, _, b = fir_bp_ref(x_with_tail, numtaps=numtaps, zi=None)
+        
+        # Extract only the new window output (skip tail portion)
+        y = y_full[numtaps-1:, :]
+        
+        # Extract new tail for overlapping windows
+        # The tail should contain samples BEFORE the start of the next window
+        # Since windows overlap, we need to handle hop size
+        # For now, assume hop_samples = window_length / 2 (50% overlap)
+        # TODO: Make hop_samples configurable in oracle
+        hop_samples = x.shape[0] // 2  # Assume 50% overlap
+        numtaps = 129
+        tail_len = numtaps - 1
+        
+        # For overlapping windows with hop_samples < tail_len:
+        # 1. Shift existing tail left by hop_samples (if we had previous tail)
+        # 2. Append first hop_samples from current window
+        # For first window, tail is zeros, so we just append first hop_samples
+        
+        if zi is not None:
+            # Shift existing tail left by hop_samples
+            # Keep the last (tail_len - hop_samples) samples from old tail
+            keep_amount = tail_len - hop_samples
+            if keep_amount > 0:
+                # Shift: move samples [hop_samples:tail_len] to [0:keep_amount]
+                zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+                zf[:keep_amount, :] = zi[hop_samples:, :]
+                # Append first hop_samples from current window (clamped to available samples)
+                # Clamp to window_length to prevent out-of-bounds reads
+                samples_to_copy = min(hop_samples, x.shape[0])
+                zf[keep_amount:keep_amount + samples_to_copy, :] = x[:samples_to_copy, :]
+                # Remaining positions stay zero (already zero-initialized)
+            else:
+                # hop_samples >= tail_len, replace entire tail with samples from current window
+                if x.shape[0] >= tail_len:
+                    if hop_samples < x.shape[0]:
+                        # Overlapping windows with large hop: tail should end at hop_samples
+                        # Copy x[hop_samples - tail_len:hop_samples] to ensure tail contains samples
+                        # immediately preceding the next window start
+                        zf = x[hop_samples - tail_len:hop_samples, :].copy()
+                    else:
+                        # hop_samples >= window_length: windows don't overlap
+                        # Normal case: replace entire tail with last tail_len samples of current window
+                        zf = x[-tail_len:, :].copy()
+                else:
+                    # Short window case: copy all available samples, pad remainder with zeros
+                    zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+                    zf[:x.shape[0], :] = x[:, :].copy()
+                    # Remaining tail[x.shape[0]:tail_len] is already zero
+        else:
+            # First window: pad with zeros, then append first hop_samples
+            zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+            if hop_samples <= tail_len:
+                # Clamp to window_length to prevent out-of-bounds reads
+                samples_to_copy = min(hop_samples, x.shape[0])
+                zf[-samples_to_copy:, :] = x[:samples_to_copy, :]
+                # Remaining positions stay zero (already zero-initialized)
+            else:
+                # hop_samples > tail_len
+                if x.shape[0] >= tail_len:
+                    if hop_samples < x.shape[0]:
+                        # Overlapping windows with large hop: tail should end at hop_samples
+                        # Copy x[hop_samples - tail_len:hop_samples] to ensure tail contains samples
+                        # immediately preceding the next window start
+                        zf = x[hop_samples - tail_len:hop_samples, :].copy()
+                    else:
+                        # hop_samples >= window_length: windows don't overlap
+                        # Normal case: use last tail_len samples of current window
+                        zf = x[-tail_len:, :].copy()
+                else:
+                    # Short window case: copy all available samples
+                    zf = np.zeros((tail_len, x.shape[1]), dtype=np.float32)
+                    zf[:x.shape[0], :] = x[:, :].copy()
+                    # Remaining tail[x.shape[0]:tail_len] is already zero
+
+        # Save state for next window
+        np.save(state_path, zf)
+
+        # Write output
+        y.astype(np.float32).tofile(output_path)
+
+        # Print info
+        print(f"Processed {x.shape[0]} samples, {x.shape[1]} channels")
+        sys.exit(0)
     
     # Example usage and test
     np.random.seed(42)
@@ -42,7 +204,7 @@ if __name__ == "__main__":
     )
     
     # Apply FIR bandpass filter
-    y, b = fir_bp_ref(x)
+    y, zf, b = fir_bp_ref(x)
     
     print(f"FIR Bandpass Oracle Test")
     print(f"Input shape: {x.shape}")

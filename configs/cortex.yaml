@@ -61,3 +61,9 @@ plugins:
     # params:
     #   f0_hz: 60.0  # Notch frequency
     #   Q: 30.0      # Quality factor
+
+  - name: "fir_bandpass"
+    status: ready
+    spec_uri: "kernels/v1/fir_bandpass@f32"
+    spec_version: "1.0.0"
+    # No params - filter parameters are fixed (numtaps=129, passband=[8,30] Hz)
