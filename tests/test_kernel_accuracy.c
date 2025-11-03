@@ -205,7 +205,7 @@ static int compare_outputs(const float *c_output, const float *py_output,
 /* Run Python oracle via subprocess */
 static int run_python_oracle(const char *kernel_name, const float *input,
                              size_t W, size_t C, float *output,
-                             const char *state_path) {
+                             const char *state_path, size_t output_size) {
     char input_file[] = "/tmp/test_input_XXXXXX";
     char output_file[] = "/tmp/test_output_XXXXXX";
     char command[1024];
@@ -266,13 +266,13 @@ static int run_python_oracle(const char *kernel_name, const float *input,
         return -1;
     }
     
-    size_t read_count = fread(output, sizeof(float), W * C, out);
+    size_t read_count = fread(output, sizeof(float), output_size, out);
     fclose(out);
     unlink(output_file);
     
-    if (read_count != W * C) {
+    if (read_count != output_size) {
         fprintf(stderr, "Partial read: got %zu floats, expected %zu\n", 
-                read_count, W * C);
+                read_count, output_size);
         return -1;
     }
     
@@ -372,6 +372,10 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         return -1;
     }
     
+    /* Get plugin info to determine output shape */
+    cortex_plugin_info_t info = plugin.api.get_info();
+    size_t output_size = info.output_window_length_samples * info.output_channels;
+    
     /* 4. Initialize plugin */
     cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64);
     void *handle = plugin.api.init(&cfg);
@@ -395,15 +399,15 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     /* 6. Test each window */
     int failures = 0;
     for (int i = 0; i < config->max_windows && i < (int)num_windows; i++) {
-        float *c_output = (float *)calloc(W * 64, sizeof(float));
-        float *py_output = (float *)calloc(W * 64, sizeof(float));
+        float *c_output = (float *)calloc(output_size, sizeof(float));
+        float *py_output = (float *)calloc(output_size, sizeof(float));
         
         /* Run C kernel */
         plugin.api.process(handle, windows[i].window_data, c_output);
         
         /* Run Python oracle */
         if (run_python_oracle(kernel_name, windows[i].window_data,
-                             W, 64, py_output, state_file) != 0) {
+                             W, 64, py_output, state_file, output_size) != 0) {
             fprintf(stderr, "  Window %d: Oracle execution failed\n", i);
             failures++;
             free(c_output);
@@ -413,7 +417,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         
         /* Compare */
         comparison_result_t result;
-        compare_outputs(c_output, py_output, W * 64, &tol, &result);
+        compare_outputs(c_output, py_output, output_size, &tol, &result);
         
         if (!result.passed) {
             fprintf(stderr, "  Window %d FAILED: %zu mismatches, "

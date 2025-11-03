@@ -78,5 +78,5 @@ See `docs/KERNELS.md` section "Goertzel Bandpower" for the complete mathematical
 
 - ✅ Specification defined
 - ✅ Oracle implementation (`oracle.py`)
-- ⏳ C implementation pending
+- ✅ C implementation complete and tested
 

@@ -92,6 +92,16 @@ The harness fills this struct before `init()`:
 - `plugins[*].runtime.dtype` → `dtype`  
 - `plugins[*].runtime.allow_in_place` → `allow_in_place`  
 - `plugins[*].params` → serialized into `kernel_params`  
+  **Note (v1)**: Currently NOT implemented. Harness sets `kernel_params = NULL` for all plugins 
+  (see `src/harness/app/main.c` lines 82-83). All v1 kernels use fixed parameters:
+  - `notch_iir`: f0=60 Hz, Q=30 (hardcoded in C)
+  - `fir_bandpass`: numtaps=129, passband=[8,30] Hz (hardcoded)
+  - `goertzel`: bands fixed to alpha (8-13 Hz), beta (13-30 Hz)
+  
+  To enable configurable parameters in future:
+  1. Update harness to serialize YAML `params` → `kernel_params` struct
+  2. Update ALL kernels to parse `kernel_params` if provided, else use defaults
+  3. Update kernel specs to document parameterization  
 
 ---
 
