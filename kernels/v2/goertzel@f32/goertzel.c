@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <alloca.h>
 
-#define CORTEX_ABI_VERSION 1u
+#define CORTEX_ABI_VERSION 2u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 
 /* Fixed frequency bands for v1 (not configurable - kernel_params not passed yet) */
@@ -38,52 +38,32 @@ typedef struct {
     double *coeffs;              /* Pre-computed 2*cos(2πk/N) for all bins */
 } goertzel_state_t;
 
-/* Get plugin metadata */
-cortex_plugin_info_t cortex_get_info(void) {
-    cortex_plugin_info_t info = {0};
-    
-    info.name = "goertzel";
-    info.description = "Goertzel algorithm for computing bandpower (alpha 8-13 Hz, beta 13-30 Hz) - v2 with cache aliasing fix";
-    info.version = "2.0.0";
-    info.supported_dtypes = CORTEX_DTYPE_FLOAT32_MASK;
-    
-    info.input_window_length_samples = 0;  /* Use runtime config */
-    info.input_channels = 0;                 /* Use runtime config */
-    info.output_window_length_samples = 2;   /* Fixed: 2 bands */
-    info.output_channels = 0;                /* Use runtime config (matches input_channels) */
-    
-    /* State size: struct + coefficients array */
-    /* Use conservative estimate: assume up to 50 bins (for Fs=500 Hz, N=160: 30 Hz → ~10 bins, but allow margin) */
-    info.state_bytes = sizeof(goertzel_state_t) + 50 * sizeof(double);
-    info.workspace_bytes = 0;  /* No per-call workspace needed */
-    
-    return info;
-}
-
 /* Initialize plugin instance */
-void *cortex_init(const cortex_plugin_config_t *config) {
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    cortex_init_result_t result = {0};
+    
     if (!config) {
-        return NULL;
+        return result;  /* {NULL, 0, 0} */
     }
 
     /* Validate ABI version */
     if (config->abi_version != CORTEX_ABI_VERSION) {
-        return NULL;
+        return result;
     }
 
     if (config->struct_size < sizeof(cortex_plugin_config_t)) {
-        return NULL;
+        return result;
     }
 
     /* Validate dtype */
     if (config->dtype != CORTEX_DTYPE_FLOAT32) {
-        return NULL;
+        return result;
     }
 
     /* Allocate state structure */
     goertzel_state_t *state = (goertzel_state_t *)calloc(1, sizeof(goertzel_state_t));
     if (!state) {
-        return NULL;
+        return result;
     }
 
     /* Store config values */
@@ -102,25 +82,25 @@ void *cortex_init(const cortex_plugin_config_t *config) {
         fprintf(stderr, "[goertzel] error: invalid alpha band bins: start=%u >= end=%u\n",
                 state->alpha_start_bin, state->alpha_end_bin);
         free(state);
-        return NULL;
+        return result;
     }
     if (state->beta_start_bin >= state->beta_end_bin) {
         fprintf(stderr, "[goertzel] error: invalid beta band bins: start=%u >= end=%u\n",
                 state->beta_start_bin, state->beta_end_bin);
         free(state);
-        return NULL;
+        return result;
     }
     if (state->alpha_end_bin > state->window_length / 2) {
         fprintf(stderr, "[goertzel] error: alpha_end_bin=%u exceeds Nyquist (N/2=%u)\n",
                 state->alpha_end_bin, state->window_length / 2);
         free(state);
-        return NULL;
+        return result;
     }
     if (state->beta_end_bin > state->window_length / 2) {
         fprintf(stderr, "[goertzel] error: beta_end_bin=%u exceeds Nyquist (N/2=%u)\n",
                 state->beta_end_bin, state->window_length / 2);
         free(state);
-        return NULL;
+        return result;
     }
 
     /* Compute total bins: all bins from alpha_start to beta_end (inclusive) */
@@ -130,7 +110,7 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     state->coeffs = (double *)calloc(state->total_bins, sizeof(double));
     if (!state->coeffs) {
         free(state);
-        return NULL;
+        return result;
     }
 
     /* Pre-compute cosine coefficients for all bins */
@@ -140,7 +120,12 @@ void *cortex_init(const cortex_plugin_config_t *config) {
         state->coeffs[bin_idx] = 2.0 * cos(omega);
     }
 
-    return state;
+    /* Set output dimensions */
+    result.handle = state;
+    result.output_window_length_samples = 2;  /* Fixed: 2 bands */
+    result.output_channels = config->channels;  /* Matches input */
+
+    return result;
 }
 
 /* Process one window of data */

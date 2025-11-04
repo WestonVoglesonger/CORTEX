@@ -22,9 +22,8 @@
  *  - Quantization aware: plugins can advertise supported numeric types
  *    (float32 today, Q15/Q7 in future versions) and allocate state/work
  *    buffers accordingly.
- *  - Discoverable: the harness can query basic metadata (name, version,
- *    supported dtypes, I/O shapes and memory requirements) without
- *    instantiating a plugin.
+ *  - Simple initialization: init() returns both handle and output dimensions,
+ *    eliminating the need for separate query functions.
  *
  * See docs/PLUGIN_INTERFACE.md for a human‑readable description and
  * docs/RUN_CONFIG.md for how YAML fields map into this interface.
@@ -44,14 +43,13 @@
   * cortex_plugin_config_t or function signatures.  Plugins should refuse
   * initialization if the provided abi_version does not match this constant.
   */
- #define CORTEX_ABI_VERSION 1u
+ #define CORTEX_ABI_VERSION 2u
  
- /*
-  * Numeric data type supported by the plugin. Dtypes are
-  * communicated both in the config (desired dtype for this run) and
-  * aggregated in cortex_plugin_info_t::supported_dtypes as a bitmask.
-  */
- typedef enum {
+/*
+ * Numeric data type supported by the plugin. Dtypes are
+ * communicated in the config (desired dtype for this run).
+ */
+typedef enum {
      CORTEX_DTYPE_FLOAT32 = 1u << 0, /* 32‑bit IEEE 754 floating point */
      CORTEX_DTYPE_Q15     = 1u << 1, /* 16‑bit fixed‑point (signed Q1.15) */
      CORTEX_DTYPE_Q7      = 1u << 2  /* 8‑bit fixed‑point (signed Q0.7) */
@@ -88,63 +86,34 @@
       */
  } cortex_plugin_config_t;
  
- /*
-  * Metadata describing a plugin’s capabilities.  Returned by
-  * cortex_get_info() prior to instantiation.  All pointers must remain
-  * valid for the lifetime of the plugin binary (static storage).  Fields
-  * that are not applicable should be set to zero or NULL.
-  */
- typedef struct {
-     const char *name;          /* short name (e.g., "car", "notch_iir") */
-     const char *description;   /* human‑readable description */
-     const char *version;       /* semantic version string for this plugin */
- 
-     /* Supported dtypes bitmask; see cortex_dtype_bitmask_t. */
-     uint32_t supported_dtypes;
- 
-     /* Input and output shapes.  For most kernels the input and output
-      * shapes match (e.g., notch, car, FIR).  For kernels that produce
-      * aggregated outputs (e.g., Goertzel bandpower), output_channels may
-      * differ.  The harness allocates output buffers of size
-      * output_window_length_samples × output_channels × sizeof(dtype). */
-     uint32_t input_window_length_samples;
-     uint32_t input_channels;
-     uint32_t output_window_length_samples;
-     uint32_t output_channels;
- 
-     /* Memory footprint hints.  These values help the harness pre‑allocate
-      * state and scratch buffers.  state_bytes is the size of the plugin’s
-      * persistent state per instance (allocated in cortex_init() and freed in
-      * cortex_teardown()).  workspace_bytes is the transient scratch space
-      * required in process(); if zero, the plugin allocates no per‑call
-      * workspace. */
-     uint32_t state_bytes;
-     uint32_t workspace_bytes;
- 
-     /* Reserved for future extensions (e.g., supported window sizes,
-      * quantization tolerances).  Set to zero/NULL. */
-     const void *reserved[4];
- } cortex_plugin_info_t;
- 
- /*
-  * Initialize a plugin instance.
-  *
-  * The harness must call cortex_get_info() before calling cortex_init() to
-  * verify that the plugin supports the requested dtype and shapes.  The
-  * config->abi_version field must match CORTEX_ABI_VERSION and
-  * config->struct_size must be at least sizeof(cortex_plugin_config_t).
-  * The plugin may allocate persistent state based on config and return a
-  * handle pointer.  If initialization fails (unsupported parameters or
-  * allocation failure), the function should return NULL.
-  *
-  * Parameters:
-  *  - config: pointer to configuration structure populated by the harness.
-  *
-  * Returns:
-  *  - opaque handle pointer to be passed to process() and teardown(), or
-  *    NULL on error.
-  */
- void *cortex_init(const cortex_plugin_config_t *config);
+/*
+ * Result structure returned by cortex_init() containing both the plugin handle
+ * and output dimensions.  The handle is NULL if initialization fails.
+ */
+typedef struct {
+    void *handle;                        /* Opaque handle (NULL on error) */
+    uint32_t output_window_length_samples;
+    uint32_t output_channels;
+} cortex_init_result_t;
+
+/*
+ * Initialize a plugin instance.
+ *
+ * The config->abi_version field must match CORTEX_ABI_VERSION and
+ * config->struct_size must be at least sizeof(cortex_plugin_config_t).
+ * The plugin validates the requested dtype and other parameters, allocates
+ * persistent state based on config, and returns both a handle and output
+ * dimensions.  If initialization fails (unsupported dtype/parameters or
+ * allocation failure), the function returns {NULL, 0, 0}.
+ *
+ * Parameters:
+ *  - config: pointer to configuration structure populated by the harness.
+ *
+ * Returns:
+ *  - cortex_init_result_t containing handle and output dimensions.
+ *    Handle is NULL on error.
+ */
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config);
  
  /*
   * Process one window of data.  The harness guarantees that input and
@@ -158,11 +127,11 @@
   *  - input:  pointer to the input buffer of length
   *            config->window_length_samples × config->channels samples.
   *            The data type matches config->dtype.
-  *  - output: pointer to the output buffer.  Must have space for
-  *            info.output_window_length_samples × info.output_channels
-  *            samples of the same data type.
-  */
- void cortex_process(void *handle, const void *input, void *output);
+ *  - output: pointer to the output buffer.  Must have space for
+ *            output_window_length_samples × output_channels samples
+ *            of the same data type (as returned by cortex_init()).
+ */
+void cortex_process(void *handle, const void *input, void *output);
  
  /*
   * Free all resources associated with a plugin instance.  After this
@@ -174,18 +143,7 @@
   */
  void cortex_teardown(void *handle);
  
- /*
-  * Retrieve static metadata about the plugin.  This function must be
-  * callable at any time (even before cortex_init()) and must not
-  * allocate or perform side effects.  All returned pointers must be
-  * constant for the lifetime of the shared library.
-  *
-  * Returns:
-  *  - cortex_plugin_info_t structure describing the plugin’s capabilities.
-  */
- cortex_plugin_info_t cortex_get_info(void);
- 
- #ifdef __cplusplus
+#ifdef __cplusplus
  } /* extern "C" */
  #endif
  

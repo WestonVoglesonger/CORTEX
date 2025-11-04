@@ -394,15 +394,11 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         return -1;
     }
     
-    /* Get plugin info to determine output shape */
-    cortex_plugin_info_t info = plugin.api.get_info();
-    size_t output_size = info.output_window_length_samples * info.output_channels;
-    
     /* 4. Initialize plugin */
     cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64);
-    void *handle = plugin.api.init(&cfg);
+    cortex_init_result_t init_result = plugin.api.init(&cfg);
     
-    if (!handle) {
+    if (!init_result.handle) {
         fprintf(stderr, "  Failed to initialize plugin\n");
         cortex_plugin_unload(&plugin);
         for (size_t i = 0; i < num_windows; i++) {
@@ -412,6 +408,10 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         free(data.data);
         return -1;
     }
+    
+    /* Get output size from init() return value */
+    size_t output_size = init_result.output_window_length_samples * init_result.output_channels;
+    void *handle = init_result.handle;
     
     /* 5. Load tolerances */
     tolerance_t tol = load_tolerances(kernel_name);
