@@ -35,9 +35,20 @@ $$P_k = s[N-1]^2 + s[N-2]^2 - 2cos(\frac{2 \pi k}{N})s[N-1]s[N-2]$$
 
 The algorithm outputs [B×C] where:
 - B = number of bands (default: 2 for alpha + beta)
-- C = number of channels (from config)
+- C = number of channels (from runtime config)
 
 Each element `y[b,c]` is the bandpower for band `b` and channel `c`.
+
+## Dynamic Configuration
+
+The kernel supports dynamic channel counts and window lengths via runtime config:
+
+- **Channels**: `output_channels` matches `input_channels` and both use the runtime `config->channels` value (not hardcoded)
+- **Window length**: Uses runtime `config->window_length_samples` value (not hardcoded)
+- **Sample rate**: Uses runtime `config->sample_rate_hz` value (from dataset config)
+- **Frequency bands**: Currently fixed to alpha (8-13 Hz) and beta (13-30 Hz) until `kernel_params` support is added
+
+The kernel uses the harness fallback mechanism: `get_info()` returns `0` for `input_channels`, `output_channels`, and `input_window_length_samples`, causing the harness to use `scheduler->config` values which match the runtime config.
 
 ## Edge Cases
 

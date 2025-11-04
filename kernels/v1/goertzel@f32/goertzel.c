@@ -47,10 +47,10 @@ cortex_plugin_info_t cortex_get_info(void) {
     info.version = "1.0.0";
     info.supported_dtypes = CORTEX_DTYPE_FLOAT32_MASK;
     
-    info.input_window_length_samples = 160;  /* Default from spec */
-    info.input_channels = 64;                 /* Default from spec */
-    info.output_window_length_samples = 2;    /* Fixed 2 bands for v1 */
-    info.output_channels = 64;                /* Default - actual from config */
+    info.input_window_length_samples = 0;  /* Use runtime config */
+    info.input_channels = 0;                 /* Use runtime config */
+    info.output_window_length_samples = 2;   /* Fixed: 2 bands */
+    info.output_channels = 0;                /* Use runtime config (matches input_channels) */
     
     /* State size: struct + coefficients array */
     /* Use conservative estimate: assume up to 50 bins (for Fs=500 Hz, N=160: 30 Hz → ~10 bins, but allow margin) */
