@@ -25,7 +25,7 @@
 
 typedef struct cortex_scheduler_plugin_entry {
     cortex_scheduler_plugin_api_t api;
-    cortex_plugin_info_t info;
+    const char *plugin_name;  /* For logging/telemetry */
     void *handle;
     void *output_buffer;
     size_t output_bytes;
@@ -149,7 +149,7 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
                                      const cortex_scheduler_plugin_api_t *api,
                                      const cortex_plugin_config_t *plugin_config) {
-    if (!scheduler || !api || !api->init || !api->process || !api->teardown || !api->get_info || !plugin_config) {
+    if (!scheduler || !api || !api->init || !api->process || !api->teardown || !plugin_config) {
         return -EINVAL;
     }
 
@@ -161,13 +161,7 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     memset(entry, 0, sizeof(*entry));
 
     entry->api = *api;
-    entry->info = entry->api.get_info();
-
-    if (!(entry->info.supported_dtypes & plugin_config->dtype)) {
-        fprintf(stderr, "[scheduler] plugin '%s' missing requested dtype support\n",
-                entry->info.name ? entry->info.name : "(unnamed)");
-        return -EINVAL;
-    }
+    entry->plugin_name = "(unnamed)";  /* Plugin name not available without get_info() */
 
     entry->config_size = plugin_config->struct_size;
     entry->config_blob = calloc(1, entry->config_size);
@@ -176,21 +170,21 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     }
     memcpy(entry->config_blob, plugin_config, entry->config_size);
 
-    entry->handle = entry->api.init((const cortex_plugin_config_t *)entry->config_blob);
-    if (!entry->handle) {
-        fprintf(stderr, "[scheduler] plugin '%s' failed init()\n",
-                entry->info.name ? entry->info.name : "(unnamed)");
+    /* Call init() - it validates dtype and returns handle + output dimensions */
+    cortex_init_result_t init_result = entry->api.init((const cortex_plugin_config_t *)entry->config_blob);
+    if (!init_result.handle) {
+        fprintf(stderr, "[scheduler] plugin '%s' failed init()\n", entry->plugin_name);
         free(entry->config_blob);
         entry->config_blob = NULL;
         return -EINVAL;
     }
 
-    const uint32_t out_w = entry->info.output_window_length_samples ?
-                           entry->info.output_window_length_samples : scheduler->config.window_length_samples;
-    const uint32_t out_c = entry->info.output_channels ?
-                           entry->info.output_channels : scheduler->config.channels;
+    entry->handle = init_result.handle;
+
+    /* Allocate output buffer using dimensions from init() */
     const size_t element_size = sizeof(float); /* TODO: support Q15/Q7 */
-    entry->output_bytes = (size_t)out_w * out_c * element_size;
+    entry->output_bytes = (size_t)init_result.output_window_length_samples * 
+                          init_result.output_channels * element_size;
     entry->output_buffer = calloc(1, entry->output_bytes);
     if (!entry->output_buffer) {
         entry->api.teardown(entry->handle);
@@ -410,7 +404,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
     /* Print simple log */
     fprintf(stdout,
             "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d\n",
-            plugin->info.name ? plugin->info.name : "(unnamed)",
+            plugin->plugin_name ? plugin->plugin_name : "(unnamed)",
             (unsigned long long)latency_ns,
             deadline_missed);
 
@@ -419,7 +413,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         cortex_telemetry_buffer_t *buffer = (cortex_telemetry_buffer_t *)scheduler->config.telemetry_buffer;
         cortex_telemetry_record_t rec = {0};
         strncpy(rec.run_id, scheduler->run_id, sizeof(rec.run_id)-1);
-        strncpy(rec.plugin_name, plugin->info.name ? plugin->info.name : "(unnamed)", sizeof(rec.plugin_name)-1);
+        strncpy(rec.plugin_name, plugin->plugin_name ? plugin->plugin_name : "(unnamed)", sizeof(rec.plugin_name)-1);
         rec.window_index = scheduler->window_count;
         rec.release_ts_ns = rel_ns;
         rec.deadline_ts_ns = ddl_ns;
@@ -444,7 +438,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
             ((cortex_scheduler_t *)scheduler)->telemetry_header_written = 1;
         }
         fprintf(f, "%s,%llu,%llu,%llu,%llu,%llu,%d,%u,%u,%u,%u\n",
-                plugin->info.name ? plugin->info.name : "(unnamed)",
+                plugin->plugin_name ? plugin->plugin_name : "(unnamed)",
                 (unsigned long long)scheduler->window_count,
                 (unsigned long long)rel_ns,
                 (unsigned long long)ddl_ns,

@@ -59,25 +59,12 @@ typedef struct {
     int copy_data;
 } mock_plugin_state_t;
 
-static cortex_plugin_info_t mock_get_info(void) {
-    cortex_plugin_info_t info = {0};
-    info.name = "mock_plugin";
-    info.description = "Mock plugin for testing";
-    info.version = "1.0.0";
-    info.supported_dtypes = 1; /* CORTEX_DTYPE_FLOAT32 */
-    info.input_window_length_samples = 0; /* Set by config */
-    info.input_channels = 0;
-    info.output_window_length_samples = 0;
-    info.output_channels = 0;
-    info.state_bytes = sizeof(mock_plugin_state_t);
-    info.workspace_bytes = 0;
-    return info;
-}
-
-static void *mock_init(const cortex_plugin_config_t *config) {
+static cortex_init_result_t mock_init(const cortex_plugin_config_t *config) {
+    cortex_init_result_t result = {0};
+    
     mock_plugin_state_t *state = calloc(1, sizeof(mock_plugin_state_t));
     if (!state) {
-        return NULL;
+        return result;  /* {NULL, 0, 0} */
     }
     
     state->expected_window_samples = config->window_length_samples * config->channels;
@@ -85,7 +72,12 @@ static void *mock_init(const cortex_plugin_config_t *config) {
     state->received_windows = calloc(state->received_windows_capacity, sizeof(float *));
     state->copy_data = 1; /* By default, copy data for verification */
     
-    return state;
+    /* Set output dimensions (matches input) */
+    result.handle = state;
+    result.output_window_length_samples = config->window_length_samples;
+    result.output_channels = config->channels;
+    
+    return result;
 }
 
 static void mock_process(void *handle, const void *input, void *output) {
@@ -153,14 +145,13 @@ static int test_window_formation(void) {
     
     /* Register mock plugin to catch windows */
     cortex_scheduler_plugin_api_t api = {
-        .get_info = mock_get_info,
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
     
     cortex_plugin_config_t plugin_config = {0};
-    plugin_config.abi_version = 1;
+    plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
     plugin_config.sample_rate_hz = sample_rate;
     plugin_config.window_length_samples = window_length;
@@ -207,14 +198,13 @@ static int test_overlapping_windows(void) {
     
     /* Register plugin first */
     cortex_scheduler_plugin_api_t api = {
-        .get_info = mock_get_info,
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
     
     cortex_plugin_config_t plugin_config = {0};
-    plugin_config.abi_version = 1;
+    plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
     plugin_config.sample_rate_hz = 160;
     plugin_config.window_length_samples = window_length;
@@ -307,14 +297,13 @@ static int test_multiple_plugins(void) {
     
     /* Register 3 plugins */
     cortex_scheduler_plugin_api_t api = {
-        .get_info = mock_get_info,
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
     
     cortex_plugin_config_t plugin_config = {0};
-    plugin_config.abi_version = 1;
+    plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
     plugin_config.sample_rate_hz = 160;
     plugin_config.window_length_samples = window_length;
@@ -393,14 +382,13 @@ static int test_flush(void) {
     
     /* Register plugin */
     cortex_scheduler_plugin_api_t api = {
-        .get_info = mock_get_info,
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
     
     cortex_plugin_config_t plugin_config = {0};
-    plugin_config.abi_version = 1;
+    plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
     plugin_config.sample_rate_hz = 160;
     plugin_config.window_length_samples = window_length;
@@ -479,14 +467,13 @@ static int test_sequential_execution(void) {
 
         /* Register a plugin to this scheduler */
         cortex_scheduler_plugin_api_t api = {
-            .get_info = mock_get_info,
             .init = mock_init,
             .process = mock_process,
             .teardown = mock_teardown
         };
 
         cortex_plugin_config_t plugin_config = {0};
-        plugin_config.abi_version = 1;
+        plugin_config.abi_version = 2;
         plugin_config.struct_size = sizeof(cortex_plugin_config_t);
         plugin_config.sample_rate_hz = 160;
         plugin_config.window_length_samples = window_length;
@@ -534,14 +521,13 @@ static int test_data_continuity(void) {
     
     /* Register plugin */
     cortex_scheduler_plugin_api_t api = {
-        .get_info = mock_get_info,
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
     
     cortex_plugin_config_t plugin_config = {0};
-    plugin_config.abi_version = 1;
+    plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
     plugin_config.sample_rate_hz = 160;
     plugin_config.window_length_samples = window_length;

@@ -205,7 +205,7 @@ static int compare_outputs(const float *c_output, const float *py_output,
 /* Run Python oracle via subprocess */
 static int run_python_oracle(const char *kernel_name, const float *input,
                              size_t W, size_t C, float *output,
-                             const char *state_path) {
+                             const char *state_path, size_t output_size) {
     char input_file[] = "/tmp/test_input_XXXXXX";
     char output_file[] = "/tmp/test_output_XXXXXX";
     char command[1024];
@@ -242,9 +242,21 @@ static int run_python_oracle(const char *kernel_name, const float *input,
     close(fd_out);  /* Close it, Python will write to it */
     
     /* Build command with unique paths */
-    snprintf(command, sizeof(command),
-             "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
-             kernel_name, input_file, output_file, state_path);
+    /* Detect v2 kernels and use appropriate oracle path */
+    if (strlen(kernel_name) > 3 && strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+        /* Extract base name for v2 kernels */
+        char base_name[64];
+        size_t base_len = strlen(kernel_name) - 3;
+        strncpy(base_name, kernel_name, base_len);
+        base_name[base_len] = '\0';
+        snprintf(command, sizeof(command),
+                 "python3 kernels/v2/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 base_name, input_file, output_file, state_path);
+    } else {
+        snprintf(command, sizeof(command),
+                 "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 kernel_name, input_file, output_file, state_path);
+    }
     
     /* Execute oracle */
     int status = system(command);
@@ -266,13 +278,13 @@ static int run_python_oracle(const char *kernel_name, const float *input,
         return -1;
     }
     
-    size_t read_count = fread(output, sizeof(float), W * C, out);
+    size_t read_count = fread(output, sizeof(float), output_size, out);
     fclose(out);
     unlink(output_file);
     
-    if (read_count != W * C) {
+    if (read_count != output_size) {
         fprintf(stderr, "Partial read: got %zu floats, expected %zu\n", 
-                read_count, W * C);
+                read_count, output_size);
         return -1;
     }
     
@@ -349,7 +361,17 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     /* 3. Load plugin */
     char plugin_path[512];
     char spec_uri[256];
-    snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+    /* Detect v2 kernels (name ends with _v2) and use v2 path */
+    if (strlen(kernel_name) > 3 && strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+        /* Extract base name (e.g., "goertzel" from "goertzel_v2") */
+        char base_name[64];
+        size_t base_len = strlen(kernel_name) - 3;
+        strncpy(base_name, kernel_name, base_len);
+        base_name[base_len] = '\0';
+        snprintf(spec_uri, sizeof(spec_uri), "kernels/v2/%s@f32", base_name);
+    } else {
+        snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+    }
     
     if (cortex_plugin_build_path(spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
         fprintf(stderr, "  Failed to build plugin path for '%s'\n", kernel_name);
@@ -374,9 +396,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     
     /* 4. Initialize plugin */
     cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64);
-    void *handle = plugin.api.init(&cfg);
+    cortex_init_result_t init_result = plugin.api.init(&cfg);
     
-    if (!handle) {
+    if (!init_result.handle) {
         fprintf(stderr, "  Failed to initialize plugin\n");
         cortex_plugin_unload(&plugin);
         for (size_t i = 0; i < num_windows; i++) {
@@ -387,6 +409,10 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         return -1;
     }
     
+    /* Get output size from init() return value */
+    size_t output_size = init_result.output_window_length_samples * init_result.output_channels;
+    void *handle = init_result.handle;
+    
     /* 5. Load tolerances */
     tolerance_t tol = load_tolerances(kernel_name);
     
@@ -395,15 +421,15 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     /* 6. Test each window */
     int failures = 0;
     for (int i = 0; i < config->max_windows && i < (int)num_windows; i++) {
-        float *c_output = (float *)calloc(W * 64, sizeof(float));
-        float *py_output = (float *)calloc(W * 64, sizeof(float));
+        float *c_output = (float *)calloc(output_size, sizeof(float));
+        float *py_output = (float *)calloc(output_size, sizeof(float));
         
         /* Run C kernel */
         plugin.api.process(handle, windows[i].window_data, c_output);
         
         /* Run Python oracle */
         if (run_python_oracle(kernel_name, windows[i].window_data,
-                             W, 64, py_output, state_file) != 0) {
+                             W, 64, py_output, state_file, output_size) != 0) {
             fprintf(stderr, "  Window %d: Oracle execution failed\n", i);
             failures++;
             free(c_output);
@@ -413,7 +439,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         
         /* Compare */
         comparison_result_t result;
-        compare_outputs(c_output, py_output, W * 64, &tol, &result);
+        compare_outputs(c_output, py_output, output_size, &tol, &result);
         
         if (!result.passed) {
             fprintf(stderr, "  Window %d FAILED: %zu mismatches, "

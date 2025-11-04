@@ -13,7 +13,7 @@
 #include <float.h>
 #include <stdio.h>
 
-#define CORTEX_ABI_VERSION 1u
+#define CORTEX_ABI_VERSION 2u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 
 /* Default notch filter parameters (used when no params provided) */
@@ -73,39 +73,26 @@ static void compute_notch_coefficients(double f0, double Q, double fs,
     }
 }
 
-/* Get plugin metadata */
-cortex_plugin_info_t cortex_get_info(void) {
-    cortex_plugin_info_t info = {0};
-    
-    info.name = "notch_iir";
-    info.description = "Second-order notch IIR filter for line noise removal (60 Hz)";
-    info.version = "1.0.0";
-    info.supported_dtypes = CORTEX_DTYPE_FLOAT32_MASK;
-    
-    info.input_window_length_samples = 160;
-    info.input_channels = 64;  /* From dataset specification */
-    info.output_window_length_samples = 160;
-    info.output_channels = 64;
-    
-    info.state_bytes = sizeof(notch_iir_state_t) + 4 * 64 * sizeof(float);
-    info.workspace_bytes = 0;  /* No per-call workspace needed */
-    
-    return info;
-}
-
 /* Initialize plugin instance */
-void *cortex_init(const cortex_plugin_config_t *config) {
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    cortex_init_result_t result = {0};
+    
     if (!config) {
-        return NULL;
+        return result;  /* {NULL, 0, 0} */
     }
 
     /* Validate ABI version */
     if (config->abi_version != CORTEX_ABI_VERSION) {
-        return NULL;
+        return result;
     }
 
     if (config->struct_size < sizeof(cortex_plugin_config_t)) {
-        return NULL;
+        return result;
+    }
+
+    /* Validate dtype */
+    if (config->dtype != CORTEX_DTYPE_FLOAT32) {
+        return result;
     }
 
     /* Parse kernel parameters (when harness supports it) */
@@ -123,7 +110,7 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     /* Allocate state structure */
     notch_iir_state_t *state = (notch_iir_state_t *)calloc(1, sizeof(notch_iir_state_t));
     if (!state) {
-        return NULL;
+        return result;
     }
 
     state->channels = config->channels;
@@ -140,10 +127,15 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     state->state = (double *)calloc(state_elements, sizeof(double));
     if (!state->state) {
         free(state);
-        return NULL;
+        return result;
     }
     
-    return state;
+    /* Set output dimensions (matches input) */
+    result.handle = state;
+    result.output_window_length_samples = config->window_length_samples;
+    result.output_channels = config->channels;
+    
+    return result;
 }
 
 /* Process one window of data */

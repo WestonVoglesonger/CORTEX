@@ -48,8 +48,7 @@ typedef struct cortex_scheduler_t cortex_scheduler_t;
  * these functions from a shared object (dlopen/dlsym) and forward them here.
  */
 typedef struct cortex_scheduler_plugin_api {
-    cortex_plugin_info_t (*get_info)(void);
-    void *(*init)(const cortex_plugin_config_t *config);
+    cortex_init_result_t (*init)(const cortex_plugin_config_t *config);
     void (*process)(void *handle, const void *input, void *output);
     void (*teardown)(void *handle);
 } cortex_scheduler_plugin_api_t;

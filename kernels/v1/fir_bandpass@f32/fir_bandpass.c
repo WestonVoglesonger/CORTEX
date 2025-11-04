@@ -13,7 +13,7 @@
 #include <float.h>
 #include <stdio.h>
 
-#define CORTEX_ABI_VERSION 1u
+#define CORTEX_ABI_VERSION 2u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 
 /* Fixed FIR parameters (per specification) */
@@ -166,46 +166,26 @@ typedef struct {
     float *tail;  /* [(FIR_NUMTAPS-1) × channels] tail buffer */
 } fir_bandpass_state_t;
 
-/* Get plugin metadata */
-cortex_plugin_info_t cortex_get_info(void) {
-    cortex_plugin_info_t info = {0};
-    
-    info.name = "fir_bandpass";
-    info.description = "Linear-phase FIR bandpass filter (8-30 Hz, 129 taps)";
-    info.version = "1.0.0";
-    info.supported_dtypes = CORTEX_DTYPE_FLOAT32_MASK;
-    
-    info.input_window_length_samples = 160;  /* Default from spec */
-    info.input_channels = 64;                 /* Default from dataset spec */
-    info.output_window_length_samples = 160;
-    info.output_channels = 64;
-    
-    /* State size: struct + tail buffer only (coefficients are static) */
-    const size_t tail_size = (FIR_NUMTAPS - 1) * 64; /* Default channels */
-    info.state_bytes = sizeof(fir_bandpass_state_t) + (tail_size * sizeof(float));
-    info.workspace_bytes = 0;
-    
-    return info;
-}
-
 /* Initialize plugin instance */
-void *cortex_init(const cortex_plugin_config_t *config) {
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    cortex_init_result_t result = {0};
+    
     if (!config) {
-        return NULL;
+        return result;  /* {NULL, 0, 0} */
     }
 
     /* Validate ABI version */
     if (config->abi_version != CORTEX_ABI_VERSION) {
-        return NULL;
+        return result;
     }
 
     if (config->struct_size < sizeof(cortex_plugin_config_t)) {
-        return NULL;
+        return result;
     }
 
     /* Validate dtype */
     if (config->dtype != CORTEX_DTYPE_FLOAT32) {
-        return NULL;
+        return result;
     }
 
     /* Validate sample rate matches coefficient design (optional warning) */
@@ -218,7 +198,7 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     /* Allocate state structure */
     fir_bandpass_state_t *state = (fir_bandpass_state_t *)calloc(1, sizeof(fir_bandpass_state_t));
     if (!state) {
-        return NULL;
+        return result;
     }
 
     /* Store config values */
@@ -231,13 +211,18 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     state->tail = (float *)calloc(tail_elements, sizeof(float));
     if (!state->tail) {
         free(state);
-        return NULL;
+        return result;
     }
     /* Tail is zero-initialized by calloc */
 
     /* NO COEFFICIENT COMPUTATION - use pre-computed static array */
 
-    return state;
+    /* Set output dimensions (matches input) */
+    result.handle = state;
+    result.output_window_length_samples = config->window_length_samples;
+    result.output_channels = config->channels;
+
+    return result;
 }
 
 /* Process one window of data */

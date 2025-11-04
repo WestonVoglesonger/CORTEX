@@ -53,17 +53,30 @@ output:
 # The harness loads dimensions (W, H, C) from the kernel spec.yaml
 # and dtype from the spec. Dataset channels must match spec channels.
 plugins:
-  - name: "notch_iir"
-    status: ready
-    spec_uri: "kernels/v1/notch_iir@f32"
-    spec_version: "1.0.0"
-    # FUTURE: params section for runtime kernel parameters
-    # params:
-    #   f0_hz: 60.0  # Notch frequency
-    #   Q: 30.0      # Quality factor
+  # - name: "notch_iir"
+  #   status: ready
+  #   spec_uri: "kernels/v1/notch_iir@f32"
+  #   spec_version: "1.0.0"
+  #   # FUTURE: params section for runtime kernel parameters
+  #   # params:
+  #   #   f0_hz: 60.0  # Notch frequency
+  #   #   Q: 30.0      # Quality factor
 
-  - name: "fir_bandpass"
+  # - name: "fir_bandpass"
+  #   status: ready
+  #   spec_uri: "kernels/v1/fir_bandpass@f32"
+  #   spec_version: "1.0.0"
+  #   # No params - filter parameters are fixed (numtaps=129, passband=[8,30] Hz)
+
+  - name: "goertzel"
     status: ready
-    spec_uri: "kernels/v1/fir_bandpass@f32"
+    spec_uri: "kernels/v1/goertzel@f32"
     spec_version: "1.0.0"
-    # No params - filter parameters are fixed (numtaps=129, passband=[8,30] Hz)
+    # No params - band definitions are fixed (alpha: 8-13 Hz, beta: 13-30 Hz)
+
+  - name: "goertzel_v2"
+    status: ready
+    spec_uri: "kernels/v2/goertzel@f32"
+    spec_version: "2.0.0"
+    # v2: Same algorithm, optimized memory layout to fix cache aliasing
+    # Fixes bimodal performance distribution (360µs gap) from v1
