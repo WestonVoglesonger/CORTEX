@@ -10,7 +10,9 @@ Goertzel algorithm for computing bandpower in specified frequency bands. Operate
 
 Input [W×C] µV → Output [B×C] µV², where B = number of defined bands.
 
-For window length N = W = 160 and bin k (frequency = `f_k = k*F_s/N = k` Hz at Fs=160):
+For window length N = W and bin k, frequency = `f_k = k*F_s/N`.
+
+**Frequency-to-bin conversion**: Frequency bands (Hz) are converted to bin indices using `k = round(f * N / Fs)`. This allows the kernel to work correctly with any sample rate and window length.
 
 **Recurrence relation**:
 $$s[n] = x[n] + 2 cos (\frac{2 \pi k}{N})s[n-1]-s[n-2]$$
@@ -22,24 +24,27 @@ $$P_k = s[N-1]^2 + s[N-2]^2 - 2cos(\frac{2 \pi k}{N})s[N-1]s[N-2]$$
 
 ## Parameters
 
-- `bands`: Dictionary of band names and frequency ranges
+- `bands`: Dictionary of band names and frequency ranges (in Hz)
   - Default: `{'alpha':(8,13), 'beta':(13,30)}`
   - Produces B=2 bands
-- `fs`: Sampling rate (Hz). Fixed at 160 Hz
+  - Bands are converted to bin indices based on configured `Fs` and `N`
+- `fs`: Sampling rate (Hz). Supports any sample rate (not limited to 160 Hz)
+- Window length `N`: Supports any window length (not limited to 160 samples)
 
 ## Output Shape
 
 The algorithm outputs [B×C] where:
 - B = number of bands (default: 2 for alpha + beta)
-- C = number of channels (64)
+- C = number of channels (from config)
 
 Each element `y[b,c]` is the bandpower for band `b` and channel `c`.
 
 ## Edge Cases
 
 - **Stateless**: Operates on each window independently (no state persists)
-- **Frequency resolution**: With N=160 and Fs=160 Hz, frequency resolution is 1 Hz/bin
-- **Band definition**: Bins at boundaries are included (e.g., alpha band includes both 8 Hz and 13 Hz bins)
+- **Frequency resolution**: Frequency resolution is `Fs/N` Hz/bin (e.g., Fs=160 Hz, N=160 → 1 Hz/bin)
+- **Band definition**: Bins are computed by rounding `f * N / Fs`, so bands track the configured sample rate correctly
+- **Nyquist limit**: Bins exceeding Nyquist frequency (Fs/2) are rejected at initialization
 
 ## Acceptance Criteria
 

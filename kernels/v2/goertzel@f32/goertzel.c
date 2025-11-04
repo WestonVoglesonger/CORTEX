@@ -17,28 +17,25 @@
 #define CORTEX_ABI_VERSION 1u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 
-/* Fixed bands for v1 (not configurable - kernel_params not passed yet) */
+/* Fixed frequency bands for v1 (not configurable - kernel_params not passed yet) */
 #define ALPHA_LOW_HZ 8
 #define ALPHA_HIGH_HZ 13
 #define BETA_LOW_HZ 13
 #define BETA_HIGH_HZ 30
 
-/* Frequency bin ranges (inclusive) */
-#define ALPHA_START_BIN 8
-#define ALPHA_END_BIN 13
-#define BETA_START_BIN 13
-#define BETA_END_BIN 30
-
-/* Total bins to compute: k=8..30 inclusive = 23 bins */
-#define TOTAL_BINS (BETA_END_BIN - ALPHA_START_BIN + 1)
 #define NUM_BANDS 2  /* Alpha and beta for v1 */
 
 /* State structure for Goertzel bandpower */
 typedef struct {
-    uint32_t channels;          /* From config (not hardcoded 64) */
-    uint32_t window_length;     /* From config (should be 160) */
-    uint32_t sample_rate_hz;    /* From config (should be 160) */
-    double *coeffs;             /* Pre-computed 2*cos(2πk/N) for k=8..30 */
+    uint32_t channels;          /* From config */
+    uint32_t window_length;     /* From config */
+    uint32_t sample_rate_hz;     /* From config */
+    uint32_t alpha_start_bin;    /* Computed from ALPHA_LOW_HZ: round(ALPHA_LOW_HZ * N / Fs) */
+    uint32_t alpha_end_bin;      /* Computed from ALPHA_HIGH_HZ: round(ALPHA_HIGH_HZ * N / Fs) */
+    uint32_t beta_start_bin;     /* Computed from BETA_LOW_HZ: round(BETA_LOW_HZ * N / Fs) */
+    uint32_t beta_end_bin;       /* Computed from BETA_HIGH_HZ: round(BETA_HIGH_HZ * N / Fs) */
+    uint32_t total_bins;         /* Computed: beta_end_bin - alpha_start_bin + 1 */
+    double *coeffs;              /* Pre-computed 2*cos(2πk/N) for all bins */
 } goertzel_state_t;
 
 /* Get plugin metadata */
@@ -56,7 +53,8 @@ cortex_plugin_info_t cortex_get_info(void) {
     info.output_channels = 64;                /* Default - actual from config */
     
     /* State size: struct + coefficients array */
-    info.state_bytes = sizeof(goertzel_state_t) + TOTAL_BINS * sizeof(double);
+    /* Use conservative estimate: assume up to 50 bins (for Fs=500 Hz, N=160: 30 Hz → ~10 bins, but allow margin) */
+    info.state_bytes = sizeof(goertzel_state_t) + 50 * sizeof(double);
     info.workspace_bytes = 0;  /* No per-call workspace needed */
     
     return info;
@@ -82,18 +80,6 @@ void *cortex_init(const cortex_plugin_config_t *config) {
         return NULL;
     }
 
-    /* Warn if sample rate doesn't match expected value (but don't fail) */
-    if (config->sample_rate_hz != 160) {
-        fprintf(stderr, "[goertzel] warning: coefficients designed for 160 Hz, "
-                "config has %u Hz\n", config->sample_rate_hz);
-    }
-
-    /* Warn if window length doesn't match expected value (but don't fail) */
-    if (config->window_length_samples != 160) {
-        fprintf(stderr, "[goertzel] warning: algorithm designed for 160 samples, "
-                "config has %u samples\n", config->window_length_samples);
-    }
-
     /* Allocate state structure */
     goertzel_state_t *state = (goertzel_state_t *)calloc(1, sizeof(goertzel_state_t));
     if (!state) {
@@ -101,21 +87,57 @@ void *cortex_init(const cortex_plugin_config_t *config) {
     }
 
     /* Store config values */
-    state->channels = config->channels;  /* Use from config, not hardcoded */
+    state->channels = config->channels;
     state->window_length = config->window_length_samples;
     state->sample_rate_hz = config->sample_rate_hz;
 
-    /* Allocate coefficients array: 23 bins (k=8..30) */
-    state->coeffs = (double *)calloc(TOTAL_BINS, sizeof(double));
+    /* Compute bin indices from Hz frequency bands: k = round(f * N / Fs) */
+    state->alpha_start_bin = (uint32_t)round((double)ALPHA_LOW_HZ * (double)state->window_length / (double)state->sample_rate_hz);
+    state->alpha_end_bin = (uint32_t)round((double)ALPHA_HIGH_HZ * (double)state->window_length / (double)state->sample_rate_hz);
+    state->beta_start_bin = (uint32_t)round((double)BETA_LOW_HZ * (double)state->window_length / (double)state->sample_rate_hz);
+    state->beta_end_bin = (uint32_t)round((double)BETA_HIGH_HZ * (double)state->window_length / (double)state->sample_rate_hz);
+
+    /* Validate bin ranges */
+    if (state->alpha_start_bin >= state->alpha_end_bin) {
+        fprintf(stderr, "[goertzel] error: invalid alpha band bins: start=%u >= end=%u\n",
+                state->alpha_start_bin, state->alpha_end_bin);
+        free(state);
+        return NULL;
+    }
+    if (state->beta_start_bin >= state->beta_end_bin) {
+        fprintf(stderr, "[goertzel] error: invalid beta band bins: start=%u >= end=%u\n",
+                state->beta_start_bin, state->beta_end_bin);
+        free(state);
+        return NULL;
+    }
+    if (state->alpha_end_bin > state->window_length / 2) {
+        fprintf(stderr, "[goertzel] error: alpha_end_bin=%u exceeds Nyquist (N/2=%u)\n",
+                state->alpha_end_bin, state->window_length / 2);
+        free(state);
+        return NULL;
+    }
+    if (state->beta_end_bin > state->window_length / 2) {
+        fprintf(stderr, "[goertzel] error: beta_end_bin=%u exceeds Nyquist (N/2=%u)\n",
+                state->beta_end_bin, state->window_length / 2);
+        free(state);
+        return NULL;
+    }
+
+    /* Compute total bins: all bins from alpha_start to beta_end (inclusive) */
+    state->total_bins = state->beta_end_bin - state->alpha_start_bin + 1;
+
+    /* Allocate coefficients array */
+    state->coeffs = (double *)calloc(state->total_bins, sizeof(double));
     if (!state->coeffs) {
         free(state);
         return NULL;
     }
 
-    /* Pre-compute cosine coefficients for all bins k=8..30 */
-    for (uint32_t k = ALPHA_START_BIN; k <= BETA_END_BIN; k++) {
+    /* Pre-compute cosine coefficients for all bins */
+    for (uint32_t k = state->alpha_start_bin; k <= state->beta_end_bin; k++) {
         double omega = 2.0 * M_PI * (double)k / (double)state->window_length;
-        state->coeffs[k - ALPHA_START_BIN] = 2.0 * cos(omega);
+        uint32_t bin_idx = k - state->alpha_start_bin;
+        state->coeffs[bin_idx] = 2.0 * cos(omega);
     }
 
     return state;
@@ -137,7 +159,7 @@ void cortex_process(void *handle, const void *input, void *output) {
     /* to alias to the same cache set (11,776 % 512 = 0), creating bimodal performance */
     
     /* Calculate size needed for each buffer */
-    const size_t scratch_size = TOTAL_BINS * s->channels * sizeof(double);
+    const size_t scratch_size = s->total_bins * s->channels * sizeof(double);
     
     /* Add padding to break cache set alignment (512 bytes = 8 cache lines) */
     /* This ensures buffers don't alias to the same cache set */
@@ -160,9 +182,9 @@ void cortex_process(void *handle, const void *input, void *output) {
     /* Process all bins simultaneously */
     /* For each sample n in the window */
     for (uint32_t n = 0; n < s->window_length; n++) {
-        /* For each bin k */
-        for (uint32_t k = ALPHA_START_BIN; k <= BETA_END_BIN; k++) {
-            uint32_t bin_idx = k - ALPHA_START_BIN;
+        /* For each bin k from alpha_start to beta_end */
+        for (uint32_t k = s->alpha_start_bin; k <= s->beta_end_bin; k++) {
+            uint32_t bin_idx = k - s->alpha_start_bin;
             double coeff = s->coeffs[bin_idx];
             
             /* For each channel */
@@ -186,8 +208,8 @@ void cortex_process(void *handle, const void *input, void *output) {
     }
 
     /* Compute power for all bins (after all samples) */
-    for (uint32_t k = ALPHA_START_BIN; k <= BETA_END_BIN; k++) {
-        uint32_t bin_idx = k - ALPHA_START_BIN;
+    for (uint32_t k = s->alpha_start_bin; k <= s->beta_end_bin; k++) {
+        uint32_t bin_idx = k - s->alpha_start_bin;
         double coeff = s->coeffs[bin_idx];
         
         for (uint32_t ch = 0; ch < s->channels; ch++) {
@@ -200,22 +222,22 @@ void cortex_process(void *handle, const void *input, void *output) {
     }
 
     /* Sum power over bins for each band */
-    /* Band 0: Alpha (k=8..13) */
+    /* Band 0: Alpha (from alpha_start_bin to alpha_end_bin) */
     for (uint32_t ch = 0; ch < s->channels; ch++) {
         double alpha_power = 0.0;
-        for (uint32_t k = ALPHA_START_BIN; k <= ALPHA_END_BIN; k++) {
-            uint32_t bin_idx = k - ALPHA_START_BIN;
+        for (uint32_t k = s->alpha_start_bin; k <= s->alpha_end_bin; k++) {
+            uint32_t bin_idx = k - s->alpha_start_bin;
             uint32_t idx = bin_idx * s->channels + ch;
             alpha_power += Pk[idx];
         }
         out[0 * s->channels + ch] = (float)alpha_power;
     }
 
-    /* Band 1: Beta (k=13..30) */
+    /* Band 1: Beta (from beta_start_bin to beta_end_bin) */
     for (uint32_t ch = 0; ch < s->channels; ch++) {
         double beta_power = 0.0;
-        for (uint32_t k = BETA_START_BIN; k <= BETA_END_BIN; k++) {
-            uint32_t bin_idx = k - ALPHA_START_BIN;
+        for (uint32_t k = s->beta_start_bin; k <= s->beta_end_bin; k++) {
+            uint32_t bin_idx = k - s->alpha_start_bin;
             uint32_t idx = bin_idx * s->channels + ch;
             beta_power += Pk[idx];
         }

@@ -13,19 +13,28 @@ def goertzel_bandpower_ref(x, fs=160.0, bands={'alpha':(8,13), 'beta':(13,30)}):
     Compute bandpower using Goertzel algorithm.
     
     Args:
-        x: Input array of shape (W, C) in µV (float32), W must be 160
+        x: Input array of shape (W, C) in µV (float32)
         fs: Sampling rate (Hz). Default: 160.0
-        bands: Dictionary of {name: (low, high)} frequency bands.
+        bands: Dictionary of {name: (low, high)} frequency bands in Hz.
                Default: {'alpha':(8,13), 'beta':(13,30)}
     
     Returns:
         Array of shape (B, C) in µV² (float32) where B = number of bands
     """
-    # x: (W,C) in µV, W must be 160
+    # x: (W,C) in µV
     N = x.shape[0]
     out = []
     for (lo, hi) in bands.values():
-        ks = np.arange(lo, hi+1, dtype=float)
+        # Convert Hz frequency bands to bin indices: k = round(f * N / fs)
+        k_start = round(lo * N / fs)
+        k_end = round(hi * N / fs)
+        ks = np.arange(k_start, k_end + 1, dtype=float)
+        
+        if len(ks) == 0:
+            # Empty band - output zeros
+            out.append(np.zeros(x.shape[1], dtype=np.float32))
+            continue
+        
         omega = 2*np.pi*ks/N
         coeff = 2*np.cos(omega)[:,None]             # (bins,1)
         # run per bin via vectorized recurrence
