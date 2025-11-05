@@ -74,7 +74,7 @@ See `docs/ROADMAP.md` for implementation timeline.
 | Key | Type | Notes |
 |---|---|---|
 | directory | string | Output folder |
-| format | enum | `json` \| `csv` |
+| format | enum | `ndjson` \| `csv` (default: `ndjson`) |
 | include_raw_data | bool | Usually false |
 
 ### plugins  → feeds **ABI init** per plugin

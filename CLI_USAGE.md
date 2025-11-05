@@ -115,7 +115,7 @@ Execute benchmark experiments.
 - `--verbose`: Show harness output
 
 **Output:**
-- Telemetry CSVs: `results/<run_id>/`
+- Telemetry data: `results/<run_id>/` (NDJSON format by default)
 - HTML reports: `results/<run_id>/report.html`
 - Batch runs: `results/batch_<timestamp>/`
 
@@ -257,8 +257,8 @@ pip install -r requirements.txt
 
 ### Telemetry Files
 Each kernel run produces:
-- **CSV format**: `<kernel>_telemetry.csv`
-- **NDJSON format**: `<kernel>_telemetry.ndjson` (if configured)
+- **NDJSON format**: `<kernel>_telemetry.ndjson` (default)
+- **CSV format**: `<kernel>_telemetry.csv` (alternative format)
 - **HTML report**: `report.html` (auto-generated)
 
 **CSV columns:**

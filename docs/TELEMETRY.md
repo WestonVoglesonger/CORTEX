@@ -4,11 +4,11 @@ Defines what the harness records per window and how it is written to disk.
 Use this spec to interpret CSV/JSON and build plots consistently.
 
 ## Files
-- `results/<run_id>/<plugin>_telemetry.csv` - Per-window telemetry data (CSV format)
-- `results/<run_id>/<plugin>_telemetry.ndjson` - Per-window telemetry data (NDJSON format)
+- `results/<run_id>/<plugin>_telemetry.ndjson` - Per-window telemetry data (NDJSON format, default)
+- `results/<run_id>/<plugin>_telemetry.csv` - Per-window telemetry data (CSV format, legacy)
 - `results/<run_id>/report.html` - Interactive HTML report with visualizations (auto-generated)
 
-Format is determined by the `output.format` configuration setting (`csv` or `ndjson`).
+Format is determined by the `output.format` configuration setting (`ndjson` or `csv`, defaults to `ndjson`).
 
 ## Common columns (per window)
 | Column | Unit | Notes |
@@ -81,7 +81,7 @@ NDJSON (Newline-Delimited JSON) provides the same data as CSV in a streaming JSO
 **Configuration:**
 ```yaml
 output:
-  format: "ndjson"  # or "csv" (default)
+  format: "ndjson"  # default (or "csv")
 ```
 
 **Example output:**

@@ -30,7 +30,7 @@ benchmark:
 
 output:
   directory: "results"
-  format: "json"
+  format: "ndjson"
   include_raw_data: false
 
 # --- Plugin definitions (feed into ABI init) ---
