@@ -30,8 +30,13 @@ int cortex_telemetry_init(cortex_telemetry_buffer_t *tb, size_t initial_capacity
 void cortex_telemetry_free(cortex_telemetry_buffer_t *tb);
 int cortex_telemetry_add(cortex_telemetry_buffer_t *tb, const cortex_telemetry_record_t *rec);
 int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t *tb);
-int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry_buffer_t *tb, 
+int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
                                          size_t start_idx, size_t end_idx);
+
+/* NDJSON (Newline-Delimited JSON) output format */
+int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffer_t *tb);
+int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
+                                            size_t start_idx, size_t end_idx);
 
 #endif /* CORTEX_HARNESS_TELEMETRY_H */
 

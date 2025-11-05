@@ -201,14 +201,26 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     ctx->scheduler = NULL;
     cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
     
-    /* Step 9: After all repeats, write only this plugin's records to CSV */
+    /* Step 9: After all repeats, write only this plugin's records to file */
     size_t telemetry_end_count = ctx->telemetry.count;
     char final_telemetry_path[1024];
+
+    /* Choose output format from config */
+    const char *format = ctx->run_cfg.output.format;
+    const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
+
     snprintf(final_telemetry_path, sizeof(final_telemetry_path),
-             "%s/%s_%s_telemetry.csv",
-             ctx->run_cfg.output.directory, ctx->run_id, plugin_name);
-    cortex_telemetry_write_csv_filtered(final_telemetry_path, &ctx->telemetry,
-                                        telemetry_start_count, telemetry_end_count);
+             "%s/%s_%s_telemetry.%s",
+             ctx->run_cfg.output.directory, ctx->run_id, plugin_name, ext);
+
+    if (strcmp(format, "ndjson") == 0) {
+        cortex_telemetry_write_ndjson_filtered(final_telemetry_path, &ctx->telemetry,
+                                               telemetry_start_count, telemetry_end_count);
+    } else {
+        /* Default to CSV for unknown formats or explicit "csv" */
+        cortex_telemetry_write_csv_filtered(final_telemetry_path, &ctx->telemetry,
+                                            telemetry_start_count, telemetry_end_count);
+    }
     
     /* Also write to subdirectory for report */
     char run_dir[1024];
@@ -216,11 +228,19 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
              ctx->run_cfg.output.directory, ctx->run_id);
     if (cortex_create_directories(run_dir) == 0) {
         char subdir_path[1024];
+        const char *ext_subdir = (strcmp(ctx->run_cfg.output.format, "ndjson") == 0) ? "ndjson" : "csv";
+
         snprintf(subdir_path, sizeof(subdir_path),
-                 "%s/%s/%s_telemetry.csv",
-                 ctx->run_cfg.output.directory, ctx->run_id, plugin_name);
-        cortex_telemetry_write_csv_filtered(subdir_path, &ctx->telemetry,
-                                             telemetry_start_count, telemetry_end_count);
+                 "%s/%s/%s_telemetry.%s",
+                 ctx->run_cfg.output.directory, ctx->run_id, plugin_name, ext_subdir);
+
+        if (strcmp(ctx->run_cfg.output.format, "ndjson") == 0) {
+            cortex_telemetry_write_ndjson_filtered(subdir_path, &ctx->telemetry,
+                                                   telemetry_start_count, telemetry_end_count);
+        } else {
+            cortex_telemetry_write_csv_filtered(subdir_path, &ctx->telemetry,
+                                                telemetry_start_count, telemetry_end_count);
+        }
     }
     
     /* Step 10: Keep buffer for report generation (don't reset) */
