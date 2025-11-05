@@ -30,7 +30,7 @@ benchmark:
 
 output:
   directory: "results/example"
-  format: "json"
+  format: "ndjson"
   include_raw_data: false
 
 plugins:

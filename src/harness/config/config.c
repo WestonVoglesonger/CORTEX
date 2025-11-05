@@ -260,6 +260,12 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
     }
     out->plugin_count = plugin_index;
 
+    /* Set default output format if not specified */
+    if (out->output.format[0] == '\0') {
+        strncpy(out->output.format, "ndjson", sizeof(out->output.format) - 1);
+        out->output.format[sizeof(out->output.format) - 1] = '\0';
+    }
+
     /* Load kernel specs for all plugins now that we have dataset info */
     for (size_t i = 0; i < out->plugin_count; i++) {
         if (out->plugins[i].spec_uri[0] != '\0') {
