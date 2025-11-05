@@ -23,8 +23,17 @@ def run_harness(config_path: str, verbose: bool = False) -> Optional[str]:
         print("Run 'cortex build' first")
         return None
 
-    if not Path(config_path).exists():
+    if not harness_binary.is_file():
+        print(f"Error: {harness_binary} exists but is not a file")
+        return None
+
+    config_file = Path(config_path)
+    if not config_file.exists():
         print(f"Error: Config file not found: {config_path}")
+        return None
+
+    if not config_file.is_file():
+        print(f"Error: {config_path} exists but is not a file")
         return None
 
     # Run harness
@@ -45,20 +54,22 @@ def run_harness(config_path: str, verbose: bool = False) -> Optional[str]:
             return None
 
         # Try to find the most recent results directory
-        # The harness creates results/<run_id>/ directories
+        # The harness creates results/<run_id>/ directories with timestamp names
         results_dir = Path('results')
         if results_dir.exists():
             # Find most recent non-batch, non-analysis directory
             subdirs = [d for d in results_dir.iterdir()
                       if d.is_dir()
                       and not d.name.startswith('batch_')
-                      and d.name != 'analysis']
+                      and d.name != 'analysis'
+                      and d.name.isdigit()]  # Run IDs are numeric timestamps
 
             if subdirs:
-                latest = max(subdirs, key=lambda d: d.stat().st_mtime)
+                # Sort by directory name (timestamp), not mtime - more reliable
+                latest = max(subdirs, key=lambda d: d.name)
                 return str(latest)
 
-        return "results"  # Fallback
+        return None  # No results found
 
     except Exception as e:
         print(f"Error running harness: {e}")
@@ -181,12 +192,14 @@ def run_all_kernels(
             ndjson_files = list(results_path.glob(ndjson_pattern))
 
             if csv_files or ndjson_files:
-                # Extract run_id from first file (all files from same run have same ID)
+                # Find newest run by timestamp (glob order is filesystem-dependent)
                 all_files = csv_files + ndjson_files
                 if all_files:
-                    # Extract run_id from filename
+                    # Extract timestamps from all files and pick largest (newest)
                     # e.g., "1762315905289_goertzel_telemetry.csv" -> "1762315905289"
-                    run_id = all_files[0].stem.split('_')[0]
+                    # Timestamps are lexically sortable strings, so max() gives newest
+                    run_ids = [f.stem.split('_')[0] for f in all_files]
+                    run_id = max(run_ids)
 
                     # Create kernel subdirectory in batch
                     kernel_batch_dir = batch_dir / f"{kernel_name}_run"
@@ -198,7 +211,10 @@ def run_all_kernels(
                     for pattern in [csv_pattern, ndjson_pattern]:
                         for file in results_path.glob(pattern):
                             if file.stem.startswith(expected_prefix):
-                                shutil.copy2(file, kernel_batch_dir / file.name)
+                                dest = kernel_batch_dir / file.name
+                                if dest.exists():
+                                    print(f"  Warning: Overwriting existing file: {dest.name}")
+                                shutil.copy2(file, dest)
 
                     # Copy HTML report directory if exists (skip duplicate telemetry files)
                     run_dir = results_path / run_id

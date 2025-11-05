@@ -2,6 +2,7 @@
 import os
 import sys
 from pathlib import Path
+from cortex_cli.core.discovery import discover_kernels as discover_kernels_base
 
 def setup_parser(parser):
     """Setup argument parser for list command"""
@@ -12,56 +13,24 @@ def setup_parser(parser):
     )
 
 def discover_kernels():
-    """Discover all available kernels in kernels/ directory"""
+    """Discover all available kernels with additional metadata for list command"""
+    # Use shared discovery function
+    base_kernels = discover_kernels_base()
+
+    # Add extra metadata for list command
     kernels = []
-    kernels_dir = Path('kernels')
-
-    if not kernels_dir.exists():
-        return kernels
-
-    # Scan v1, v2, etc directories
-    for version_dir in sorted(kernels_dir.iterdir()):
-        if not version_dir.is_dir() or not version_dir.name.startswith('v'):
-            continue
-
-        version = version_dir.name
-
-        # Scan kernel@dtype directories
-        for kernel_dir in sorted(version_dir.iterdir()):
-            if not kernel_dir.is_dir() or '@' not in kernel_dir.name:
-                continue
-
-            name_dtype = kernel_dir.name.split('@')
-            if len(name_dtype) != 2:
-                continue
-
-            kernel_name, dtype = name_dtype
-
-            # Check if kernel is built (look for .dylib or .so)
-            lib_name = f"lib{kernel_name}"
-            dylib_path = kernel_dir / f"{lib_name}.dylib"
-            so_path = kernel_dir / f"{lib_name}.so"
-            built = dylib_path.exists() or so_path.exists()
-
-            # Check if C implementation exists
-            c_impl = (kernel_dir / f"{kernel_name}.c").exists()
-
-            # Check if spec exists
-            spec = (kernel_dir / "spec.yaml").exists()
-
-            # Check if oracle exists
-            oracle = (kernel_dir / "oracle.py").exists()
-
-            kernels.append({
-                'name': kernel_name,
-                'version': version,
-                'dtype': dtype,
-                'path': str(kernel_dir),
-                'built': built,
-                'c_impl': c_impl,
-                'spec': spec,
-                'oracle': oracle
-            })
+    for k in base_kernels:
+        kernel_dir = Path(k['spec_uri'])
+        kernels.append({
+            'name': k['name'],
+            'version': k['version'],
+            'dtype': k['dtype'],
+            'path': str(kernel_dir),
+            'built': k['built'],
+            'c_impl': (kernel_dir / f"{k['name']}.c").exists(),
+            'spec': (kernel_dir / "spec.yaml").exists(),
+            'oracle': (kernel_dir / "oracle.py").exists()
+        })
 
     return kernels
 

@@ -40,15 +40,28 @@ def _extract_kernel_name(file_path: Path) -> Optional[str]:
             # e.g., "1762315905289_goertzel" -> "goertzel"
             parts_list = base.split('_')
             if parts_list[0].isdigit() and len(parts_list) > 1:
-                return '_'.join(parts_list[1:])
+                kernel_name = '_'.join(parts_list[1:])
+                if kernel_name:  # Validate non-empty
+                    return kernel_name
+                print(f"Warning: Could not extract kernel name from {filename} (empty after split)")
+                return None
+            # If no numeric prefix, treat whole base as kernel name
+            if base:
+                return base
+        # No underscore, treat whole base as kernel name
+        if base:
             return base
-        return base
+        print(f"Warning: Could not extract kernel name from {filename} (empty base)")
+        return None
 
     # Try directory pattern: kernel_run
     for part in parts:
         if part.endswith('_run'):
-            return part.replace('_run', '')
+            kernel_name = part.replace('_run', '')
+            if kernel_name:
+                return kernel_name
 
+    print(f"Warning: Could not extract kernel name from path {file_path}")
     return None
 
 def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[pd.DataFrame]:
@@ -95,14 +108,23 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
         files_to_load = csv_files
         file_format = 'csv'
     else:
-        print(f"No telemetry files found in {results_dir}")
-        print(f"Looked for: *_run/*_telemetry.{{csv,ndjson}}")
+        # Check if directory is completely empty or has kernel directories
+        all_subdirs = list(results_path.glob("*_run"))
+        if not all_subdirs:
+            print(f"Error: No kernel result directories found in {results_dir}")
+            print(f"Expected directories like: <kernel>_run/")
+            print(f"Run './cortex.py run --all' to generate results first")
+        else:
+            print(f"Error: Found {len(all_subdirs)} kernel directories but no telemetry files")
+            print(f"Directories found: {[d.name for d in all_subdirs]}")
+            print(f"This may indicate all kernel runs failed")
         return None
 
     print(f"Loading {len(files_to_load)} {file_format.upper()} telemetry file(s)...")
 
     # Load all files
     dataframes = []
+    failed_count = 0
     for file_path in files_to_load:
         try:
             if file_format == 'ndjson':
@@ -124,15 +146,22 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
 
             dataframes.append(df)
         except pd.errors.ParserError as e:
+            failed_count += 1
             print(f"Warning: Malformed {file_format.upper()} in {file_path.name}: {e}")
         except FileNotFoundError:
+            failed_count += 1
             print(f"Warning: File disappeared during loading: {file_path.name}")
         except ValueError as e:
+            failed_count += 1
             print(f"Warning: Invalid data format in {file_path.name}: {e}")
         except Exception as e:
+            failed_count += 1
             print(f"Warning: Unexpected error loading {file_path.name}: {e}")
             import traceback
             traceback.print_exc()
+
+    if failed_count > 0:
+        print(f"\nWarning: {failed_count}/{len(files_to_load)} files failed to load")
 
     if not dataframes:
         print("Error: No valid telemetry data found")
@@ -201,10 +230,14 @@ def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'p
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"✓ Saved: {output_path}")
+    try:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved: {output_path}")
+    except Exception as e:
+        print(f"Error: Could not save plot to {output_path}: {e}")
+        print("Tip: Try PNG format or install required backend")
+    finally:
+        plt.close()
 
 def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'):
     """Generate deadline miss rate comparison"""
@@ -226,10 +259,14 @@ def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'
     ax.set_ylim([0, max(max_rate * 1.2, 1)])
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"✓ Saved: {output_path}")
+    try:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved: {output_path}")
+    except Exception as e:
+        print(f"Error: Could not save plot to {output_path}: {e}")
+        print("Tip: Try PNG format or install required backend")
+    finally:
+        plt.close()
 
 def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
     """Generate CDF overlay plot for all kernels"""
@@ -253,10 +290,14 @@ def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"✓ Saved: {output_path}")
+    try:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved: {output_path}")
+    except Exception as e:
+        print(f"Error: Could not save plot to {output_path}: {e}")
+        print("Tip: Try PNG format or install required backend")
+    finally:
+        plt.close()
 
 def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png'):
     """Generate throughput comparison"""
@@ -283,10 +324,14 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"✓ Saved: {output_path}")
+    try:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved: {output_path}")
+    except Exception as e:
+        print(f"Error: Could not save plot to {output_path}: {e}")
+        print("Tip: Try PNG format or install required backend")
+    finally:
+        plt.close()
 
 def _calculate_deadline_from_config(config_path: str = "configs/cortex.yaml") -> float:
     """Extract deadline from config or calculate from data"""
