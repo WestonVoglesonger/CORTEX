@@ -1,0 +1,17 @@
+# CORTEX CLI Python Dependencies
+# These packages are required for the CLI analysis and visualization tools
+
+# Data processing and analysis
+pandas>=1.5.0       # Requires 1.5+ for improved DataFrame performance and API consistency
+numpy>=1.23.0       # Requires 1.23+ for enhanced dtype handling and NumPy 2.0 compatibility prep
+
+# Visualization
+matplotlib>=3.5.0   # Requires 3.5+ for improved subplot layout and modern plotting features
+seaborn>=0.12.0     # Requires 0.12+ for catplot improvements and better statistical plots
+
+# Configuration
+pyyaml>=6.0         # Requires 6.0+ for critical security fixes (CVE-2020-14343, CVE-2020-1747)
+
+# CLI utilities
+tqdm>=4.64.0        # Progress bars for long-running operations
+colorama>=0.4.6     # Cross-platform colored terminal text

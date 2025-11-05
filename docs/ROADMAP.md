@@ -27,19 +27,14 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ## In Progress (Weeks 5-7, Current)
 
 ### Kernel C Implementations ⏳
-- CAR (Common Average Reference) - **NOT YET IMPLEMENTED**
-- Notch IIR (60Hz line noise removal) - **NOT YET IMPLEMENTED**
-- FIR Bandpass (8-30 Hz) - **NOT YET IMPLEMENTED**
-- Goertzel Bandpower - **NOT YET IMPLEMENTED**
+- CAR (Common Average Reference) - **IN PROGRESS** (Avi Kumar)
+- Notch IIR (60Hz line noise removal) - ✅ **COMPLETED**
+- FIR Bandpass (8-30 Hz) - ✅ **COMPLETED**
+- Goertzel Bandpower (v1) - ✅ **COMPLETED**
+- Goertzel Bandpower (v2, optimized) - ✅ **COMPLETED**
 
 ### Measurement Infrastructure ⏳
-- RAPL energy measurement (Linux-only)
-- FLOPs/bytes analytical counters
-- Background load profiles (stress-ng integration - 5 TODOs in replayer.c)
-- JSON telemetry output (currently CSV only)
-
-### Quantization ⏳
-- Q15/Q7 quantized data type support (2 TODOs in scheduler)
+- Background load profiles (stress-ng integration - 5 TODOs in replayer.c) - **DEFERRED**
 
 ## Remaining This Semester (Weeks 7-9)
 
@@ -51,15 +46,39 @@ This document tracks progress against the original Fall 2025 proposal and implem
 - Midterm demo presentation
 
 ### Final Deliverables (Weeks 8-9)
-- Complete run matrix (all kernels × load profiles × quantization)
-- Generate final comparison plots (latency, jitter, energy, deadline misses)
+- Complete run matrix (all kernels × float32 baseline)
+- Generate final comparison plots (latency, jitter, throughput, deadline misses, memory)
 - Optional: Welch PSD kernel implementation
-- Optional: Q15/Q7 quantization sweep results
 - Final report documenting methodology, results, recommendations
 - Reproducibility packaging (one-command builds and runs)
 - Final presentation
 
+**Note**: Quantization (Q15/Q7) and energy measurement (RAPL) are deferred to Spring 2026 to align with embedded device testing phase (see Phase 3 below).
+
 ## Deferred/Future Work
+
+### Quantization (Q15/Q7) - Deferred to Spring 2026
+
+**Rationale**: Quantization is most valuable when benchmarking on embedded targets (STM32H7, Jetson) planned for Spring 2026. Fall 2025 establishes the float32 baseline on x86.
+
+**Infrastructure Status**:
+- ✅ Plugin ABI supports multiple dtypes (CORTEX_DTYPE_FLOAT32, Q15, Q7)
+- ✅ Kernel specs include quantized tolerances (rtol=1e-3, atol=1e-3)
+- ⏳ TODOs in scheduler (scheduler.c:185, scheduler.h:82-83) mark implementation points
+- ❌ No Q15/Q7 kernel implementations exist yet
+- ❌ Harness hardcodes dtype=float32 (main.c:102)
+- ❌ Replayer only reads float32 datasets
+
+**Spring 2026 Implementation Plan**:
+1. Dataset conversion: float32 → Q15/Q7 binary formats
+2. Replayer dtype handling: read Q15/Q7 from disk
+3. Scheduler buffer allocation: variable element size
+4. Kernel implementations: 4 kernels × 2 quantized formats = 8 new plugins
+5. Fixed-point arithmetic: manual scaling, overflow protection, saturation
+6. Validation: test against float32 oracles with looser tolerances
+7. Analysis: compare latency/memory/energy across float32/Q15/Q7 on embedded targets
+
+See `include/cortex_plugin.h` for dtype definitions and `docs/KERNELS.md` for tolerance specifications.
 
 ### Unimplemented Configuration Fields
 These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the config loader but **not yet used** by the harness:
@@ -77,22 +96,16 @@ These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the co
 
 ### Planned Features (From TODOs)
 
-#### Background Load Profiles
+#### Background Load Profiles (Deferred)
 - Stress-ng integration for idle/medium/heavy profiles (replayer.c:216, 107, 115)
 - Controlled chunk dropout/delay simulation (replayer.c:154)
 - Background load startup/teardown functions (currently stubs)
 
-#### Quantization
-- Q15 (16-bit fixed-point) and Q7 (8-bit fixed-point) data types (scheduler.c:192, scheduler.h:83)
-- Conversion routines from float32
-- Accuracy loss analysis vs. float32 references
-- Latency/energy comparisons across data types
-
 #### Telemetry & Analysis
-- JSON telemetry output format (currently CSV only)
-- Summary statistics generation (p50/p95/p99 aggregates, miss rate)
-- Multi-session dataset concatenation support
-- Per-window energy (E_window) and derived power (P = E_window × Fs/H)
+- ✅ NDJSON telemetry output format (completed - alternative to CSV)
+- Summary statistics generation (p50/p95/p99 aggregates, miss rate) - partially available in HTML reports
+- Multi-session dataset concatenation support (future enhancement)
+- Per-window energy (E_window) and derived power (P = E_window × Fs/H) - deferred to Spring 2026
 
 #### Code Cleanup
 - Remove unused globals (g_dtype) or implement proper dtype handling (replayer.c:14-19)

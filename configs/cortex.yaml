@@ -73,10 +73,3 @@ plugins:
     spec_uri: "kernels/v1/goertzel@f32"
     spec_version: "1.0.0"
     # No params - band definitions are fixed (alpha: 8-13 Hz, beta: 13-30 Hz)
-
-  - name: "goertzel_v2"
-    status: ready
-    spec_uri: "kernels/v2/goertzel@f32"
-    spec_version: "2.0.0"
-    # v2: Same algorithm, optimized memory layout to fix cache aliasing
-    # Fixes bimodal performance distribution (360µs gap) from v1
