@@ -68,14 +68,11 @@ Project planning, contribution guidelines, and historical context.
 | Document | Description |
 |----------|-------------|
 | [Project Roadmap](development/roadmap.md) | Implementation status, timeline, and future plans |
-| [Developer Guide](development/developer-guide.md) | Development workflows and code conventions (see CLAUDE.md for AI assistant version) |
 | [Archive](development/archive/) | Historical design documents |
 
 **Use this section**: For contributing to CORTEX or understanding project evolution.
 
-**External development docs**:
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines, code style, PR process
-- [CLAUDE.md](../CLAUDE.md) - AI assistant instructions (comprehensive dev guide)
+**See also**: [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and code style.
 
 ---
 
@@ -106,12 +103,11 @@ Project planning, contribution guidelines, and historical context.
 - [dataset-preparation.md](guides/dataset-preparation.md) - EDF conversion
 - [troubleshooting.md](guides/troubleshooting.md) - Common issues
 
-**Development** (2+ docs)
+**Development** (1+ docs)
 - [roadmap.md](development/roadmap.md) - Project timeline
-- [developer-guide.md](development/developer-guide.md) - Dev workflows
 - [archive/](development/archive/) - Historical docs
 
-**Total**: 17 documentation files
+**Total**: 16 documentation files
 
 ---
 
@@ -146,6 +142,4 @@ Project planning, contribution guidelines, and historical context.
 1. Check [Troubleshooting Guide](guides/troubleshooting.md)
 2. Search [GitHub Issues](https://github.com/WestonVoglesonger/CORTEX/issues)
 3. Review [Architecture Overview](architecture/overview.md)
-4. Consult [CLAUDE.md](../CLAUDE.md) for comprehensive development guide
-
-**Contributing**: See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines
+4. See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines
