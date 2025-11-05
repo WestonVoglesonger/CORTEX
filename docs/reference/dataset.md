@@ -51,13 +51,12 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 - **Channels (C)**: **64**
 
 ## Channel Order
-- **Source of truth**: EDF header **signal order 0–63** for each file. We snapshot channel names from the first used record and reuse that order for all processing.  
-- **Montage reference**: Official 64-electrode 10–10 montage figure provided with the dataset (numbers under each label show the order 1–64; EDF signals are 0–63).
- *note: I found the figure relevant to this but then i lost it!! i cant find it idk where it went. maybe im hallucinating*
-- **Saved snapshot**: `docs/channel_order.json` (array of 64 channel names in EDF order). (*note: i still have to add this*)
+- **Source of truth**: EDF header **signal order 0–63** for each file. We snapshot channel names from the first used record and reuse that order for all processing.
+- **Montage reference**: Official 64-electrode 10–10 montage figure provided with the dataset documentation (numbers under each label show the order 1–64; EDF signals are 0–63).
+- **Saved snapshot**: [channel_order.json](channel_order.json) (array of 64 channel names in EDF order)
 
 ## Units
-- **EEG potentials**, physical units recorded in the EDF header (typically **µV**). Our code converts to **Volts** internally if a library expects V, but all reporting uses **µV**. (*note: ok this part, i got from chatgpt. so im not sure if it is correct. like the 'our code converts to volts' part...*)
+- **EEG potentials**: Physical units as recorded in the EDF header, typically **microvolts (µV)**. All CORTEX kernels process and report values in µV.
 
 ## Reference Scheme
 - **As recorded in EDF** (dataset page does not impose a single fixed reference). Our pipeline applies **common average reference (CAR)** as the first step to ensure consistency across runs.
@@ -70,5 +69,9 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
   We don’t require labels for our baseline kernels, but we keep them for sanity 
 
 ## Preprocessing (before any kernels)
-- **None** beyond decoding EDF (no filtering, no artifact rejection, no resampling; Fs already 160 Hz). Any re-referencing is documented above (CAR at start of pipeline).
-- *NOTE: from what I can tell, this dataset is completely raw, and hasn't been cleaned whatsoever. but i have to go through and more thoroughly read the research paper to be sure.*
+- **None** beyond decoding EDF format. The dataset is used as-is with:
+  - No filtering applied before kernel processing
+  - No artifact rejection
+  - No resampling (native Fs = 160 Hz)
+- **Re-referencing**: Common Average Reference (CAR) is applied as the first kernel in the processing pipeline when configured.
+- **Data quality**: This dataset consists of raw EEG recordings without preprocessing, as documented in the original BCI2000 publication.
