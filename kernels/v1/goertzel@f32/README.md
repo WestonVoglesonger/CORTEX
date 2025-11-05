@@ -96,3 +96,25 @@ See `docs/KERNELS.md` section "Goertzel Bandpower" for the complete mathematical
 - ✅ Oracle implementation (`oracle.py`)
 - ✅ C implementation complete and tested
 
+## Performance Characteristics
+
+### Observed Behavior (Nov 2025 benchmarks on macOS)
+
+**Typical Performance**:
+- P50: 617µs, P95: 642µs, P99: 663µs
+- Mean: 581µs, Std Dev: 123µs
+- Coefficient of Variation: 0.21 (moderate variance, acceptable for most applications)
+
+**Distribution**:
+- Unimodal distribution centered at ~620µs
+- 84% of windows execute in 600-650µs range (dominant mode)
+- 10% show faster performance (200-400µs) - likely cache/thermal effects
+- 6% in middle range (400-600µs)
+
+**Jitter**: P95-P50 = 25µs (low jitter, good for real-time systems)
+
+**Assessment**: Stable, predictable latency suitable for BCI applications. Occasional fast outliers do not affect worst-case analysis (P99 < 700µs, well within 500ms deadline).
+
+**Note on v2 Attempt**:
+A v2 "cache aliasing fix" was attempted (Nov 2025) based on an incorrect diagnosis of bimodal behavior. The distribution is actually unimodal with occasional fast outliers, not pathological bimodality. The v2 variant was removed as it provided no measurable improvement.
+

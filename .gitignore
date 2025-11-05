@@ -172,6 +172,9 @@ results/
 output/
 logs/
 
+# Generated config files (created by CLI at runtime)
+configs/generated/
+
 # Temporary files
 tmp/
 temp/
