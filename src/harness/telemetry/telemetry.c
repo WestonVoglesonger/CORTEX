@@ -97,6 +97,148 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
     return 0;
 }
 
+/* Helper: Escape JSON string characters (", \, control chars) */
+static void json_escape_string(char *dest, size_t dest_size, const char *src) {
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j < dest_size - 2; i++) {
+        if (src[i] == '"' || src[i] == '\\') {
+            if (j < dest_size - 3) {
+                dest[j++] = '\\';
+                dest[j++] = src[i];
+            }
+        } else if (src[i] == '\n') {
+            if (j < dest_size - 3) {
+                dest[j++] = '\\';
+                dest[j++] = 'n';
+            }
+        } else if (src[i] == '\r') {
+            if (j < dest_size - 3) {
+                dest[j++] = '\\';
+                dest[j++] = 'r';
+            }
+        } else if (src[i] == '\t') {
+            if (j < dest_size - 3) {
+                dest[j++] = '\\';
+                dest[j++] = 't';
+            }
+        } else if ((unsigned char)src[i] < 32) {
+            /* Skip other control characters */
+            continue;
+        } else {
+            dest[j++] = src[i];
+        }
+    }
+    dest[j] = '\0';
+}
 
+int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffer_t *tb) {
+    if (!path || !tb) return -1;
+
+    /* Create parent directories */
+    if (cortex_create_directories(path) != 0) {
+        return -1;
+    }
+
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+
+    char run_id_esc[128], plugin_esc[256];
+
+    /* Write each record as one JSON object per line (NDJSON format) */
+    for (size_t i = 0; i < tb->count; i++) {
+        const cortex_telemetry_record_t *r = &tb->records[i];
+
+        /* Escape string fields for JSON */
+        json_escape_string(run_id_esc, sizeof(run_id_esc), r->run_id);
+        json_escape_string(plugin_esc, sizeof(plugin_esc), r->plugin_name);
+
+        /* Write JSON object (compact, one line per record) */
+        fprintf(f,
+            "{\"run_id\":\"%s\","
+            "\"plugin\":\"%s\","
+            "\"window_index\":%u,"
+            "\"release_ts_ns\":%llu,"
+            "\"deadline_ts_ns\":%llu,"
+            "\"start_ts_ns\":%llu,"
+            "\"end_ts_ns\":%llu,"
+            "\"deadline_missed\":%u,"
+            "\"W\":%u,"
+            "\"H\":%u,"
+            "\"C\":%u,"
+            "\"Fs\":%u,"
+            "\"warmup\":%u,"
+            "\"repeat\":%u}\n",
+            run_id_esc,
+            plugin_esc,
+            r->window_index,
+            (unsigned long long)r->release_ts_ns,
+            (unsigned long long)r->deadline_ts_ns,
+            (unsigned long long)r->start_ts_ns,
+            (unsigned long long)r->end_ts_ns,
+            (unsigned)r->deadline_missed,
+            r->W, r->H, r->C, r->Fs,
+            (unsigned)r->warmup,
+            r->repeat);
+    }
+
+    fclose(f);
+    return 0;
+}
+
+int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
+                                            size_t start_idx, size_t end_idx) {
+    if (!path || !tb) return -1;
+    if (start_idx > end_idx || end_idx > tb->count) return -1;
+
+    /* Create parent directories */
+    if (cortex_create_directories(path) != 0) {
+        return -1;
+    }
+
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+
+    char run_id_esc[128], plugin_esc[256];
+
+    /* Write only records in range [start_idx, end_idx) */
+    for (size_t i = start_idx; i < end_idx; i++) {
+        const cortex_telemetry_record_t *r = &tb->records[i];
+
+        /* Escape string fields for JSON */
+        json_escape_string(run_id_esc, sizeof(run_id_esc), r->run_id);
+        json_escape_string(plugin_esc, sizeof(plugin_esc), r->plugin_name);
+
+        /* Write JSON object (compact, one line per record) */
+        fprintf(f,
+            "{\"run_id\":\"%s\","
+            "\"plugin\":\"%s\","
+            "\"window_index\":%u,"
+            "\"release_ts_ns\":%llu,"
+            "\"deadline_ts_ns\":%llu,"
+            "\"start_ts_ns\":%llu,"
+            "\"end_ts_ns\":%llu,"
+            "\"deadline_missed\":%u,"
+            "\"W\":%u,"
+            "\"H\":%u,"
+            "\"C\":%u,"
+            "\"Fs\":%u,"
+            "\"warmup\":%u,"
+            "\"repeat\":%u}\n",
+            run_id_esc,
+            plugin_esc,
+            r->window_index,
+            (unsigned long long)r->release_ts_ns,
+            (unsigned long long)r->deadline_ts_ns,
+            (unsigned long long)r->start_ts_ns,
+            (unsigned long long)r->end_ts_ns,
+            (unsigned)r->deadline_missed,
+            r->W, r->H, r->C, r->Fs,
+            (unsigned)r->warmup,
+            r->repeat);
+    }
+
+    fclose(f);
+    return 0;
+}
 
 

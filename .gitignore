@@ -201,6 +201,9 @@ tests/test_*
 
 # Temporary test data
 
+# Project-specific documentation (local to repository instance)
+CLAUDE.md
+
 # EDF dataset files (large, don't commit)
 datasets/eegmmidb/raw/*.edf
 datasets/eegmmidb/raw/*.event

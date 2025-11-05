@@ -4,9 +4,11 @@ Defines what the harness records per window and how it is written to disk.
 Use this spec to interpret CSV/JSON and build plots consistently.
 
 ## Files
-- `results/<run_id>/telemetry.csv` - Per-window telemetry data
-- `results/<run_id>/telemetry.json` - JSON format telemetry (planned)
+- `results/<run_id>/<plugin>_telemetry.csv` - Per-window telemetry data (CSV format)
+- `results/<run_id>/<plugin>_telemetry.ndjson` - Per-window telemetry data (NDJSON format)
 - `results/<run_id>/report.html` - Interactive HTML report with visualizations (auto-generated)
+
+Format is determined by the `output.format` configuration setting (`csv` or `ndjson`).
 
 ## Common columns (per window)
 | Column | Unit | Notes |
@@ -55,13 +57,60 @@ Use this spec to interpret CSV/JSON and build plots consistently.
 | repeat | — | Repeat index |
 | warmup | 0/1 | Excluded from stats if 1 |
 
-## CSV rules
-- Delimiter: `,`
-- Header: yes
-- Encoding: UTF-8
+## Output Formats
 
-## JSON rules
-- Array of objects with the same keys as CSV headers.
+### CSV Format
+- Delimiter: `,`
+- Header: yes (first line contains column names)
+- Encoding: UTF-8
+- File extension: `.csv`
+
+### NDJSON Format
+
+NDJSON (Newline-Delimited JSON) provides the same data as CSV in a streaming JSON format.
+
+**Specification:** https://github.com/ndjson/ndjson-spec
+
+**Format characteristics:**
+- Each line contains ONE complete JSON object
+- Lines separated by newline (`\n`)
+- No outer array brackets
+- Streamable and appendable
+- File extension: `.ndjson`
+
+**Configuration:**
+```yaml
+output:
+  format: "ndjson"  # or "csv" (default)
+```
+
+**Example output:**
+```json
+{"run_id":"1762310612183","plugin":"goertzel","window_index":0,"release_ts_ns":21194971498000,"deadline_ts_ns":21195471498000,"start_ts_ns":21194971498000,"end_ts_ns":21194971740000,"deadline_missed":0,"W":160,"H":80,"C":64,"Fs":160,"warmup":0,"repeat":1}
+{"run_id":"1762310612183","plugin":"goertzel","window_index":1,"release_ts_ns":21195476495000,"deadline_ts_ns":21195976495000,"start_ts_ns":21195476495000,"end_ts_ns":21195476742000,"deadline_missed":0,"W":160,"H":80,"C":64,"Fs":160,"warmup":0,"repeat":1}
+```
+
+**Field mapping:**
+All fields are identical to CSV columns (see "Common columns" above).
+
+**Advantages:**
+- Machine-readable structured format
+- Streamable (no need to parse entire file)
+- Compatible with tools like `jq`, Python `json.loads()`
+- Can append records without rewriting file
+- Standard format for log aggregation systems
+
+**Usage with jq:**
+```bash
+# Pretty-print first record
+head -1 results/*/plugin_telemetry.ndjson | jq .
+
+# Extract all latencies
+cat results/*/plugin_telemetry.ndjson | jq -r '.end_ts_ns - .start_ts_ns'
+
+# Count deadline misses
+cat results/*/plugin_telemetry.ndjson | jq -r '.deadline_missed' | grep 1 | wc -l
+```
 
 ## Aggregates (per plugin per run)
 - p50/p95/p99 of latency (ns)
