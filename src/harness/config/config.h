@@ -56,7 +56,7 @@ typedef struct cortex_benchmark_cfg {
 
 typedef struct cortex_output_cfg {
     char directory[512];
-    char format[16];      /* "csv" or "json" (csv used for week 3) */
+    char format[16];      /* "ndjson" (default) or "csv" */
     int include_raw_data; /* bool */
 } cortex_output_cfg_t;
 
