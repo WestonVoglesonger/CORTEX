@@ -181,23 +181,23 @@ def run_all_kernels(
             ndjson_files = list(results_path.glob(ndjson_pattern))
 
             if csv_files or ndjson_files:
-                # Get most recent files (by modification time)
+                # Extract run_id from first file (all files from same run have same ID)
                 all_files = csv_files + ndjson_files
                 if all_files:
-                    latest_file = max(all_files, key=lambda f: f.stat().st_mtime)
-
                     # Extract run_id from filename
                     # e.g., "1762315905289_goertzel_telemetry.csv" -> "1762315905289"
-                    run_id = latest_file.stem.split('_')[0]
+                    run_id = all_files[0].stem.split('_')[0]
 
                     # Create kernel subdirectory in batch
                     kernel_batch_dir = batch_dir / f"{kernel_name}_run"
                     kernel_batch_dir.mkdir(parents=True, exist_ok=True)
 
                     # Copy all telemetry files with this run_id and kernel_name
+                    # Use exact prefix to avoid matching overlapping run IDs (e.g., "176" vs "1762")
+                    expected_prefix = f"{run_id}_{kernel_name}"
                     for pattern in [csv_pattern, ndjson_pattern]:
                         for file in results_path.glob(pattern):
-                            if file.stem.startswith(run_id):
+                            if file.stem.startswith(expected_prefix):
                                 shutil.copy2(file, kernel_batch_dir / file.name)
 
                     # Copy HTML report directory if exists (skip duplicate telemetry files)

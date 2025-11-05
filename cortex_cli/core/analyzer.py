@@ -123,8 +123,16 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
                     df['plugin'] = kernel_name
 
             dataframes.append(df)
+        except pd.errors.ParserError as e:
+            print(f"Warning: Malformed {file_format.upper()} in {file_path.name}: {e}")
+        except FileNotFoundError:
+            print(f"Warning: File disappeared during loading: {file_path.name}")
+        except ValueError as e:
+            print(f"Warning: Invalid data format in {file_path.name}: {e}")
         except Exception as e:
-            print(f"Warning: Could not load {file_path}: {e}")
+            print(f"Warning: Unexpected error loading {file_path.name}: {e}")
+            import traceback
+            traceback.print_exc()
 
     if not dataframes:
         print("Error: No valid telemetry data found")
@@ -280,6 +288,27 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
 
     print(f"✓ Saved: {output_path}")
 
+def _calculate_deadline_from_config(config_path: str = "configs/cortex.yaml") -> float:
+    """Extract deadline from config or calculate from data"""
+    try:
+        import yaml
+        with open(config_path, 'r') as f:
+            cfg = yaml.safe_load(f)
+
+        # Get sample rate from dataset config
+        sample_rate = cfg.get('dataset', {}).get('sample_rate_hz', 160)
+
+        # Hop is derived as window_length / 2 in harness
+        # Window length comes from kernel spec (default 160)
+        # For now, use the documented calculation: hop=80, fs=160 -> 0.5s
+        # TODO: Parse actual values from kernel spec.yaml files
+        hop_samples = 80  # Default from harness
+
+        deadline_sec = hop_samples / sample_rate
+        return deadline_sec * 1000  # Convert to milliseconds
+    except Exception:
+        return 500.0  # Fallback to documented default
+
 def generate_summary_table(df: pd.DataFrame, output_path: str):
     """Generate markdown summary table"""
     stats = calculate_statistics(df)
@@ -304,7 +333,8 @@ def generate_summary_table(df: pd.DataFrame, output_path: str):
         f.write("\n## Interpretation\n\n")
         f.write("- **P50/P95/P99**: 50th/95th/99th percentile latencies\n")
         f.write("- **Jitter**: Difference between P95 and P50 (indicates timing variance)\n")
-        f.write("- **Deadline Misses**: Number of windows that exceeded the 500ms deadline\n")
+        deadline_ms = _calculate_deadline_from_config()
+        f.write(f"- **Deadline Misses**: Number of windows that exceeded the {deadline_ms:.0f}ms deadline\n")
         f.write("- **Miss Rate**: Percentage of windows that missed the deadline\n")
 
     print(f"✓ Saved: {output_path}")

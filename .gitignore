@@ -6,8 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
-# CORTEX executables
-cortex
+# CORTEX executables (only ignore compiled binary, not Python script)
+src/harness/cortex
 
 # Distribution / packaging
 .Python
