@@ -82,7 +82,9 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 
 ### Overview
 
-CORTEX requires EDF files to be converted to float32 binary format for replayer compatibility. Conversion scripts and tools are provided in the `scripts/` directory.
+CORTEX currently requires EDF files to be converted to float32 binary format. The replayer is hardcoded to read float32 data. Conversion scripts and tools are provided in the `scripts/` directory.
+
+**Note:** Dtype flexibility (Q15/Q7 support) is architecturally designed but not yet implemented. See [future-enhancements.md](../development/future-enhancements.md#quantization-support-q15q7) for planned quantization support in Spring 2026.
 
 ### Quick Start
 

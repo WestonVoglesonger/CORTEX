@@ -64,7 +64,8 @@ Project planning, contribution guidelines, and historical context.
 
 | Document | Description |
 |----------|-------------|
-| [Project Roadmap](development/roadmap.md) | Implementation status, timeline, and future plans |
+| [Project Roadmap](development/roadmap.md) | Implementation status, timeline, and current semester goals |
+| [Future Enhancements](development/future-enhancements.md) | Planned features, deferred implementations, and long-term vision |
 | [Archive](development/archive/) | Historical design documents |
 
 **Use this section**: For contributing to CORTEX or understanding project evolution.
@@ -97,11 +98,12 @@ Project planning, contribution guidelines, and historical context.
 - [adding-kernels.md](guides/adding-kernels.md) - Kernel development
 - [troubleshooting.md](guides/troubleshooting.md) - Common issues
 
-**Development** (1+ docs)
+**Development** (2+ docs)
 - [roadmap.md](development/roadmap.md) - Project timeline
+- [future-enhancements.md](development/future-enhancements.md) - Planned features
 - [archive/](development/archive/) - Historical docs
 
-**Total**: 15 documentation files (2 getting-started + 4 reference + 4 architecture + 2 guides + 1 development + 1 FAQ + 1 root)
+**Total**: 16 documentation files (2 getting-started + 4 reference + 4 architecture + 2 guides + 2 development + 1 FAQ + 1 root)
 
 ---
 
