@@ -138,36 +138,17 @@ Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 
 ### 4. Plugin System
 
-**Purpose**: Loadable kernel implementations
+**Purpose**: Loadable kernel implementations using dynamic libraries (`.dylib` on macOS, `.so` on Linux)
 
-**ABI Version**: 2 (current)
-
-**Interface** (`include/cortex_plugin.h`):
-
-```c
-// Initialize plugin, return output dimensions
-cortex_init_result_t cortex_init(const cortex_plugin_config_t *config);
-
-// Process one window (no allocations allowed!)
-void cortex_process(void *handle, const void *input, void *output);
-
-// Free resources
-void cortex_teardown(void *handle);
-```
+**ABI Version**: 2 (current) - See [plugin-interface.md](../reference/plugin-interface.md) for complete specification
 
 **Plugin lifecycle**:
-1. Harness calls `dlopen()` to load `.dylib`/`.so`
+1. Harness calls `dlopen()` to load plugin library
 2. Harness calls `cortex_init()` → plugin allocates state, returns output shape
 3. For each window: Harness calls `cortex_process()` → plugin runs algorithm
 4. At end: Harness calls `cortex_teardown()` → plugin frees resources
 
-**Key constraints**:
-- ❌ **No allocations in `cortex_process()`** - pre-allocate everything in `init()`
-- ✅ **Stateful** - IIR/FIR state persists across windows
-- ✅ **Thread-safe** - no concurrent calls on same handle
-- ✅ **Platform-agnostic** - same C code for macOS and Linux
-
-**See**: [plugin-interface.md](../reference/plugin-interface.md) for complete spec
+**See**: [plugin-interface.md](../reference/plugin-interface.md) for complete API specification, function signatures, and implementation constraints
 
 ### 5. Telemetry (`src/harness/telemetry/`)
 
@@ -251,15 +232,49 @@ Loop for duration:
 
 **Decision**: Run each plugin in a separate, sequential scheduler instance
 
-**Rationale**:
-- Isolates per-kernel performance (no interference)
-- Simplifies deadline tracking (one plugin at a time)
-- Enables fair comparison (same dataset slice, same conditions)
-- Matches real-world BCI usage (single kernel active)
+**Problem with Parallel Execution**:
+Parallel execution of multiple plugins caused resource contention:
+- CPU cores competed for processing time
+- Memory bandwidth was shared between plugins
+- Cache lines were invalidated by competing plugins
+- Led to inaccurate and non-reproducible performance measurements
 
-**Trade-off**: Longer total benchmark time vs. accurate per-kernel metrics
+**Solution with Sequential Execution**:
+Each plugin runs with full system resources:
+- Dedicated CPU time and memory bandwidth
+- Consistent cache state
+- Isolated and reproducible measurements
+- Each plugin gets its own scheduler instance
 
-**See**: [sequential-execution.md](sequential-execution.md) for full rationale
+**Architecture Comparison**:
+
+*Before (Parallel)*: All plugins → Single Scheduler → CPU/Memory (contention)
+
+*After (Sequential)*:
+- Plugin A → Scheduler A → CPU/Memory (isolated)
+- Plugin B → Scheduler B → CPU/Memory (isolated)
+- Plugin C → Scheduler C → CPU/Memory (isolated)
+
+**Benefits**:
+- **Measurement Isolation**: No interference between plugins
+- **Reproducibility**: Consistent results across runs
+- **Fair Comparison**: Same dataset slice, same conditions for each kernel
+- **HIL Compatibility**: Matches future hardware-in-the-loop execution model
+- **Easier Debugging**: Issues isolated to specific plugins
+
+**Trade-off**:
+- Runtime = sum(plugin_times) instead of max(plugin_times)
+- Example: 3 plugins at 10s each = 30s total (vs ~10s parallel)
+- Acceptable trade-off for accurate per-kernel metrics
+
+**Implementation**:
+Each plugin gets complete lifecycle isolation:
+1. Create dedicated scheduler instance
+2. Load plugin dynamically
+3. Run warmup + measurement repeats
+4. Write per-plugin telemetry file
+5. Cleanup and unload plugin
+6. Repeat for next plugin
 
 ### Hardware-in-the-Loop (HIL) Testing
 

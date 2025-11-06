@@ -75,3 +75,116 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
   - No resampling (native Fs = 160 Hz)
 - **Re-referencing**: Common Average Reference (CAR) is applied as the first kernel in the processing pipeline when configured.
 - **Data quality**: This dataset consists of raw EEG recordings without preprocessing, as documented in the original BCI2000 publication.
+
+---
+
+## Dataset Preparation
+
+### Overview
+
+CORTEX requires EDF files to be converted to float32 binary format for replayer compatibility. Conversion scripts and tools are provided in the `scripts/` directory.
+
+### Quick Start
+
+```bash
+# 1. Download EDF files from PhysioNet
+cd scripts
+./download_edf.sh
+
+# 2. Convert to float32 binary
+python3 convert_edf_to_float32.py S001R03 S001R07 S001R11
+
+# 3. Verify conversion
+ls -lh ../datasets/eegmmidb/converted/
+```
+
+### Directory Structure
+
+```
+datasets/eegmmidb/
+├── raw/                         # Git-ignored EDF files
+│   ├── S001R03.edf
+│   └── ...
+├── converted/                   # Binary data + metadata
+│   ├── S001R03.float32         # Git-ignored binary
+│   ├── S001R03_metadata.json   # Committed metadata
+│   └── ...
+└── channel_order.json           # Committed channel mapping
+```
+
+### Data Format
+
+**Float32 Binary Format:**
+- **Layout**: Interleaved samples `[sample0_ch0, ..., sample0_ch63, sample1_ch0, ...]`
+- **Data Type**: 32-bit IEEE 754 floating point, little-endian
+- **Units**: Microvolts (µV)
+- **Size**: 4 bytes per value
+
+**Metadata JSON** (per session):
+```json
+{
+  "source": "S001R03.edf",
+  "sample_rate_hz": 160,
+  "channels": 64,
+  "samples_per_channel": 20000,
+  "duration_seconds": 125.0,
+  "dtype": "float32",
+  "format": "interleaved [samples, channels]",
+  "units": "microvolts (µV)"
+}
+```
+
+### Configuration
+
+Update `configs/cortex.yaml` to point to converted dataset:
+
+```yaml
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+```
+
+### Extending to Other Subjects
+
+```bash
+# Download different subject
+./download_edf.sh S002
+
+# Convert new subject
+python3 convert_edf_to_float32.py S002R03 S002R07 S002R11
+
+# Update cortex.yaml
+# dataset.path: "datasets/eegmmidb/converted/S002R03.float32"
+```
+
+### Verification
+
+After conversion, verify:
+- ✅ Binary files created: `*.float32` (~4.9MB each)
+- ✅ Metadata files created: `*_metadata.json`
+- ✅ Channel order file: `channel_order.json`
+- ✅ Sample count: 20,000 per channel (125s at 160Hz)
+
+### Troubleshooting
+
+**Download failures:**
+```bash
+# Check network connectivity and retry
+./download_edf.sh
+```
+
+**Conversion errors:**
+```bash
+# Ensure dependencies installed
+pip install -r requirements.txt
+
+# Check EDF file integrity
+python3 -c "import pyedflib; f = pyedflib.EdfReader('S001R03.edf'); print(f.signals_in_file)"
+```
+
+**Missing metadata:**
+- Metadata files are auto-generated during conversion
+- Check `datasets/eegmmidb/converted/*_metadata.json`
+- Re-run conversion if missing

@@ -39,7 +39,6 @@ High-level system design and implementation rationale.
 |----------|-------------|
 | [System Overview](architecture/overview.md) | Component architecture and data flow |
 | [Testing Strategy](architecture/testing-strategy.md) | HIL methodology and validation approach |
-| [Sequential Execution](architecture/sequential-execution.md) | Design rationale for sequential plugin execution |
 | [Platform Compatibility](architecture/platform-compatibility.md) | macOS and Linux cross-platform implementation |
 
 **Use this section**: To understand how CORTEX works internally and why design decisions were made.
@@ -53,8 +52,6 @@ Step-by-step instructions for common tasks.
 | Document | Description |
 |----------|-------------|
 | [Adding New Kernels](guides/adding-kernels.md) | Complete guide to kernel development (spec → oracle → C → validation) |
-| [Benchmark Duration Guidelines](guides/benchmark-duration.md) | Statistical rigor and recommended benchmark lengths |
-| [Dataset Preparation](guides/dataset-preparation.md) | Converting EDF+ files to CORTEX format |
 | [Troubleshooting](guides/troubleshooting.md) | Common issues and solutions |
 
 **Use this section**: When implementing new features or solving problems.
@@ -91,23 +88,20 @@ Project planning, contribution guidelines, and historical context.
 - [telemetry.md](reference/telemetry.md) - Output formats
 - [dataset.md](reference/dataset.md) - EEG data format
 
-**Architecture** (4 docs)
-- [overview.md](architecture/overview.md) - System design
+**Architecture** (3 docs)
+- [overview.md](architecture/overview.md) - System design and execution model
 - [testing-strategy.md](architecture/testing-strategy.md) - HIL methodology
-- [sequential-execution.md](architecture/sequential-execution.md) - Execution model
 - [platform-compatibility.md](architecture/platform-compatibility.md) - Cross-platform
 
-**Guides** (4 docs)
+**Guides** (2 docs)
 - [adding-kernels.md](guides/adding-kernels.md) - Kernel development
-- [benchmark-duration.md](guides/benchmark-duration.md) - Statistical guidelines
-- [dataset-preparation.md](guides/dataset-preparation.md) - EDF conversion
 - [troubleshooting.md](guides/troubleshooting.md) - Common issues
 
 **Development** (1+ docs)
 - [roadmap.md](development/roadmap.md) - Project timeline
 - [archive/](development/archive/) - Historical docs
 
-**Total**: 16 documentation files
+**Total**: 13 documentation files (plus FAQ.md and archive)
 
 ---
 
@@ -123,7 +117,7 @@ Project planning, contribution guidelines, and historical context.
 - **Interpret benchmark results** → [Telemetry Format](reference/telemetry.md)
 - **Fix a build error** → [Troubleshooting](guides/troubleshooting.md)
 - **Understand how CORTEX works** → [System Overview](architecture/overview.md)
-- **Convert an EDF dataset** → [Dataset Preparation](guides/dataset-preparation.md)
+- **Convert an EDF dataset** → [Dataset Reference](reference/dataset.md#dataset-preparation)
 - **See project status** → [Roadmap](development/roadmap.md)
 - **Contribute code** → [CONTRIBUTING.md](../CONTRIBUTING.md)
 

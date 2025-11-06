@@ -121,6 +121,62 @@ Execute benchmark experiments.
 
 ---
 
+## Benchmark Duration Guidelines
+
+Selecting appropriate benchmark durations is critical for reliable latency statistics. Based on research in real-time system benchmarking and statistical requirements for percentile confidence:
+
+### Statistical Requirements
+
+Different percentiles require different minimum sample sizes:
+- **P50 (Median)**: Reliable with ~100+ samples
+- **P95**: Needs ~1,000+ samples for confidence
+- **P99**: Needs ~10,000+ samples for confidence
+
+With CORTEX's default configuration (2 windows/second):
+- 100 samples = 50 seconds
+- 1,000 samples = 500 seconds (~8 minutes)
+- 10,000 samples = 5,000 seconds (~83 minutes)
+
+### Duration Recommendations
+
+| Duration | Windows/Repeat | Total Windows (3 repeats) | P50 | P95 | P99 | Use Case |
+|----------|----------------|---------------------------|-----|-----|-----|----------|
+| 10s      | ~20            | ~60                       | ✅ Good | ⚠️ Acceptable | ❌ Low | Quick tests, CI |
+| 30s      | ~60            | ~180                      | ✅ Excellent | ✅ Good | ⚠️ Acceptable | Development |
+| **60s**  | **~120**       | **~360**                  | **✅ Excellent** | **✅ Good** | **✅ Acceptable** | **Recommended** |
+| 120s     | ~240           | ~720                      | ✅ Excellent | ✅ Excellent | ✅ Good | Production |
+| 300s+    | ~600+          | ~1,800+                   | ✅ Excellent | ✅ Excellent | ✅ Excellent | Research/Publication |
+
+**Note**: Based on 2 Hz window rate (160 Hz sample rate, 80 sample hop, 64 channels).
+
+### Examples
+
+**Quick development test:**
+```bash
+./cortex run --all --duration 10 --repeats 1 --warmup 5
+# ~20 windows: Good for P50, limited P95/P99 confidence
+```
+
+**Standard benchmark (recommended):**
+```bash
+./cortex run --all --duration 60 --repeats 3 --warmup 5
+# ~360 windows: Reliable P50/P95, acceptable P99
+```
+
+**Publication-quality:**
+```bash
+./cortex run --all --duration 300 --repeats 3 --warmup 5
+# ~1,800 windows: Excellent for all percentiles, captures tail latencies
+```
+
+### Research References
+
+Duration recommendations are based on:
+- **MDPI Study (2021)**: Real-time performance measurements of Linux kernels conducted 3-hour tests with ~1 million samples for comprehensive latency analysis ([link](https://www.mdpi.com/2073-431X/10/5/64))
+- **EVL Project Benchmarks**: Recommends extended measurement periods to capture rare latency events and worst-case behavior ([link](https://evlproject.org/core/benchmarks/))
+
+---
+
 ### `cortex analyze`
 Generate comparison plots and summary from benchmark results.
 
