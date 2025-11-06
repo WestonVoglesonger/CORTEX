@@ -2,7 +2,7 @@
 
 Complete documentation for the CORTEX BCI Kernel Benchmarking Pipeline.
 
-## 🚀 Getting Started
+## Getting Started
 
 Perfect for new users who want to quickly start using CORTEX.
 
@@ -15,7 +15,7 @@ Perfect for new users who want to quickly start using CORTEX.
 
 ---
 
-## 📖 Reference
+## Reference
 
 Authoritative technical specifications and schemas.
 
@@ -31,7 +31,7 @@ Authoritative technical specifications and schemas.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 High-level system design and implementation rationale.
 
@@ -45,7 +45,7 @@ High-level system design and implementation rationale.
 
 ---
 
-## 📝 Guides
+## Guides
 
 Step-by-step instructions for common tasks.
 
@@ -58,7 +58,7 @@ Step-by-step instructions for common tasks.
 
 ---
 
-## 🔧 Development
+## Development
 
 Project planning, contribution guidelines, and historical context.
 
@@ -73,7 +73,7 @@ Project planning, contribution guidelines, and historical context.
 
 ---
 
-## 📚 Complete Document Index
+## Complete Document Index
 
 ### By Category
 
@@ -105,7 +105,7 @@ Project planning, contribution guidelines, and historical context.
 
 ---
 
-## 🔍 Finding What You Need
+## Finding What You Need
 
 ### I want to...
 

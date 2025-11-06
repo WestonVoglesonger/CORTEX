@@ -40,7 +40,7 @@ List all available kernels with build status.
 ```
 Kernel               Version    DType      Status
 ----------------------------------------------------------------
-car                  v1         f32        ⚠ No impl
+car                  v1         f32        [ ] No impl
 fir_bandpass         v1         f32        ✓ Built
 goertzel             v1         f32        ✓ Built
 notch_iir            v1         f32        ✓ Built
@@ -141,11 +141,11 @@ With CORTEX's default configuration (2 windows/second):
 
 | Duration | Windows/Repeat | Total Windows (3 repeats) | P50 | P95 | P99 | Use Case |
 |----------|----------------|---------------------------|-----|-----|-----|----------|
-| 10s      | ~20            | ~60                       | ✅ Good | ⚠️ Acceptable | ❌ Low | Quick tests, CI |
-| 30s      | ~60            | ~180                      | ✅ Excellent | ✅ Good | ⚠️ Acceptable | Development |
-| **60s**  | **~120**       | **~360**                  | **✅ Excellent** | **✅ Good** | **✅ Acceptable** | **Recommended** |
-| 120s     | ~240           | ~720                      | ✅ Excellent | ✅ Excellent | ✅ Good | Production |
-| 300s+    | ~600+          | ~1,800+                   | ✅ Excellent | ✅ Excellent | ✅ Excellent | Research/Publication |
+| 10s      | ~20            | ~60                       | Good | Acceptable | Low | Quick tests, CI |
+| 30s      | ~60            | ~180                      | Excellent | Good | Acceptable | Development |
+| **60s**  | **~120**       | **~360**                  | **Excellent** | **Good** | **Acceptable** | **Recommended** |
+| 120s     | ~240           | ~720                      | Excellent | Excellent | Good | Production |
+| 300s+    | ~600+          | ~1,800+                   | Excellent | Excellent | Excellent | Research/Publication |
 
 **Note**: Based on 2 Hz window rate (160 Hz sample rate, 80 sample hop, 64 channels).
 

@@ -5,18 +5,18 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ## Completed (Weeks 1-4)
 
 ### Infrastructure & Architecture
-- ✅ Dataset selection and documentation (PhysioNet EEG Motor Movement/Imagery)
-- ✅ Kernel specifications (KERNELS.md with CAR, notch IIR, FIR bandpass, Goertzel)
-- ✅ Plugin ABI definition (PLUGIN_INTERFACE.md, cortex_plugin.h)
-- ✅ Run configuration schema (RUN_CONFIG.md)
-- ✅ Telemetry schema (TELEMETRY.md)
-- ✅ Dataset replayer implementation (src/replayer/) with real-time cadence
-- ✅ Scheduler with real-time support (src/scheduler/) - FIFO/RR policies, CPU affinity
-- ✅ Harness with plugin loader (src/harness/) - sequential plugin execution
-- ✅ Kernel registry system (kernels/v1/{name}@{dtype}/) with spec.yaml
-- ✅ macOS compatibility (dylib support, cross-platform builds)
-- ✅ Oracle reference implementations (Python/SciPy/MNE in kernels/v1/*/oracle.py)
-- ✅ Unit tests (replayer, scheduler, kernel registry)
+- [x] Dataset selection and documentation (PhysioNet EEG Motor Movement/Imagery)
+- [x] Kernel specifications (KERNELS.md with CAR, notch IIR, FIR bandpass, Goertzel)
+- [x] Plugin ABI definition (PLUGIN_INTERFACE.md, cortex_plugin.h)
+- [x] Run configuration schema (RUN_CONFIG.md)
+- [x] Telemetry schema (TELEMETRY.md)
+- [x] Dataset replayer implementation (src/replayer/) with real-time cadence
+- [x] Scheduler with real-time support (src/scheduler/) - FIFO/RR policies, CPU affinity
+- [x] Harness with plugin loader (src/harness/) - sequential plugin execution
+- [x] Kernel registry system (kernels/v1/{name}@{dtype}/) with spec.yaml
+- [x] macOS compatibility (dylib support, cross-platform builds)
+- [x] Oracle reference implementations (Python/SciPy/MNE in kernels/v1/*/oracle.py)
+- [x] Unit tests (replayer, scheduler, kernel registry)
 
 ### Design Decisions
 - Sequential plugin execution architecture (isolates per-kernel performance)
@@ -26,14 +26,14 @@ This document tracks progress against the original Fall 2025 proposal and implem
 
 ## In Progress (Weeks 5-7, Current)
 
-### Kernel C Implementations ⏳
+### Kernel C Implementations (In Progress)
 - CAR (Common Average Reference) - **IN PROGRESS** (Avi Kumar)
-- Notch IIR (60Hz line noise removal) - ✅ **COMPLETED**
-- FIR Bandpass (8-30 Hz) - ✅ **COMPLETED**
-- Goertzel Bandpower (v1) - ✅ **COMPLETED**
-- Goertzel Bandpower (v2, optimized) - ✅ **COMPLETED**
+- Notch IIR (60Hz line noise removal) - **COMPLETED**
+- FIR Bandpass (8-30 Hz) - **COMPLETED**
+- Goertzel Bandpower (v1) - **COMPLETED**
+- Goertzel Bandpower (v2, optimized) - **COMPLETED**
 
-### Measurement Infrastructure ⏳
+### Measurement Infrastructure (In Progress)
 - Background load profiles (stress-ng integration - 5 TODOs in replayer.c) - **DEFERRED**
 
 ## Remaining This Semester (Weeks 7-9)
@@ -41,7 +41,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ### Midterm Deliverables (Week 7)
 - Complete all kernel C implementations
 - Run initial experiment matrix (2-3 kernels × load profiles)
-- Generate preliminary comparison plots ✅ **COMPLETED** - HTML report generator
+- Generate preliminary comparison plots **COMPLETED** - HTML report generator
 - Live demonstration of harness running multiple kernels
 - Midterm demo presentation
 
@@ -62,12 +62,12 @@ This document tracks progress against the original Fall 2025 proposal and implem
 **Rationale**: Quantization is most valuable when benchmarking on embedded targets (STM32H7, Jetson) planned for Spring 2026. Fall 2025 establishes the float32 baseline on x86.
 
 **Infrastructure Status**:
-- ✅ Plugin ABI supports multiple dtypes (CORTEX_DTYPE_FLOAT32, Q15, Q7)
-- ✅ Kernel specs include quantized tolerances (rtol=1e-3, atol=1e-3)
-- ⏳ TODOs in scheduler (scheduler.c:185, scheduler.h:82-83) mark implementation points
-- ❌ No Q15/Q7 kernel implementations exist yet
-- ❌ Harness hardcodes dtype=float32 (main.c:102)
-- ❌ Replayer only reads float32 datasets
+- [x] Plugin ABI supports multiple dtypes (CORTEX_DTYPE_FLOAT32, Q15, Q7)
+- [x] Kernel specs include quantized tolerances (rtol=1e-3, atol=1e-3)
+- [ ] TODOs in scheduler (scheduler.c:185, scheduler.h:82-83) mark implementation points
+- [ ] No Q15/Q7 kernel implementations exist yet
+- [ ] Harness hardcodes dtype=float32 (main.c:102)
+- [ ] Replayer only reads float32 datasets
 
 **Spring 2026 Implementation Plan**:
 1. Dataset conversion: float32 → Q15/Q7 binary formats
@@ -102,7 +102,7 @@ These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the co
 - Background load startup/teardown functions (currently stubs)
 
 #### Telemetry & Analysis
-- ✅ NDJSON telemetry output format (completed - alternative to CSV)
+- [x] NDJSON telemetry output format (completed - alternative to CSV)
 - Summary statistics generation (p50/p95/p99 aggregates, miss rate) - partially available in HTML reports
 - Multi-session dataset concatenation support (future enhancement)
 - Per-window energy (E_window) and derived power (P = E_window × Fs/H) - deferred to Spring 2026

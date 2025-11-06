@@ -123,12 +123,12 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 ## Verification Checklist
 
-✅ Build completes without errors  
-✅ Tests pass (`make tests`)  
-✅ Kernels validate successfully (`./cortex.py validate`)  
-✅ Benchmarks run and produce results  
-✅ Analysis generates plots  
-✅ SUMMARY.md shows realistic latencies (< 1 ms for EEG kernels)
+- [x] Build completes without errors
+- [x] Tests pass (`make tests`)
+- [x] Kernels validate successfully (`./cortex.py validate`)
+- [x] Benchmarks run and produce results
+- [x] Analysis generates plots
+- [x] SUMMARY.md shows realistic latencies (< 1 ms for EEG kernels)
 
 ## Common Issues
 

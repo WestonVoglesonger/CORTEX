@@ -139,10 +139,10 @@ See `docs/reference/kernels.md` section "Your Kernel" for complete specification
 
 ## Implementation Status
 
-- ✅ Specification defined
-- ✅ Oracle implementation
-- ✅ C implementation
-- ✅ Validation passed
+- [x] Specification defined
+- [x] Oracle implementation
+- [x] C implementation
+- [x] Validation passed
 ````
 
 ### Step 4: Write oracle.py
@@ -311,10 +311,10 @@ void cortex_teardown(void *handle) {
 ```
 
 **Critical rules**:
-- ❌ **NO allocations in `cortex_process()`** - pre-allocate everything in `init()`
-- ✅ Handle NaNs gracefully (substitute 0, skip, or exclude from calculation)
-- ✅ Return `{NULL, 0, 0}` from `init()` on any error
-- ✅ Always check `abi_version` and `struct_size` in `init()`
+- **NO allocations in `cortex_process()`** - pre-allocate everything in `init()`
+- Handle NaNs gracefully (substitute 0, skip, or exclude from calculation)
+- Return `{NULL, 0, 0}` from `init()` on any error
+- Always check `abi_version` and `struct_size` in `init()`
 
 ### Step 6: Create Makefile
 
@@ -441,7 +441,7 @@ kernels/v1/your_kernel@f32/
 ## Common Pitfalls
 
 ### 1. Memory Allocations in process()
-❌ **Don't do this**:
+**Don't do this**:
 ```c
 void cortex_process(void *handle, const void *input, void *output) {
     float *temp = malloc(1000 * sizeof(float));  // WRONG!
@@ -449,7 +449,7 @@ void cortex_process(void *handle, const void *input, void *output) {
 }
 ```
 
-✅ **Do this instead**:
+**Do this instead**:
 ```c
 cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     state->temp = malloc(1000 * sizeof(float));  // Allocate once
@@ -462,12 +462,12 @@ void cortex_process(void *handle, const void *input, void *output) {
 ```
 
 ### 2. Forgetting NaN Handling
-❌ **Crashes or incorrect results**:
+**Crashes or incorrect results**:
 ```c
 y[idx] = x[idx] * 2.0f;  // NaN propagates
 ```
 
-✅ **Graceful handling**:
+**Graceful handling**:
 ```c
 if (isnan(x[idx])) {
     y[idx] = 0.0f;

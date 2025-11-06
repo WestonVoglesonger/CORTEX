@@ -162,10 +162,10 @@ python3 convert_edf_to_float32.py S002R03 S002R07 S002R11
 ### Verification
 
 After conversion, verify:
-- ✅ Binary files created: `*.float32` (~4.9MB each)
-- ✅ Metadata files created: `*_metadata.json`
-- ✅ Channel order file: `channel_order.json`
-- ✅ Sample count: 20,000 per channel (125s at 160Hz)
+- Binary files created: `*.float32` (~4.9MB each)
+- Metadata files created: `*_metadata.json`
+- Channel order file: `channel_order.json`
+- Sample count: 20,000 per channel (125s at 160Hz)
 
 ### Troubleshooting
 
