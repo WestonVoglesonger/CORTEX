@@ -164,7 +164,7 @@ typedef struct {
     uint32_t window_length;
     uint32_t hop_samples;  /* Store hop size for tail buffer alignment */
     float *tail;  /* [(FIR_NUMTAPS-1) × channels] tail buffer */
-} fir_bandpass_state_t;
+} bandpass_fir_state_t;
 
 /* Initialize plugin instance */
 cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
@@ -191,12 +191,12 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     /* Validate sample rate matches coefficient design (optional warning) */
     if (config->sample_rate_hz != (uint32_t)FIR_SAMPLE_RATE_HZ) {
         /* Coefficients designed for 160 Hz - warn but allow */
-        fprintf(stderr, "[fir_bandpass] warning: coefficients designed for %.0f Hz, "
+        fprintf(stderr, "[bandpass_fir] warning: coefficients designed for %.0f Hz, "
                 "config has %u Hz\n", FIR_SAMPLE_RATE_HZ, config->sample_rate_hz);
     }
 
     /* Allocate state structure */
-    fir_bandpass_state_t *state = (fir_bandpass_state_t *)calloc(1, sizeof(fir_bandpass_state_t));
+    bandpass_fir_state_t *state = (bandpass_fir_state_t *)calloc(1, sizeof(bandpass_fir_state_t));
     if (!state) {
         return result;
     }
@@ -231,7 +231,7 @@ void cortex_process(void *handle, const void *input, void *output) {
         return;
     }
 
-    fir_bandpass_state_t *s = (fir_bandpass_state_t *)handle;
+    bandpass_fir_state_t *s = (bandpass_fir_state_t *)handle;
     const float *in = (const float *)input;
     float *out = (float *)output;
 
@@ -367,7 +367,7 @@ void cortex_teardown(void *handle) {
         return;
     }
     
-    fir_bandpass_state_t *s = (fir_bandpass_state_t *)handle;
+    bandpass_fir_state_t *s = (bandpass_fir_state_t *)handle;
     free(s->tail);
     free(s);
 }

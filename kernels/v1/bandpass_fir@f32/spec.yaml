@@ -1,5 +1,5 @@
 kernel:
-  name: "fir_bandpass"
+  name: "bandpass_fir"
   version: "1.0.0"
   dtype: "float32"
 

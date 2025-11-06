@@ -31,7 +31,7 @@ make clean && make
 Building harness...
 Building kernel plugins from registry...
   Building v1/notch_iir@f32...
-  Building v1/fir_bandpass@f32...
+  Building v1/bandpass_fir@f32...
   Building v1/goertzel@f32...
 Building and running tests...
 ```
@@ -75,7 +75,7 @@ xdg-open results/analysis/latency_comparison.png
 Kernel          | Median Latency | p95 Latency | p99 Latency | Deadline Miss Rate
 ----------------|----------------|-------------|-------------|--------------------
 notch_iir       |   18.2 µs     |   24.5 µs   |   32.1 µs   | 0.00%
-fir_bandpass    |   42.3 µs     |   58.7 µs   |   78.4 µs   | 0.00%
+bandpass_fir    |   42.3 µs     |   58.7 µs   |   78.4 µs   | 0.00%
 goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 ```
 
@@ -104,7 +104,7 @@ goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 ./cortex.py run --all --duration 300 --repeats 5
 
 # Single kernel with custom settings
-./cortex.py run --kernel fir_bandpass --duration 60 --warmup 5
+./cortex.py run --kernel bandpass_fir --duration 60 --warmup 5
 ```
 
 ### Modify Configuration

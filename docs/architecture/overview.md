@@ -333,7 +333,7 @@ YAML → config parser → numerical parameters → cortex_plugin_config_t
 
 **Note**: Current limitation - all kernel parameters are hardcoded:
 - `notch_iir`: f0=60 Hz, Q=30
-- `fir_bandpass`: numtaps=129, passband=[8,30] Hz
+- `bandpass_fir`: numtaps=129, passband=[8,30] Hz
 - `goertzel`: alpha (8-13 Hz), beta (13-30 Hz)
 
 ## File Organization
@@ -350,7 +350,7 @@ CORTEX/
 │   └── v1/            # Kernel implementations
 │       ├── car@f32/
 │       ├── notch_iir@f32/
-│       ├── fir_bandpass@f32/
+│       ├── bandpass_fir@f32/
 │       └── goertzel@f32/
 ├── configs/           # YAML configurations
 ├── datasets/          # EEG data

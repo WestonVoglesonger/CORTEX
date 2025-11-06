@@ -40,8 +40,8 @@ List all available kernels with build status.
 ```
 Kernel               Version    DType      Status
 ----------------------------------------------------------------
+bandpass_fir         v1         f32        ✓ Built
 car                  v1         f32        [ ] No impl
-fir_bandpass         v1         f32        ✓ Built
 goertzel             v1         f32        ✓ Built
 notch_iir            v1         f32        ✓ Built
 
@@ -273,7 +273,7 @@ pip install -r requirements.txt
 
 # 3. Validate kernels work
 ./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel fir_bandpass
+./cortex.py validate --kernel bandpass_fir
 ./cortex.py validate --kernel goertzel
 
 # 4. Run quick test with one kernel
@@ -288,7 +288,7 @@ pip install -r requirements.txt
 # Or step-by-step:
 ./cortex.py build
 ./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel fir_bandpass
+./cortex.py validate --kernel bandpass_fir
 ./cortex.py validate --kernel goertzel
 ./cortex.py run --all --duration 125 --repeats 3
 ./cortex.py analyze results/batch_<timestamp>

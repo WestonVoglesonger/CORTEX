@@ -29,7 +29,7 @@ cd kernels/v1/${KERNEL_NAME}@f32
 ```
 
 **Naming conventions**:
-- Lowercase with underscores: `notch_iir`, `fir_bandpass`
+- Lowercase with underscores: `notch_iir`, `bandpass_fir`
 - Descriptive but concise: `car` not `common_average_reference`
 - Algorithm first: `notch_iir` not `iir_notch`
 
@@ -513,7 +513,7 @@ Before submitting your kernel:
 ## Next Steps
 
 - Read complete ABI spec: [plugin-interface.md](../reference/plugin-interface.md)
-- Study existing kernels: `kernels/v1/notch_iir@f32/`, `kernels/v1/fir_bandpass@f32/`
+- Study existing kernels: `kernels/v1/notch_iir@f32/`, `kernels/v1/bandpass_fir@f32/`
 - Understand kernel mathematics: [kernels.md](../reference/kernels.md)
 - Platform-specific builds: [platform-compatibility.md](../architecture/platform-compatibility.md)
 
@@ -523,7 +523,7 @@ Good reference implementations:
 
 - **Simple (stateless)**: `kernels/v1/car@f32/` - Common Average Reference
 - **IIR (stateful)**: `kernels/v1/notch_iir@f32/` - Biquad filter
-- **FIR (stateful)**: `kernels/v1/fir_bandpass@f32/` - Bandpass filter
+- **FIR (stateful)**: `kernels/v1/bandpass_fir@f32/` - Bandpass filter
 - **Frequency domain**: `kernels/v1/goertzel@f32/` - Bandpower extraction
 
 ## Getting Help

@@ -1,4 +1,4 @@
-# FIR Bandpass Filter
+# Bandpass FIR Filter
 
 ## Overview
 
@@ -52,8 +52,8 @@ Reference in `cortex.yaml`:
 
 ```yaml
 plugins:
-  - name: "fir_bandpass"
-    spec_uri: "kernels/v1/fir_bandpass@f32"
+  - name: "bandpass_fir"
+    spec_uri: "kernels/v1/bandpass_fir@f32"
     spec_version: "1.0.0"
     runtime:
       window_length_samples: 160
@@ -78,7 +78,7 @@ The FIR coefficients are **stored as `double` precision** in the C implementatio
 
 **Key points:**
 - Coefficients are pre-computed using `scipy.signal.firwin(129, [8, 30], pass_zero=False, fs=160, window='hamming')`
-- Stored as `double` precision constants in `fir_bandpass.c`
+- Stored as `double` precision constants in `bandpass_fir.c`
 - Output is still `float32` (matching the spec requirement)
 - Accumulation performed in `double` precision for accuracy
 - Final result cast to `float32` for output
@@ -141,7 +141,7 @@ The implementation achieves exact matches with the oracle when:
 
 ```bash
 # Test FIR bandpass accuracy
-./tests/test_kernel_accuracy --kernel fir_bandpass --windows 10 --verbose
+./tests/test_kernel_accuracy --kernel bandpass_fir --windows 10 --verbose
 
 # Test registry (validates kernel structure)
 ./tests/test_kernel_registry

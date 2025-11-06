@@ -39,7 +39,7 @@ See [docs/reference/plugin-interface.md](reference/plugin-interface.md) for comp
 **Current Limitation**: All v1 kernels use hardcoded parameters (`kernel_params` not yet wired in harness):
 
 - **notch_iir**: f0=60 Hz, Q=30
-- **fir_bandpass**: numtaps=129, passband=[8,30] Hz
+- **bandpass_fir**: numtaps=129, passband=[8,30] Hz
 - **goertzel**: alpha (8-13 Hz), beta (13-30 Hz)
 - **car**: No parameters (uses all channels)
 
