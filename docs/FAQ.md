@@ -197,15 +197,12 @@ Defined in `kernels/v1/{name}@f32/spec.yaml`
 ### How do I validate a kernel?
 
 ```bash
-# Validate all kernels
-./cortex.py validate
-
-# Validate specific kernel
-./cortex.py validate --kernel notch_iir --verbose
+# Validate specific kernel (required - testing all at once not implemented)
+./cortex.py validate --kernel notch_iir
+./cortex.py validate --kernel goertzel --verbose
 
 # Or use test binary directly
-cd tests
-./test_kernel_accuracy --kernel goertzel --windows 10 --verbose
+./tests/test_kernel_accuracy --kernel goertzel --windows 10 --verbose
 ```
 
 ---

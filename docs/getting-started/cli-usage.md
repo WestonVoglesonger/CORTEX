@@ -72,15 +72,16 @@ Build harness, kernel plugins, and tests.
 Run kernel accuracy tests against Python oracles.
 
 ```bash
-./cortex.py validate                    # Test all kernels
-./cortex.py validate --kernel goertzel  # Test specific kernel
-./cortex.py validate --verbose          # Show verbose output
+./cortex.py validate --kernel notch_iir   # Test specific kernel
+./cortex.py validate --kernel goertzel --verbose  # With verbose output
 ```
 
 **What it does:**
-- Runs `tests/test_kernel_accuracy`
-- Compares C implementations against SciPy/MNE references
-- Validates output within tolerance bounds
+- Runs `tests/test_kernel_accuracy` for specified kernel
+- Compares C implementation against SciPy/MNE reference
+- Validates output within tolerance bounds (rtol=1e-5, atol=1e-6)
+
+**Note**: Testing all kernels at once is not yet implemented. Validate kernels individually.
 
 ---
 
@@ -271,7 +272,9 @@ pip install -r requirements.txt
 ./cortex.py build
 
 # 3. Validate kernels work
-./cortex.py validate
+./cortex.py validate --kernel notch_iir
+./cortex.py validate --kernel fir_bandpass
+./cortex.py validate --kernel goertzel
 
 # 4. Run quick test with one kernel
 ./cortex.py run --kernel goertzel --duration 10 --repeats 1
@@ -284,7 +287,9 @@ pip install -r requirements.txt
 
 # Or step-by-step:
 ./cortex.py build
-./cortex.py validate
+./cortex.py validate --kernel notch_iir
+./cortex.py validate --kernel fir_bandpass
+./cortex.py validate --kernel goertzel
 ./cortex.py run --all --duration 125 --repeats 3
 ./cortex.py analyze results/batch_<timestamp>
 ```

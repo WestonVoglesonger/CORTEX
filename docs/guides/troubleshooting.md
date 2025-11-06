@@ -505,7 +505,7 @@ If your issue isn't listed here:
 
 3. **Enable verbose logging**:
    ```bash
-   ./cortex.py validate --verbose
+   ./cortex.py validate --kernel {name} --verbose
    ./cortex.py run --kernel {name} --verbose
    ```
 

@@ -125,7 +125,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 - [x] Build completes without errors
 - [x] Tests pass (`make tests`)
-- [x] Kernels validate successfully (`./cortex.py validate`)
+- [x] Kernels validate successfully (`./cortex.py validate --kernel <name>` for each kernel)
 - [x] Benchmarks run and produce results
 - [x] Analysis generates plots
 - [x] SUMMARY.md shows realistic latencies (< 1 ms for EEG kernels)
