@@ -122,7 +122,6 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 - [ ] Build succeeds on both macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] Documentation updated for changes
-- [ ] CLAUDE.md updated if architecture/workflows change
 
 ### Test Coverage
 
@@ -133,7 +132,7 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 
 ## Pull Request Process
 
-1. **Update documentation**: README, docs/, and CLAUDE.md as needed
+1. **Update documentation**: README and docs/ as needed
 2. **Self-review**: Check your own diff for issues
 3. **Descriptive PR title**: Use conventional commit format
    - `feat:` for new features
@@ -208,7 +207,7 @@ make -C tests test-scheduler
 
 ## Questions?
 
-- Check [docs/development/developer-guide.md](docs/development/developer-guide.md)
+- Check [docs/README.md](docs/README.md) for complete documentation index
 - Review existing kernels for examples
 - Open a GitHub Discussion for questions
 - See [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md) for common issues

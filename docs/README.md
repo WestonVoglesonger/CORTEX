@@ -101,7 +101,7 @@ Project planning, contribution guidelines, and historical context.
 - [roadmap.md](development/roadmap.md) - Project timeline
 - [archive/](development/archive/) - Historical docs
 
-**Total**: 13 documentation files (plus FAQ.md and archive)
+**Total**: 14 documentation files (2 getting-started + 5 reference + 3 architecture + 2 guides + 1 development + 1 FAQ)
 
 ---
 
