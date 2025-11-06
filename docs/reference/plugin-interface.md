@@ -174,7 +174,7 @@ void cortex_teardown(void* handle);
 ## Guidelines for Plugin Authors
 
 * **Language & linkage**: Implement in C or C++, export with `extern "C"`.
-* **Numerical stability**: Follow specs in `docs/KERNELS.md`. Use float32 by default; quantised versions must saturate and round correctly.
+* **Numerical stability**: Follow tolerances in each kernel's `spec.yaml` file. Use float32 by default; quantised versions must saturate and round correctly.
 * **State management**: Store persistent state in memory allocated in `init()`.
 * **Thread safety**: No concurrent calls to `process()` on same handle; multiple instances may run in parallel.
 * **Error handling**: Return NULL from `init()` if unsupported. Handle NaNs gracefully.

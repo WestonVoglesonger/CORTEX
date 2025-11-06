@@ -364,6 +364,6 @@ CORTEX/
 
 - **Add a kernel**: [guides/adding-kernels.md](../guides/adding-kernels.md)
 - **Configure runs**: [reference/configuration.md](../reference/configuration.md)
-- **Understand kernels**: [reference/kernels.md](../reference/kernels.md)
+- **Plugin interface**: [reference/plugin-interface.md](../reference/plugin-interface.md)
 - **Interpret results**: [reference/telemetry.md](../reference/telemetry.md)
 - **Platform-specific**: [platform-compatibility.md](platform-compatibility.md)

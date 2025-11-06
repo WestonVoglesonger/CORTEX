@@ -144,8 +144,8 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 - **Complete CLI Reference**: [cli-usage.md](cli-usage.md)
 - **Architecture Overview**: [docs/architecture/overview.md](../architecture/overview.md)
-- **Kernel Specifications**: [docs/reference/kernels.md](../reference/kernels.md)
 - **Configuration Guide**: [docs/reference/configuration.md](../reference/configuration.md)
+- **Plugin Interface**: [docs/reference/plugin-interface.md](../reference/plugin-interface.md)
 - **Troubleshooting**: [docs/guides/troubleshooting.md](../guides/troubleshooting.md)
 
 ## Need Help?

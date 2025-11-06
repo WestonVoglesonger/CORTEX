@@ -6,7 +6,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 
 ### Infrastructure & Architecture
 - [x] Dataset selection and documentation (PhysioNet EEG Motor Movement/Imagery)
-- [x] Kernel specifications (KERNELS.md with CAR, notch IIR, FIR bandpass, Goertzel)
+- [x] Kernel specifications (individual README.md files for CAR, notch IIR, bandpass FIR, Goertzel)
 - [x] Plugin ABI definition (PLUGIN_INTERFACE.md, cortex_plugin.h)
 - [x] Run configuration schema (RUN_CONFIG.md)
 - [x] Telemetry schema (TELEMETRY.md)
@@ -77,7 +77,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 6. Validation: test against float32 oracles with looser tolerances
 7. Analysis: compare latency/memory/energy across float32/Q15/Q7 on embedded targets
 
-See `include/cortex_plugin.h` for dtype definitions and `docs/KERNELS.md` for tolerance specifications.
+See `include/cortex_plugin.h` for dtype definitions and `kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
 
 ### Unimplemented Configuration Fields
 These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the config loader but **not yet used** by the harness:

@@ -66,10 +66,6 @@ plugins:
 
 **Note**: Due to group delay, the output lags the input by 64 samples. In real-time systems, this creates a latency of 0.4 seconds.
 
-## Reference
-
-See `docs/KERNELS.md` section "Band-pass FIR (8–30 Hz)" for the complete mathematical specification.
-
 ## Implementation Details
 
 ### Coefficient Precision

@@ -22,7 +22,6 @@ Authoritative technical specifications and schemas.
 | Document | Description |
 |----------|-------------|
 | [Plugin Interface Specification](reference/plugin-interface.md) | Complete ABI v2 specification for kernel plugins |
-| [Kernel Specifications](reference/kernels.md) | Mathematical definitions for all signal processing kernels |
 | [Configuration Schema](reference/configuration.md) | YAML configuration file reference |
 | [Telemetry Format](reference/telemetry.md) | NDJSON/CSV output schema and metrics |
 | [Dataset Documentation](reference/dataset.md) | PhysioNet EEG dataset format and handling |
@@ -81,9 +80,8 @@ Project planning, contribution guidelines, and historical context.
 - [quickstart.md](getting-started/quickstart.md) - 5-minute setup
 - [cli-usage.md](getting-started/cli-usage.md) - CLI reference
 
-**Reference** (5 docs)
+**Reference** (4 docs)
 - [plugin-interface.md](reference/plugin-interface.md) - Plugin ABI v2
-- [kernels.md](reference/kernels.md) - Kernel math specs
 - [configuration.md](reference/configuration.md) - YAML schema
 - [telemetry.md](reference/telemetry.md) - Output formats
 - [dataset.md](reference/dataset.md) - EEG data format

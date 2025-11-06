@@ -445,10 +445,11 @@ Run with:
 
 **Documentation:**
 - Main README: `README.md`
-- Kernel specs: `docs/KERNELS.md`
-- Plugin interface: `docs/PLUGIN_INTERFACE.md`
-- Configuration: `docs/RUN_CONFIG.md`
-- Roadmap: `docs/ROADMAP.md`
+- Plugin interface: `docs/reference/plugin-interface.md`
+- Configuration: `docs/reference/configuration.md`
+- Telemetry: `docs/reference/telemetry.md`
+- Roadmap: `docs/development/roadmap.md`
+- Individual kernel specs: `kernels/v1/{name}@{dtype}/README.md`
 
 **Issues:**
 https://github.com/WestonVoglesonger/CORTEX/issues

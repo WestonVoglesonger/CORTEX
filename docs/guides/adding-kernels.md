@@ -133,10 +133,6 @@ plugins:
     params: {}  # Currently not supported
 ```
 
-## Reference
-
-See `docs/reference/kernels.md` section "Your Kernel" for complete specification.
-
 ## Implementation Status
 
 - [x] Specification defined
@@ -514,7 +510,6 @@ Before submitting your kernel:
 
 - Read complete ABI spec: [plugin-interface.md](../reference/plugin-interface.md)
 - Study existing kernels: `kernels/v1/notch_iir@f32/`, `kernels/v1/bandpass_fir@f32/`
-- Understand kernel mathematics: [kernels.md](../reference/kernels.md)
 - Platform-specific builds: [platform-compatibility.md](../architecture/platform-compatibility.md)
 
 ## Example Kernels
