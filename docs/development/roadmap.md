@@ -178,5 +178,5 @@ From CORTEX embedded devices proposal (Spring 2026):
 - Original Proposal: "Benchmarking BCI Kernels: A Pipeline for Real-Time Performance Analysis" (Sept 2025)
 - Implementation Plan: "Brain–Computer Interface Benchmark Project Plan" (Sept 23, 2025)
 - Embedded Extension: "CORTEX: Extending BCI Kernel Benchmarking to Embedded Devices" (Oct 23, 2025)
-- Testing Strategy: `docs/TESTING_STRATEGY.md` (HIL vs. Full On-Device vs. Stochastic Calibration)
+- Benchmarking Methodology: `docs/architecture/benchmarking-methodology.md` (HIL vs. Full On-Device vs. Stochastic Calibration)
 

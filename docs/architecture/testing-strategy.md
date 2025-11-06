@@ -1,101 +1,379 @@
-## Testing Strategy: HIL vs Full On‑Device vs Stochastic Calibration
+# Testing Strategy
 
-### Purpose
-Capture the trade‑offs, when‑to‑use, and our current semester plan for three evaluation modes:
-1) Hardware‑in‑the‑Loop (HIL, kernel‑mode), 2) Reference Full On‑Device (system‑mode), and 3) Stochastic Calibration (model‑based prediction).
+This document describes CORTEX's software testing practices, test suites, and quality assurance approach.
 
-### North Star (Scope)
-We benchmark individual BCI signal‑processing kernels. The primary mission is comparable algorithmic efficiency (latency, jitter, energy, memory) on x86 this semester. Platform realism is handled via clearly documented limits and, later, per‑platform calibration.
+## Testing Philosophy
 
----
+CORTEX uses a **multi-layered testing approach** to ensure correctness at every level:
 
-## Modes
+1. **Unit Tests** - Validate individual components in isolation
+2. **Integration Tests** - Verify component interactions and data flow
+3. **Validation Tests** - Ensure numerical correctness against reference implementations
+4. **Structure Tests** - Verify kernel registry organization and metadata
+5. **Smoke Tests** - Basic functionality checks for CLI and configuration
 
-### 1) HIL (Kernel‑Mode)
-- **What it is**: Isolated kernel measurement behind a stable ABI; everything else runs on the host harness. Used to quantify core compute cost with fixed inputs/outputs and deadlines.
-- **Measures**: Kernel latency, jitter, energy (e.g., RAPL on x86), memory; apples‑to‑apples across kernels and builds.
-- **Pros**: Simple, fast, reproducible; perfect for ranking kernels and studying quantization; minimal engineering per platform.
-- **Limits**: Misses system overhead (interrupts, DMA setup, scheduler/context switches, memory/bus contention). Can under‑estimate real deployment by ~1.5×–2.0× for MCUs; smaller but non‑zero for FPGA/ASIC.
-- **Use when**: Early design, cross‑kernel comparisons, exploratory quantization, academic reproducibility.
+All tests must pass before code is merged. Tests are designed to be fast, deterministic, and runnable on both macOS and Linux without special hardware.
 
-### 2) Reference Full On‑Device (System‑Mode)
-- **What it is**: A representative, end‑to‑end pipeline on target class (e.g., MCU with RTOS + DMA, FPGA softcore + FIFOs). Measures kernel plus realistic overhead.
-- **Measures**: End‑to‑end latency/energy; deadline miss rates under real ISR/scheduler/DMA/bus behavior.
-- **Pros**: Deployment‑faithful; validates HIL predictions; quantifies overhead for that class.
-- **Limits**: Platform‑specific (not universal); significantly more engineering per platform; harder to keep reproducible.
-- **Use when**: Tight deadlines, multi‑kernel contention, or when publishing deployment guidance.
+## Test Suites
 
-### 3) Stochastic Calibration (Model‑Based)
-- **What it is**: Predict end‑to‑end time from HIL kernel time using a calibrated model:
-  \( T_{total} = a + b \cdot T_{kernel} + \varepsilon \), where:
-  - **a**: fixed per‑window overhead (ISR entry/exit, DMA setup, wakeups)
-  - **b**: multiplicative effects (preemption, cache/bus contention)
-  - **\(\varepsilon\)**: jitter (right‑skewed; often modeled lognormal)
-- **Pros**: Much cheaper than full pipelines; yields p50/p95/p99 predictions and miss probabilities; still kernel‑centric.
-- **Limits**: Requires a tiny on‑target calibration harness per platform to be credible; priors alone are only estimates.
-- **Use when**: You want realistic predictions without building a full pipeline; you can run a minimal calibration.
+### Unit Tests
 
----
+#### test_replayer - Dataset Streaming
+**Location:** `tests/test_replayer.c`
 
-## Recommended Plan (Fall 2025)
-- **This semester (PC‑only)**
-  - Run HIL on x86 with the harness (replayer → scheduler → plugin ABI), CSV telemetry, and energy via RAPL.
-  - Clearly document scope: results are algorithmic lower bounds; apply conservative safety bands in reporting.
-- **Next semester (platform realism)**
-  - Add a tiny on‑device calibration harness per first target MCU (and optionally FPGA): timer/ISR + DMA stub + double buffer + tunable dummy work + cycle counter. Fit \(a,b,\varepsilon\) to produce platform‑specific factors.
-  - Optionally implement one reference full pipeline per platform class (e.g., STM32F7 + FreeRTOS) to validate the model and publish overhead factors for that class.
+Tests the replayer module's data streaming and timing behavior:
+- Hop-sized chunks delivered at correct cadence (H/Fs seconds)
+- EOF handling and dataset rewind
+- Data continuity across chunks
+- Multiple configurations (various Fs, C, H values)
 
----
+**Run:**
+```bash
+make -C tests test-replayer
+```
 
-## Safety Bands and Reporting
-- **Default planning factors (when uncalibrated)**
-  - MCU (Cortex‑M + RTOS): 1.5×–2.0× over HIL kernel latency
-  - FPGA (softcore + DMA/FIFOs): 1.2×–1.5×
-  - ASIC (well‑provisioned datapaths): 1.1×–1.3×
-- **Pass/caution/fail suggestion** (by deadline at p95):
-  - Pass: p95 utilization < 50%
-  - Caution: 50–65%
-  - Fail: > 65%
+**Coverage:**
+- Chunk size validation
+- Timing accuracy (500ms period → 501ms actual)
+- EOF detection and looping
+- Data ordering verification
 
----
+#### test_scheduler - Window Formation
+**Location:** `tests/test_scheduler.c`
 
-## Why HIL Alone Isn’t Enough (Evidence Snapshot)
-- RTOS/context‑switch/ISR timing on Cortex‑M is microsecond‑scale per event and accumulates at kHz rates with multi‑stage pipelines. Published benchmarks and suites report meaningful overhead vs bare‑metal:
-  - Zephyr timing benchmarks (ISR latency, thread switches): kernel timing microbenches per board.
-  - SEGGER embOS benchmarks: task switch/interrupt measurements on Cortex‑M.
-  - FreeRTOS guidance on interrupt latency/run‑time stats; emphasizes on‑target measurement.
-  - EEMBC ULPMark‑RTOS: standardizes RTOS + workload overhead (energy/perf impact).
-  - Vendor app notes (ST) on DMA setup/arbitration and ISR latency.
-- Typical real‑time DSP/biomed pipelines report ~15–40% overhead; worst‑case scenarios higher depending on RTOS config, FPU save/restore, and memory/bus contention.
+Tests the scheduler module's windowing and plugin dispatch:
+- Window formation from hop-sized chunks
+- Overlapping window management (W-H sample retention)
+- Buffer management for various chunk sizes
+- Multiple plugin dispatch
+- Warmup period handling
+- Flush functionality (remaining samples)
+- Sequential plugin execution (isolation)
+- Data continuity through scheduler
 
-References (illustrative):
-- Zephyr timing info and latency benchmarks: https://docs.zephyrproject.org/latest/samples/benchmarks/
-- SEGGER embOS benchmarks: https://www.segger.com/products/rtos/embos/technology/benchmarks/
-- FreeRTOS run‑time stats and latency notes: https://www.freertos.org/rtos-run-time-stats.html
-- EEMBC ULPMark‑RTOS: https://www.eembc.org/ulpmark/rtos/
-- ST DMA app note (F2/F4 example): https://www.st.com/resource/en/application_note/dm00046011-an4031-using-the-stm32f2-and-stm32f4-dma-controller-stmicroelectronics.pdf
+**Run:**
+```bash
+make -C tests test-scheduler
+```
 
----
+**Coverage:**
+- Configuration validation
+- Buffer boundary conditions
+- Plugin isolation (no interference)
+- State management across windows
 
-## Minimal Calibration Harness (Next Semester)
-- **Components**: periodic ISR (Fs), double buffer/DMA stub, scheduler wake path (RTOS or bare‑metal), tunable dummy kernel (cycle‑counted), precise timing (DWT_CYCCNT or GPIO + LA), CSV logging.
-- **Procedure**:
-  1) Measure “empty” pipeline to estimate **a** per window.
-  2) Sweep dummy kernel durations; regress total vs kernel to estimate **b**.
-  3) Collect 5k–10k windows to model jitter **\(\varepsilon\)** (lognormal).
-- **Artifact**: `configs/calibration/<platform>.yaml` storing a, b, jitter params, board/RTOS/toolchain metadata.
-- **Use**: Monte Carlo from HIL \(T_{kernel}\) → predict p50/p95/p99 \(T_{total}\), miss probability by deadline.
+#### test_clock_resolution - Timing Infrastructure
+**Location:** `tests/test_clock_resolution.c`
 
----
+Tests the timing measurement infrastructure:
+- CLOCK_MONOTONIC resolution (clock_getres)
+- Minimum observable time differences
+- clock_gettime() overhead
+- Simulated latency measurement accuracy
+- Platform-specific timing capabilities
 
-## Representativeness of Our Current Design
-- **Replayer** streams hop‑sized chunks at cadence H/Fs; **Scheduler** forms overlapping windows and enforces deadlines. This mirrors typical BCI acquisition + buffering + windowing separation (hardware/data source vs processing pipeline).
-- On real implants/ASICs, buffer/windowing may be in silicon; our split is still valid for benchmarking kernels as long as scope is documented and overhead is accounted for via calibration or reference runs.
+**Run:**
+```bash
+make -C tests test-clock-resolution
+```
 
----
+**Coverage:**
+- Nanosecond precision validation
+- Measurement overhead quantification
+- Platform differences (mach_timebase vs hrtimers)
 
-## Practical Guidance
-- For this semester’s x86 HIL goals: implement harness glue, CSV telemetry, CAR + notch, RAPL energy, and dataset preconversion. Publish clear scope and apply conservative safety bands.
-- For platform realism next semester: add the calibration harness and, optionally, one reference full pipeline per platform class to validate and publish overhead factors.
+### Integration Tests
 
+#### test_kernel_accuracy - Numerical Validation
+**Location:** `tests/test_kernel_accuracy.c`
 
+Validates C kernel implementations against Python reference implementations (oracles):
+- Loads real EEG data from PhysioNet dataset
+- Processes windows through C kernels
+- Processes same data through Python oracles via subprocess
+- Compares outputs with configurable tolerances
+- Tracks maximum absolute and relative errors
+- Validates state persistence for stateful filters
+
+**Run:**
+```bash
+# Test specific kernel
+./tests/test_kernel_accuracy --kernel notch_iir --windows 10
+
+# Verbose output with per-sample errors
+./tests/test_kernel_accuracy --kernel bandpass_fir --windows 5 --verbose
+
+# Custom dataset
+./tests/test_kernel_accuracy --kernel goertzel --data datasets/custom.float32
+```
+
+**Coverage:**
+- Float32 numerical accuracy (rtol=1e-5, atol=1e-6)
+- State persistence across windows (IIR/FIR)
+- Real EEG data processing
+- Oracle-based validation
+
+**Tolerances:**
+- **Relative tolerance (rtol):** 1e-5 (0.00001)
+- **Absolute tolerance (atol):** 1e-6 (0.000001)
+
+A sample passes if: `abs_error <= atol OR rel_error <= rtol`
+
+#### test_kernel_registry - Structure Validation
+**Location:** `tests/test_kernel_registry.c`
+
+Validates kernel registry structure and metadata:
+- All expected kernel directories exist
+- spec.yaml files present with required sections
+- oracle.py files present and executable
+- Required spec fields present (input_shape, output_shape, stateful, tolerances)
+
+**Run:**
+```bash
+make -C tests test-kernel-registry
+```
+
+**Coverage:**
+- Directory structure compliance
+- Metadata completeness
+- Oracle availability
+
+### Smoke Tests
+
+#### test_cli.py - CLI Functionality
+**Location:** `tests/test_cli.py`
+
+Basic CLI smoke tests:
+- Kernel discovery from registry
+- YAML config generation
+- Kernel name extraction from paths
+
+**Run:**
+```bash
+python3 tests/test_cli.py
+```
+
+**Coverage:**
+- CLI entry points functional
+- Config generation doesn't crash
+- Kernel enumeration works
+
+## Oracle-Based Validation
+
+Each kernel has a Python reference implementation (`oracle.py`) used for validation:
+
+**Location:** `kernels/v1/{name}@{dtype}/oracle.py`
+
+**Available oracles:**
+- `car@f32/oracle.py` - Common Average Reference
+- `notch_iir@f32/oracle.py` - Notch IIR filter (SciPy)
+- `bandpass_fir@f32/oracle.py` - FIR bandpass (SciPy)
+- `goertzel@f32/oracle.py` - Goertzel bandpower
+
+**CLI Interface:**
+```bash
+# Test mode (used by test_kernel_accuracy)
+python3 kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
+
+# Manual validation
+python3 kernels/v1/notch_iir@f32/oracle.py < input.bin > output.bin
+```
+
+**Features:**
+- State persistence for stateful filters
+- Binary I/O (float32 little-endian)
+- Exact match to SciPy/NumPy reference implementations
+
+## Running All Tests
+
+### Quick Test
+```bash
+make test
+```
+Runs all C test suites and reports pass/fail summary.
+
+### Individual Test Suites
+```bash
+make -C tests test-replayer
+make -C tests test-scheduler
+make -C tests test-kernel-registry
+make -C tests test-kernel-accuracy
+make -C tests test-clock-resolution
+python3 tests/test_cli.py
+```
+
+### Kernel Validation
+```bash
+# Via CLI wrapper (recommended)
+./cortex.py validate --kernel notch_iir
+./cortex.py validate --kernel bandpass_fir --verbose
+
+# Direct test binary
+./tests/test_kernel_accuracy --kernel notch_iir --windows 10 --verbose
+```
+
+### Clean Test Artifacts
+```bash
+make -C tests clean
+```
+
+## Writing New Tests
+
+### Test Utilities
+
+**C Test Macros:**
+```c
+TEST_ASSERT(condition, message)              // Boolean assertion
+TEST_ASSERT_EQ(expected, actual, message)   // Equality check
+TEST_ASSERT_NEAR(a, b, tolerance, message)  // Floating-point comparison
+```
+
+**Example:**
+```c
+TEST_ASSERT(result != NULL, "Initialization failed");
+TEST_ASSERT_EQ(64, config.channels, "Channel count mismatch");
+TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
+```
+
+### Adding a Unit Test
+
+1. Create `tests/test_newfeature.c`
+2. Include required headers (`cortex_plugin.h`, component headers)
+3. Write test functions
+4. Add main() with test runner
+5. Update `tests/Makefile`:
+   ```makefile
+   test-newfeature: test_newfeature
+       ./test_newfeature
+   ```
+
+### Adding Kernel Validation
+
+1. Implement `kernels/v1/{name}@{dtype}/oracle.py`
+2. Add kernel to `tests/test_kernel_registry.c` expected list
+3. Run `./tests/test_kernel_accuracy --kernel {name}`
+
+## PR Requirements
+
+Before submitting a pull request:
+
+- [ ] All unit tests pass: `make test`
+- [ ] Kernel validation passes: `./cortex.py validate --kernel {name}` (if applicable)
+- [ ] Build succeeds on macOS and Linux
+- [ ] No compiler warnings with `-Wall -Wextra`
+- [ ] New functionality includes tests
+- [ ] Tests are documented (comments explaining what's being tested)
+
+## Coverage Expectations
+
+### Core Modules
+- **Replayer:** Unit tests for timing, chunking, EOF handling
+- **Scheduler:** Unit tests for windowing, buffering, dispatch
+- **Telemetry:** Structure tests (fields present, types correct)
+- **Plugin Loader:** Integration tests via full harness runs
+
+### Kernels
+- **Numerical correctness:** Oracle validation within tolerances
+- **Edge cases:** NaN handling, first window (zero state), state persistence
+- **Spec compliance:** Registry structure tests
+- **Documentation:** README.md with mathematical specification
+
+### CLI
+- **Smoke tests:** Basic functionality doesn't crash
+- **Config generation:** YAML output valid
+- **Kernel discovery:** Registry enumeration works
+
+## Test Data
+
+### PhysioNet EEG Dataset
+
+**Source:** EEG Motor Movement/Imagery Database (S001R03)
+
+**Format:** Float32 raw binary (little-endian)
+- 64 channels
+- 160 Hz sampling rate
+- Converted from EDF using `scripts/convert_edf_to_raw.py`
+
+**Location:** `datasets/eegmmidb/converted/S001R03.float32`
+
+**Used by:**
+- `test_kernel_accuracy` - Real EEG data for validation
+- Full harness runs via `./cortex.py run`
+
+**Conversion:**
+```bash
+python3 scripts/convert_edf_to_raw.py \
+    datasets/eegmmidb/edf/S001R03.edf \
+    datasets/eegmmidb/converted/S001R03.float32
+```
+
+## Cross-Platform Testing
+
+### macOS
+- Uses `.dylib` for plugins
+- CLOCK_MONOTONIC via mach_timebase_info
+- Tested on Apple Silicon (arm64) and Intel (x86_64)
+
+### Linux
+- Uses `.so` for plugins
+- CLOCK_MONOTONIC via POSIX hrtimers
+- Tested on Ubuntu, Debian, Fedora, Alpine
+
+### Platform-Specific Tests
+- `test_clock_resolution` reports platform timing capabilities
+- Plugin loading tests both `.dylib` and `.so` extensions
+- Makefiles use `$(LIBEXT)` variable for cross-platform builds
+
+## Edge Case Testing
+
+### NaN Handling
+All kernels must handle NaN inputs gracefully:
+- **CAR:** Exclude NaN channels from mean calculation
+- **Filters:** Treat NaN as 0 for filtering purposes
+- **Goertzel:** Propagate NaN through computation
+
+Validated by: Oracle comparison on synthetic NaN data (future)
+
+### State Persistence
+Stateful filters (IIR, FIR) must maintain state across windows:
+- **First window:** Zero-initialized state
+- **Subsequent windows:** State carried from previous window
+- **Validation:** Multi-window oracle comparison in `test_kernel_accuracy`
+
+### Window Boundaries
+- **FIR:** Keeps last (numtaps-1) samples per channel
+- **IIR:** Maintains biquad state (x[n-1], x[n-2], y[n-1], y[n-2])
+- **Validation:** Continuous vs windowed processing must match
+
+## Not Yet Implemented
+
+The following testing capabilities are planned but not yet implemented:
+
+- [ ] **CI/CD Integration** - Automated test running on push/PR
+- [ ] **Performance Regression Tests** - Baseline latency tracking
+- [ ] **Telemetry Output Validation** - CSV/NDJSON format correctness
+- [ ] **Config Parsing Tests** - YAML validation and error handling
+- [ ] **Plugin Loading Tests** - ABI version checking, error paths
+- [ ] **Deadline Miss Detection Tests** - Explicit deadline enforcement validation
+- [ ] **Oracle Unit Tests** - Python oracle correctness
+- [ ] **Test Coverage Reports** - lcov/gcov integration
+- [ ] **Test Matrix** - Documented platform × test combinations
+- [ ] **Synthetic Test Data** - Generated datasets for specific edge cases
+
+## Continuous Integration
+
+**Status:** Not yet configured
+
+**Planned approach:**
+- GitHub Actions on push/PR
+- Matrix build: macOS (arm64 + x86_64) × Linux (Ubuntu)
+- Run `make test` and `./cortex.py validate` for all kernels
+- Fail on compiler warnings
+- Upload test logs as artifacts
+
+## Related Documentation
+
+- **Benchmarking Methodology:** [benchmarking-methodology.md](benchmarking-methodology.md) - HIL vs on-device measurement philosophy
+- **Plugin Interface:** [../reference/plugin-interface.md](../reference/plugin-interface.md) - ABI specification for kernels
+- **Adding Kernels:** [../guides/adding-kernels.md](../guides/adding-kernels.md) - Kernel development workflow including testing
+- **Contributing:** [../../CONTRIBUTING.md](../../CONTRIBUTING.md) - PR requirements and code review process

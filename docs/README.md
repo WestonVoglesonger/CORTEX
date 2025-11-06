@@ -37,7 +37,8 @@ High-level system design and implementation rationale.
 | Document | Description |
 |----------|-------------|
 | [System Overview](architecture/overview.md) | Component architecture and data flow |
-| [Testing Strategy](architecture/testing-strategy.md) | HIL methodology and validation approach |
+| [Testing Strategy](architecture/testing-strategy.md) | Software testing practices, test suites, and quality assurance |
+| [Benchmarking Methodology](architecture/benchmarking-methodology.md) | HIL measurement philosophy and deployment realism |
 | [Platform Compatibility](architecture/platform-compatibility.md) | macOS and Linux cross-platform implementation |
 
 **Use this section**: To understand how CORTEX works internally and why design decisions were made.
@@ -86,9 +87,10 @@ Project planning, contribution guidelines, and historical context.
 - [telemetry.md](reference/telemetry.md) - Output formats
 - [dataset.md](reference/dataset.md) - EEG data format
 
-**Architecture** (3 docs)
+**Architecture** (4 docs)
 - [overview.md](architecture/overview.md) - System design and execution model
-- [testing-strategy.md](architecture/testing-strategy.md) - HIL methodology
+- [testing-strategy.md](architecture/testing-strategy.md) - Testing practices and QA
+- [benchmarking-methodology.md](architecture/benchmarking-methodology.md) - HIL measurement philosophy
 - [platform-compatibility.md](architecture/platform-compatibility.md) - Cross-platform
 
 **Guides** (2 docs)
@@ -99,7 +101,7 @@ Project planning, contribution guidelines, and historical context.
 - [roadmap.md](development/roadmap.md) - Project timeline
 - [archive/](development/archive/) - Historical docs
 
-**Total**: 14 documentation files (2 getting-started + 5 reference + 3 architecture + 2 guides + 1 development + 1 FAQ)
+**Total**: 15 documentation files (2 getting-started + 4 reference + 4 architecture + 2 guides + 1 development + 1 FAQ + 1 root)
 
 ---
 
