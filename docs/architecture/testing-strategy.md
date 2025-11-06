@@ -174,10 +174,9 @@ Each kernel has a Python reference implementation (`oracle.py`) used for validat
 ```bash
 # Test mode (used by test_kernel_accuracy)
 python3 kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
-
-# Manual validation
-python3 kernels/v1/notch_iir@f32/oracle.py < input.bin > output.bin
 ```
+
+**Note:** Oracles only support `--test` mode. Standalone mode (without flags) is not supported.
 
 **Features:**
 - State persistence for stateful filters
@@ -186,11 +185,27 @@ python3 kernels/v1/notch_iir@f32/oracle.py < input.bin > output.bin
 
 ## Running All Tests
 
+### Building Test Binaries
+
+Tests are compiled on-demand:
+```bash
+make -C tests all              # Build all test binaries
+make -C tests test_replayer    # Build specific test
+```
+
+Pre-built binaries appear in `tests/` directory and are required before running individual tests.
+
 ### Quick Test
 ```bash
-make test
+make -C tests test  # Run from project root
+# OR
+cd tests && make test  # Run from tests/ directory
 ```
-Runs all C test suites and reports pass/fail summary.
+Runs core unit tests (replayer, scheduler, kernel registry).
+
+**Note:** This excludes timing and validation tests which must be run separately:
+- `test-clock-resolution`
+- `test-kernel-accuracy`
 
 ### Individual Test Suites
 ```bash
@@ -350,6 +365,7 @@ Stateful filters (IIR, FIR) must maintain state across windows:
 The following testing capabilities are planned but not yet implemented:
 
 - [ ] **CI/CD Integration** - Automated test running on push/PR
+- [ ] **--all flag for test_kernel_accuracy** - Flag exists but returns "not yet implemented" message
 - [ ] **Performance Regression Tests** - Baseline latency tracking
 - [ ] **Telemetry Output Validation** - CSV/NDJSON format correctness
 - [ ] **Config Parsing Tests** - YAML validation and error handling
