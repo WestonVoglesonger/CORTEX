@@ -30,8 +30,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 - CAR (Common Average Reference) - **IN PROGRESS** (Avi Kumar)
 - Notch IIR (60Hz line noise removal) - **COMPLETED**
 - FIR Bandpass (8-30 Hz) - **COMPLETED**
-- Goertzel Bandpower (v1) - **COMPLETED**
-- Goertzel Bandpower (v2, optimized) - **COMPLETED**
+- Goertzel Bandpower - **COMPLETED**
 
 ### Measurement Infrastructure (In Progress)
 - Background load profiles (stress-ng integration - 5 TODOs in replayer.c) - **DEFERRED**

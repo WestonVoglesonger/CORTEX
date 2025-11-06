@@ -44,9 +44,8 @@ car                  v1         f32        [ ] No impl
 fir_bandpass         v1         f32        ✓ Built
 goertzel             v1         f32        ✓ Built
 notch_iir            v1         f32        ✓ Built
-goertzel             v2         f32        ✓ Built
 
-Summary: 4/5 implemented, 4/5 built
+Summary: 3/4 implemented, 3/4 built
 ```
 
 ---
@@ -64,7 +63,7 @@ Build harness, kernel plugins, and tests.
 
 **What it builds:**
 - Harness binary (`src/harness/cortex`)
-- All kernel plugins (v1 and v2)
+- All kernel plugins
 - Unit tests
 
 ---
