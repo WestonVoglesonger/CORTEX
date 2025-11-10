@@ -42,26 +42,11 @@ The ABI is designed with these properties:
 
 ---
 
-## Pipeline Context
+## System Context
 
-Each run is driven by a YAML configuration (`cortex.yaml`) describing dataset,
-scheduler, harness settings, telemetry, and plugin list. Modules interact as:
+CORTEX plugins are dynamically loaded by the harness and process windowed EEG data. Each plugin implements four functions (`cortex_get_info()`, `cortex_init()`, `cortex_process()`, `cortex_teardown()`) and receives runtime configuration through structs—never YAML or file paths. The harness handles all dataset streaming, scheduling, deadline enforcement, and telemetry collection.
 
-- **Replayer** streams dataset samples at true sample rate Fs.  
-- **Scheduler** slices into windows of length W with hop H, assigns release
-  times and deadlines (H/Fs).  
-- **Harness** loads each plugin shared library, calls `init()` with a
-  `cortex_plugin_config_t`, and then calls `process()` for each window while
-  enforcing deadlines, CPU affinity, and scheduling. It records latency,
-  jitter, throughput, memory, and energy.  
-- **Reference oracles** (SciPy/MNE) verify correctness before timing; tolerances
-  are defined per-kernel. Kernel specs are versioned in `kernels/v1/{name}@{dtype}/`.
-- **Telemetry & outputs** are written to CSV/JSON. Energy (J) and power (mW)
-  are computed via RAPL.
-
-Plugins never see YAML or dataset paths. The harness extracts numeric fields
-and populates the configuration struct. Kernel specifications are maintained
-in the versioned `kernels/` registry for reproducibility and validation.
+For details on how the harness, replayer, scheduler, and analysis pipeline interact, see [Architecture Overview](../architecture/overview.md).
 
 ---
 
