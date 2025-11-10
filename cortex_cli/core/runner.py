@@ -4,17 +4,24 @@ import time
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
+from cortex_cli.core.paths import (
+    create_run_structure,
+    create_kernel_directory,
+    get_kernel_data_dir,
+    get_run_directory
+)
 
-def run_harness(config_path: str, verbose: bool = False) -> Optional[str]:
+def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optional[str]:
     """
     Run the CORTEX harness with a given config
 
     Args:
         config_path: Path to configuration file
+        run_name: Name of the run for organizing results
         verbose: Show harness output
 
     Returns:
-        Results directory path if successful, None otherwise
+        Run directory path if successful, None otherwise
     """
     harness_binary = Path('src/harness/cortex')
 
@@ -53,23 +60,12 @@ def run_harness(config_path: str, verbose: bool = False) -> Optional[str]:
                 print(result.stderr)
             return None
 
-        # Try to find the most recent results directory
-        # The harness creates results/<run_id>/ directories with timestamp names
-        results_dir = Path('results')
-        if results_dir.exists():
-            # Find most recent non-batch, non-analysis directory
-            subdirs = [d for d in results_dir.iterdir()
-                      if d.is_dir()
-                      and not d.name.startswith('batch_')
-                      and d.name != 'analysis'
-                      and d.name.isdigit()]  # Run IDs are numeric timestamps
+        # Return the run directory path
+        run_dir = get_run_directory(run_name)
+        if run_dir.exists():
+            return str(run_dir)
 
-            if subdirs:
-                # Sort by directory name (timestamp), not mtime - more reliable
-                latest = max(subdirs, key=lambda d: d.name)
-                return str(latest)
-
-        return None  # No results found
+        return None  # Run directory not created
 
     except Exception as e:
         print(f"Error running harness: {e}")
@@ -77,6 +73,7 @@ def run_harness(config_path: str, verbose: bool = False) -> Optional[str]:
 
 def run_single_kernel(
     kernel_name: str,
+    run_name: str,
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
     warmup: Optional[int] = None,
@@ -87,15 +84,20 @@ def run_single_kernel(
 
     Args:
         kernel_name: Name of kernel to benchmark
+        run_name: Name of the run for organizing results
         duration: Override duration (seconds)
         repeats: Override number of repeats
         warmup: Override warmup duration (seconds)
         verbose: Show verbose output
 
     Returns:
-        Results directory path if successful, None otherwise
+        Run directory path if successful, None otherwise
     """
     from cortex_cli.core.config import generate_config
+
+    # Create run directory structure
+    create_run_structure(run_name)
+    kernel_dir = create_kernel_directory(run_name, kernel_name)
 
     # Generate config
     config_dir = Path('configs/generated')
@@ -107,6 +109,7 @@ def run_single_kernel(
     if not generate_config(
         kernel_name,
         str(config_path),
+        output_dir=str(kernel_dir),
         duration=duration,
         repeats=repeats,
         warmup=warmup
@@ -116,7 +119,7 @@ def run_single_kernel(
     print(f"Running benchmark for {kernel_name}...")
 
     # Run harness
-    results_dir = run_harness(str(config_path), verbose=verbose)
+    results_dir = run_harness(str(config_path), run_name, verbose=verbose)
 
     if results_dir:
         print(f"✓ Benchmark complete: {results_dir}")
@@ -124,6 +127,7 @@ def run_single_kernel(
     return results_dir
 
 def run_all_kernels(
+    run_name: str,
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
     warmup: Optional[int] = None,
@@ -133,15 +137,19 @@ def run_all_kernels(
     Run benchmarks for all available kernels
 
     Args:
+        run_name: Name of the run for organizing results
         duration: Override duration (seconds)
         repeats: Override number of repeats
         warmup: Override warmup duration (seconds)
         verbose: Show verbose output
 
     Returns:
-        Batch results directory path if successful, None otherwise
+        Run directory path if successful, None otherwise
     """
     from cortex_cli.core.config import generate_batch_configs
+
+    # Create run directory structure
+    create_run_structure(run_name)
 
     # Generate all configs
     config_dir = Path('configs/generated')
@@ -161,12 +169,8 @@ def run_all_kernels(
 
     print(f"Found {len(configs)} kernel(s) to benchmark")
 
-    # Create batch results directory
-    timestamp = int(time.time())
-    batch_dir = Path(f'results/batch_{timestamp}')
-    batch_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Batch results will be saved to: {batch_dir}")
+    run_dir = get_run_directory(run_name)
+    print(f"Results will be saved to: {run_dir}")
     print()
 
     # Run each kernel
@@ -176,61 +180,28 @@ def run_all_kernels(
         print(f"[{i}/{len(configs)}] Running {kernel_name}")
         print("=" * 80)
 
-        results_dir = run_harness(config_path, verbose=verbose)
+        # Create kernel directory
+        kernel_dir = create_kernel_directory(run_name, kernel_name)
 
-        if results_dir:
-            # Collect results into batch directory
-            import shutil
-            results_path = Path('results')
+        # Need to regenerate config with specific output directory
+        from cortex_cli.core.config import generate_config
+        if not generate_config(
+            kernel_name,
+            config_path,
+            output_dir=str(kernel_dir),
+            duration=duration,
+            repeats=repeats,
+            warmup=warmup
+        ):
+            print(f"✗ {kernel_name} failed (config generation)")
+            print()
+            continue
 
-            # Find telemetry files matching this kernel
-            # Pattern: <timestamp>_<kernel>_telemetry.* (CSV or NDJSON)
-            csv_pattern = f"*_{kernel_name}_telemetry.csv"
-            ndjson_pattern = f"*_{kernel_name}_telemetry.ndjson"
+        # Run harness
+        result = run_harness(config_path, run_name, verbose=verbose)
 
-            csv_files = list(results_path.glob(csv_pattern))
-            ndjson_files = list(results_path.glob(ndjson_pattern))
-
-            if csv_files or ndjson_files:
-                # Find newest run by timestamp (glob order is filesystem-dependent)
-                all_files = csv_files + ndjson_files
-                if all_files:
-                    # Extract timestamps from all files and pick largest (newest)
-                    # e.g., "1762315905289_goertzel_telemetry.csv" -> "1762315905289"
-                    # Timestamps are lexically sortable strings, so max() gives newest
-                    run_ids = [f.stem.split('_')[0] for f in all_files]
-                    run_id = max(run_ids)
-
-                    # Create kernel subdirectory in batch
-                    kernel_batch_dir = batch_dir / f"{kernel_name}_run"
-                    kernel_batch_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Copy all telemetry files with this run_id and kernel_name
-                    # Use exact prefix to avoid matching overlapping run IDs (e.g., "176" vs "1762")
-                    expected_prefix = f"{run_id}_{kernel_name}"
-                    for pattern in [csv_pattern, ndjson_pattern]:
-                        for file in results_path.glob(pattern):
-                            if file.stem.startswith(expected_prefix):
-                                dest = kernel_batch_dir / file.name
-                                if dest.exists():
-                                    print(f"  Warning: Overwriting existing file: {dest.name}")
-                                shutil.copy2(file, dest)
-
-                    # Copy HTML report directory if exists (skip duplicate telemetry files)
-                    run_dir = results_path / run_id
-                    if run_dir.exists() and run_dir.is_dir():
-                        for item in run_dir.iterdir():
-                            # Skip telemetry files to avoid duplicates (already collected above)
-                            if '_telemetry.' in item.name:
-                                continue
-
-                            dest = kernel_batch_dir / item.name
-                            if item.is_file():
-                                shutil.copy2(item, dest)
-                            elif item.is_dir():
-                                shutil.copytree(item, dest, dirs_exist_ok=True)
-
-            results.append((kernel_name, results_dir))
+        if result:
+            results.append((kernel_name, result))
             print(f"✓ {kernel_name} complete")
         else:
             print(f"✗ {kernel_name} failed")
@@ -239,10 +210,10 @@ def run_all_kernels(
 
     # Summary
     print("=" * 80)
-    print("Batch Benchmark Summary")
+    print("Benchmark Summary")
     print("=" * 80)
     print(f"Completed: {len(results)}/{len(configs)} kernels")
-    print(f"Results directory: {batch_dir}")
+    print(f"Results directory: {run_dir}")
     print("=" * 80)
 
-    return str(batch_dir) if results else None
+    return str(run_dir) if results else None

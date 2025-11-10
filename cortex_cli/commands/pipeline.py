@@ -2,10 +2,15 @@
 from cortex_cli.commands import build, validate, run, analyze
 from cortex_cli.core.runner import run_all_kernels
 from cortex_cli.core.analyzer import run_full_analysis
+from cortex_cli.core.paths import generate_run_name, get_analysis_dir
 import argparse
 
 def setup_parser(parser):
     """Setup argument parser for pipeline command"""
+    parser.add_argument(
+        '--run-name',
+        help='Custom name for this pipeline run (default: auto-generated)'
+    )
     parser.add_argument(
         '--skip-build',
         action='store_true',
@@ -42,6 +47,18 @@ def execute(args):
     print("=" * 80)
     print("CORTEX FULL PIPELINE")
     print("=" * 80)
+
+    # Generate run name
+    if hasattr(args, 'run_name') and args.run_name:
+        try:
+            run_name = generate_run_name(args.run_name)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+    else:
+        run_name = generate_run_name()
+
+    print(f"\nRun name: {run_name}")
     print("\nThis will:")
     if not args.skip_build:
         print("  1. Build all components")
@@ -94,6 +111,7 @@ def execute(args):
     print("=" * 80)
 
     results_dir = run_all_kernels(
+        run_name=run_name,
         duration=args.duration,
         repeats=args.repeats,
         warmup=args.warmup,
@@ -110,9 +128,12 @@ def execute(args):
     print(f"STEP {step_num}: ANALYZE RESULTS")
     print("=" * 80)
 
+    # Get analysis directory for this run
+    analysis_dir = str(get_analysis_dir(run_name))
+
     success = run_full_analysis(
         results_dir,
-        output_dir='results/analysis',
+        output_dir=analysis_dir,
         plots=['all'],
         format='png',
         telemetry_format='ndjson'
@@ -127,13 +148,14 @@ def execute(args):
     print("✓ PIPELINE COMPLETE!")
     print("=" * 80)
     print("\nResults:")
-    print(f"  Telemetry data: {results_dir}/")
-    print(f"  Analysis plots: results/analysis/")
-    print(f"  Summary table: results/analysis/SUMMARY.md")
+    print(f"  Run directory: {results_dir}/")
+    print(f"  Kernel data: {results_dir}/kernel-data/")
+    print(f"  Analysis plots: {analysis_dir}/")
+    print(f"  Summary table: {analysis_dir}/SUMMARY.md")
     print("\nNext steps:")
-    print(f"  cat results/analysis/SUMMARY.md")
-    print(f"  open results/analysis/latency_comparison.png")
-    print(f"  open {results_dir}/*_run/*/report.html")
+    print(f"  cat {analysis_dir}/SUMMARY.md")
+    print(f"  open {analysis_dir}/latency_comparison.png")
+    print(f"  open {results_dir}/kernel-data/*/report.html")
     print("=" * 80)
 
     return 0

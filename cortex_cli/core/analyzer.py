@@ -17,9 +17,8 @@ def _extract_kernel_name(file_path: Path) -> Optional[str]:
     """
     Extract kernel name from telemetry file path or filename
 
-    Supports patterns:
-    - <run_id>_<kernel>_telemetry.{csv,ndjson}
-    - <kernel>_run/..._telemetry.{csv,ndjson}
+    Supports new structure:
+    - kernel-data/<kernel>/telemetry.{csv,ndjson}
 
     Args:
         file_path: Path to telemetry file
@@ -27,41 +26,18 @@ def _extract_kernel_name(file_path: Path) -> Optional[str]:
     Returns:
         Kernel name or None if not found
     """
-    filename = file_path.name
-    parts = file_path.parts
+    # New structure: kernel name is parent directory
+    # e.g., results/run-2025-11-10-001/kernel-data/bandpass_fir/telemetry.ndjson
+    parent_dir = file_path.parent.name
 
-    # Try filename pattern: <run_id>_<kernel>_telemetry.{ext}
-    if '_telemetry.' in filename:
-        # Remove extension and split
-        base = filename.rsplit('_telemetry.', 1)[0]
-        # Remove run_id (timestamp) prefix if present
-        if '_' in base:
-            # Split on underscores and assume first part is timestamp
-            # e.g., "1762315905289_goertzel" -> "goertzel"
-            parts_list = base.split('_')
-            if parts_list[0].isdigit() and len(parts_list) > 1:
-                kernel_name = '_'.join(parts_list[1:])
-                if kernel_name:  # Validate non-empty
-                    return kernel_name
-                print(f"Warning: Could not extract kernel name from {filename} (empty after split)")
-                return None
-            # If no numeric prefix, treat whole base as kernel name
-            if base:
-                return base
-        # No underscore, treat whole base as kernel name
-        if base:
-            return base
-        print(f"Warning: Could not extract kernel name from {filename} (empty base)")
-        return None
-
-    # Try directory pattern: kernel_run
-    for part in parts:
-        if part.endswith('_run'):
-            kernel_name = part.replace('_run', '')
-            if kernel_name:
-                return kernel_name
+    # Check if we're in the expected structure
+    if file_path.parent.parent.name == "kernel-data":
+        # Parent directory is the kernel name
+        if parent_dir:
+            return parent_dir
 
     print(f"Warning: Could not extract kernel name from path {file_path}")
+    print(f"Expected structure: .../kernel-data/<kernel>/telemetry.*")
     return None
 
 def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[pd.DataFrame]:
@@ -83,14 +59,9 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
         print(f"Error: Results directory not found: {results_dir}")
         return None
 
-    # Find all telemetry files (NDJSON and CSV)
-    ndjson_files = list(results_path.glob("*_run/*_telemetry.ndjson"))
-    csv_files = list(results_path.glob("*_run/*_telemetry.csv"))
-
-    # Try non-batch mode patterns as fallback
-    if not ndjson_files and not csv_files:
-        ndjson_files = list(results_path.glob("*/*/telemetry.ndjson"))
-        csv_files = list(results_path.glob("*/*/telemetry.csv"))
+    # Find all telemetry files in new structure (kernel-data/<kernel>/telemetry.*)
+    ndjson_files = list(results_path.glob("kernel-data/*/telemetry.ndjson"))
+    csv_files = list(results_path.glob("kernel-data/*/telemetry.csv"))
 
     # Determine which files to use based on preference
     if prefer_format == 'ndjson' and ndjson_files:
@@ -108,16 +79,20 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
         files_to_load = csv_files
         file_format = 'csv'
     else:
-        # Check if directory is completely empty or has kernel directories
-        all_subdirs = list(results_path.glob("*_run"))
-        if not all_subdirs:
-            print(f"Error: No kernel result directories found in {results_dir}")
-            print(f"Expected directories like: <kernel>_run/")
-            print(f"Run './cortex.py run --all' to generate results first")
+        # Check if directory has kernel-data structure
+        kernel_data_dir = results_path / "kernel-data"
+        if not kernel_data_dir.exists():
+            print(f"Error: No kernel-data directory found in {results_dir}")
+            print(f"Expected structure: {results_dir}/kernel-data/<kernel>/telemetry.*")
+            print(f"Run 'cortex run --all' to generate results first")
         else:
-            print(f"Error: Found {len(all_subdirs)} kernel directories but no telemetry files")
-            print(f"Directories found: {[d.name for d in all_subdirs]}")
-            print(f"This may indicate all kernel runs failed")
+            kernel_dirs = list(kernel_data_dir.glob("*"))
+            if not kernel_dirs:
+                print(f"Error: kernel-data directory exists but is empty")
+            else:
+                print(f"Error: Found {len(kernel_dirs)} kernel directories but no telemetry files")
+                print(f"Directories found: {[d.name for d in kernel_dirs]}")
+                print(f"This may indicate all kernel runs failed")
         return None
 
     print(f"Loading {len(files_to_load)} {file_format.upper()} telemetry file(s)...")
@@ -307,7 +282,8 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     # Fs/H gives the theoretical throughput
     if 'Fs' in df_filtered.columns and 'H' in df_filtered.columns:
         throughput = df_filtered.groupby('plugin').apply(
-            lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0
+            lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0,
+            include_groups=False
         ).reset_index(name='throughput')
     else:
         print("Warning: Could not calculate throughput (missing Fs/H columns)")

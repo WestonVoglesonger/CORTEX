@@ -134,11 +134,11 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     /* Step 2: Build per-plugin telemetry path */
     /* Track starting telemetry count for this plugin */
     size_t telemetry_start_count = ctx->telemetry.count;
-    
+
     char telemetry_path[1024];
     snprintf(telemetry_path, sizeof(telemetry_path),
-             "%s/%s_%s_telemetry.csv",
-             ctx->run_cfg.output.directory, ctx->run_id, plugin_name);
+             "%s/telemetry.csv",
+             ctx->run_cfg.output.directory);
     
     /* Step 3: Call make_scheduler() with plugin config */
     cortex_scheduler_t *scheduler = NULL;
@@ -203,42 +203,25 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     
     /* Step 9: After all repeats, write only this plugin's records to file */
     size_t telemetry_end_count = ctx->telemetry.count;
-    char final_telemetry_path[1024];
 
     /* Choose output format from config */
     const char *format = ctx->run_cfg.output.format;
     const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
 
-    snprintf(final_telemetry_path, sizeof(final_telemetry_path),
-             "%s/%s_%s_telemetry.%s",
-             ctx->run_cfg.output.directory, ctx->run_id, plugin_name, ext);
+    /* Write telemetry to output directory */
+    char telemetry_output_path[1024];
+    snprintf(telemetry_output_path, sizeof(telemetry_output_path),
+             "%s/telemetry.%s",
+             ctx->run_cfg.output.directory, ext);
 
-    if (strcmp(format, "ndjson") == 0) {
-        cortex_telemetry_write_ndjson_filtered(final_telemetry_path, &ctx->telemetry,
-                                               telemetry_start_count, telemetry_end_count);
-    } else {
-        /* Default to CSV for unknown formats or explicit "csv" */
-        cortex_telemetry_write_csv_filtered(final_telemetry_path, &ctx->telemetry,
-                                            telemetry_start_count, telemetry_end_count);
-    }
-    
-    /* Also write to subdirectory for report */
-    char run_dir[1024];
-    snprintf(run_dir, sizeof(run_dir), "%s/%s",
-             ctx->run_cfg.output.directory, ctx->run_id);
-    if (cortex_create_directories(run_dir) == 0) {
-        char subdir_path[1024];
-        const char *ext_subdir = (strcmp(ctx->run_cfg.output.format, "ndjson") == 0) ? "ndjson" : "csv";
-
-        snprintf(subdir_path, sizeof(subdir_path),
-                 "%s/%s/%s_telemetry.%s",
-                 ctx->run_cfg.output.directory, ctx->run_id, plugin_name, ext_subdir);
-
-        if (strcmp(ctx->run_cfg.output.format, "ndjson") == 0) {
-            cortex_telemetry_write_ndjson_filtered(subdir_path, &ctx->telemetry,
+    /* Ensure output directory exists */
+    if (cortex_create_directories(ctx->run_cfg.output.directory) == 0) {
+        if (strcmp(format, "ndjson") == 0) {
+            cortex_telemetry_write_ndjson_filtered(telemetry_output_path, &ctx->telemetry,
                                                    telemetry_start_count, telemetry_end_count);
         } else {
-            cortex_telemetry_write_csv_filtered(subdir_path, &ctx->telemetry,
+            /* Default to CSV for unknown formats or explicit "csv" */
+            cortex_telemetry_write_csv_filtered(telemetry_output_path, &ctx->telemetry,
                                                 telemetry_start_count, telemetry_end_count);
         }
     }
@@ -294,16 +277,12 @@ int main(int argc, char **argv) {
     }
 
     /* Generate HTML report after all plugins complete */
-    char report_dir[1024];
-    snprintf(report_dir, sizeof(report_dir), "%s/%s",
-             ctx.run_cfg.output.directory, ctx.run_id);
-    
-    /* Ensure report directory exists */
-    if (cortex_create_directories(report_dir) == 0) {
+    /* Ensure output directory exists */
+    if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
         char report_path[1024];
         snprintf(report_path, sizeof(report_path), "%s/report.html",
-                 report_dir);
-        
+                 ctx.run_cfg.output.directory);
+
         printf("[harness] Generating HTML report: %s\n", report_path);
         if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
             printf("[harness] Report generated successfully\n");
