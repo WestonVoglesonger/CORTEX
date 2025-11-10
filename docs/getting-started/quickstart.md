@@ -58,16 +58,19 @@ Building and running tests...
 ## 4. View Results
 
 ```bash
-# View summary table
-cat results/analysis/SUMMARY.md
+# View summary table (most recent run)
+cat results/run-*/analysis/SUMMARY.md
+
+# Or view a specific run
+cat results/run-2025-11-10-001/analysis/SUMMARY.md
 
 # Open visualizations (macOS)
-open results/analysis/latency_comparison.png
-open results/analysis/latency_cdf_overlay.png
-open results/analysis/deadline_miss_rate.png
+open results/run-*/analysis/latency_comparison.png
+open results/run-*/analysis/latency_cdf_overlay.png
+open results/run-*/analysis/deadline_miss_rate.png
 
 # Open visualizations (Linux)
-xdg-open results/analysis/latency_comparison.png
+xdg-open results/run-*/analysis/latency_comparison.png
 ```
 
 **Example output:**
@@ -88,11 +91,14 @@ goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 # Validate a specific kernel
 ./cortex.py validate --kernel goertzel
 
-# Run a single benchmark
-./cortex.py run --kernel notch_iir --duration 30
+# Run a single benchmark with custom name
+./cortex.py run --kernel notch_iir --duration 30 --run-name quick-test
 
-# Analyze existing results
-./cortex.py analyze results/batch_1762318724
+# Analyze most recent run
+./cortex.py analyze
+
+# Analyze specific run
+./cortex.py analyze --run-name quick-test
 ```
 
 ## Next Steps

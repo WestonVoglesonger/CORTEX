@@ -18,8 +18,8 @@ pip install -r requirements.txt
 make clean && make
 ./cortex.py pipeline
 
-# View results
-cat results/analysis/SUMMARY.md
+# View results (analysis is in the run directory)
+cat results/run-*/analysis/SUMMARY.md
 ```
 
 **See [Quick Start Guide](docs/getting-started/quickstart.md) for detailed setup instructions.**

@@ -97,10 +97,10 @@ To add a new kernel implementation:
 5. **Testing**:
    ```bash
    # Run kernel in harness
-   ./cortex run --kernel {name} --duration 30
-   
+   ./cortex run --kernel {name} --duration 30 --run-name test-{name}
+
    # Analyze results
-   ./cortex analyze results/batch_{timestamp}
+   ./cortex analyze --run-name test-{name}
    ```
 
 See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehensive guide.
@@ -195,13 +195,13 @@ make -C tests test-scheduler
 # Validate kernels
 ./cortex validate
 
-# Run benchmarks
-./cortex run --all --duration 60
+# Run benchmarks (with custom name)
+./cortex run --all --duration 60 --run-name test-run
 
 # Analyze results
-./cortex analyze results/batch_{timestamp}
+./cortex analyze --run-name test-run
 
-# Full pipeline
+# Full pipeline (auto-named)
 ./cortex pipeline
 ```
 

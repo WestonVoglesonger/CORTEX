@@ -11,9 +11,9 @@ pip install -r requirements.txt
 # Run full automated pipeline
 ./cortex.py pipeline
 
-# View results
-cat results/analysis/SUMMARY.md
-open results/analysis/latency_comparison.png
+# View results (stored in named run directories)
+cat results/run-*/analysis/SUMMARY.md
+open results/run-*/analysis/latency_comparison.png
 ```
 
 ## Installation
@@ -109,15 +109,18 @@ Execute benchmark experiments.
 - `--kernel <name>`: Run specific kernel
 - `--all`: Run all available kernels
 - `--config <path>`: Use custom YAML config
+- `--run-name <name>`: Custom name for this run (default: auto-generated)
 - `--duration <secs>`: Override benchmark duration
 - `--repeats <n>`: Override number of repeats
 - `--warmup <secs>`: Override warmup duration
 - `--verbose`: Show harness output
 
 **Output:**
-- Telemetry data: `results/<run_id>/` (NDJSON format by default)
-- HTML reports: `results/<run_id>/report.html`
-- Batch runs: `results/batch_<timestamp>/`
+- Run directory: `results/run-YYYY-MM-DD-NNN/` or `results/<custom-name>/`
+- Kernel data: `results/<run-name>/kernel-data/<kernel>/`
+  - Telemetry: `telemetry.{csv,ndjson}` (NDJSON format by default)
+  - HTML report: `report.html`
+- Analysis: `results/<run-name>/analysis/`
 
 ---
 
@@ -181,19 +184,22 @@ Duration recommendations are based on:
 Generate comparison plots and summary from benchmark results.
 
 ```bash
-# Analyze batch results
-./cortex.py analyze results/batch_1234567890
+# Analyze most recent run (default)
+./cortex.py analyze
 
-# Specify output directory and format
-./cortex.py analyze results/batch_123 --output my_analysis --format pdf
+# Analyze specific run
+./cortex.py analyze --run-name run-2025-11-10-001
+
+# Specify custom output directory and format
+./cortex.py analyze --run-name my-experiment --output custom_analysis --format pdf
 
 # Generate specific plots only
-./cortex.py analyze results/batch_123 --plots latency deadline
+./cortex.py analyze --plots latency deadline
 ```
 
 **Options:**
-- `results_dir`: Path to results directory (required)
-- `--output <dir>`: Output directory (default: `results/analysis`)
+- `--run-name <name>`: Name of run to analyze (default: most recent run)
+- `--output <dir>`: Output directory (default: `<run-dir>/analysis`)
 - `--format <png|pdf|svg>`: Plot format (default: `png`)
 - `--plots <list>`: Plots to generate: `latency`, `deadline`, `throughput`, `cdf`, `all` (default: `all`)
 
@@ -206,7 +212,11 @@ Generate comparison plots and summary from benchmark results.
 
 **View summary:**
 ```bash
-cat results/analysis/SUMMARY.md
+# View most recent run
+cat results/run-*/analysis/SUMMARY.md
+
+# View specific run
+cat results/run-2025-11-10-001/analysis/SUMMARY.md
 ```
 
 ---
@@ -215,8 +225,11 @@ cat results/analysis/SUMMARY.md
 Run full end-to-end pipeline: build → validate → run → analyze.
 
 ```bash
-# Full pipeline
+# Full pipeline (auto-named)
 ./cortex.py pipeline
+
+# Custom run name
+./cortex.py pipeline --run-name production-benchmark
 
 # Skip steps
 ./cortex.py pipeline --skip-build           # Assume already built
@@ -237,9 +250,10 @@ Run full end-to-end pipeline: build → validate → run → analyze.
 **Output:**
 ```
 Results:
-  Telemetry data: results/batch_<timestamp>/
-  Analysis plots: results/analysis/
-  Summary table: results/analysis/SUMMARY.md
+  Run directory: results/run-YYYY-MM-DD-NNN/
+  Kernel data: results/<run-name>/kernel-data/
+  Analysis plots: results/<run-name>/analysis/
+  Summary table: results/<run-name>/analysis/SUMMARY.md
 ```
 
 ---
@@ -282,8 +296,11 @@ pip install -r requirements.txt
 
 ### Full Experiment Run
 ```bash
-# One-command full pipeline
+# One-command full pipeline (creates auto-named run)
 ./cortex.py pipeline
+
+# Or with custom name:
+./cortex.py pipeline --run-name baseline-measurements
 
 # Or step-by-step:
 ./cortex.py build
@@ -291,7 +308,7 @@ pip install -r requirements.txt
 ./cortex.py validate --kernel bandpass_fir
 ./cortex.py validate --kernel goertzel
 ./cortex.py run --all --duration 125 --repeats 3
-./cortex.py analyze results/batch_<timestamp>
+./cortex.py analyze  # Analyzes most recent run
 ```
 
 ### Iterative Development
@@ -304,21 +321,37 @@ pip install -r requirements.txt
 
 ### Custom Analysis
 ```bash
-# Run experiments with custom settings
-./cortex.py run --all --duration 60 --repeats 10
+# Run experiments with custom name and settings
+./cortex.py run --all --run-name high-load-test --duration 60 --repeats 10
 
-# Generate only specific plots
-./cortex.py analyze results/batch_123 --plots latency cdf --format pdf
+# Generate only specific plots for that run
+./cortex.py analyze --run-name high-load-test --plots latency cdf --format pdf
 ```
 
 ---
 
 ## Understanding Results
 
+### Directory Structure
+Each run creates an isolated directory:
+```
+results/run-2025-11-10-001/
+├── kernel-data/
+│   ├── bandpass_fir/
+│   │   ├── telemetry.ndjson
+│   │   ├── telemetry.csv
+│   │   └── report.html
+│   └── goertzel/
+│       └── ...
+└── analysis/
+    ├── SUMMARY.md
+    └── *.png
+```
+
 ### Telemetry Files
-Each kernel run produces:
-- **NDJSON format**: `<kernel>_telemetry.ndjson` (default)
-- **CSV format**: `<kernel>_telemetry.csv` (alternative format)
+Each kernel produces (in `kernel-data/<kernel>/`):
+- **NDJSON format**: `telemetry.ndjson` (default)
+- **CSV format**: `telemetry.csv` (alternative format)
 - **HTML report**: `report.html` (auto-generated)
 
 **CSV columns:**
@@ -361,9 +394,10 @@ start_ts_ns, end_ts_ns, deadline_missed, W, H, C, Fs, warmup, repeat
 ```
 
 ### "No telemetry files found"
-- Ensure you're analyzing the correct directory
+- Ensure you're analyzing the correct run directory
 - Check that the run completed successfully
-- Look for CSV files in subdirectories: `results/batch_*/` \_run`/`
+- Look for telemetry files: `results/<run-name>/kernel-data/*/telemetry.*`
+- Use `./cortex.py analyze` without arguments to analyze the most recent run
 
 ### Python import errors
 ```bash
@@ -387,23 +421,30 @@ To run experiments on two identical laptops:
 
 **Laptop 1:**
 ```bash
-./cortex.py run --all --duration 125 --repeats 3
-# Copy results to shared location
+./cortex.py run --all --run-name laptop1-baseline --duration 125 --repeats 3
+# Copy results/laptop1-baseline/ to shared location
 ```
 
 **Laptop 2:**
 ```bash
-./cortex.py run --all --duration 125 --repeats 3
-# Copy results to shared location
+./cortex.py run --all --run-name laptop2-baseline --duration 125 --repeats 3
+# Copy results/laptop2-baseline/ to shared location
 ```
 
 **Analysis machine:**
 ```bash
-# Combine results
-mkdir combined_results
-cp -r laptop1_results/* combined_results/
-cp -r laptop2_results/* combined_results/
-./cortex.py analyze combined_results
+# Copy both run directories to local results/
+cp -r shared/laptop1-baseline results/
+cp -r shared/laptop2-baseline results/
+
+# Analyze each separately
+./cortex.py analyze --run-name laptop1-baseline
+./cortex.py analyze --run-name laptop2-baseline
+
+# Or combine kernel data for joint analysis (advanced)
+mkdir results/combined-analysis
+cp -r results/laptop1-baseline/kernel-data/* results/combined-analysis/
+cp -r results/laptop2-baseline/kernel-data/* results/combined-analysis/
 ```
 
 ### Custom Configurations

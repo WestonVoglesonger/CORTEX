@@ -206,7 +206,7 @@ htop
 ./cortex.py run --kernel {name} --duration 10
 
 # Check median latency in results
-jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/*/telemetry.ndjson | head -20
+jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/run-*/kernel-data/*/telemetry.ndjson | head -20
 ```
 
 **Solutions**:
@@ -452,10 +452,10 @@ pip install pandas numpy matplotlib seaborn pyyaml tqdm colorama
 **Diagnosis**:
 ```bash
 # Check if telemetry files exist
-ls -lh results/batch_*/*/telemetry.*
+ls -lh results/run-*/kernel-data/*/telemetry.*
 
 # Check NDJSON format
-head -2 results/batch_*/*/telemetry.ndjson
+head -2 results/run-*/kernel-data/*/telemetry.ndjson
 ```
 
 **Solution**:

@@ -163,9 +163,9 @@ Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 
 **Output formats**:
 - **NDJSON** (default): One JSON object per line, streaming-friendly
-- **CSV**: Legacy format for Excel/spreadsheets
+- **CSV**: Alternative format for Excel/spreadsheets
 
-**Output location**: `results/{run_id}/{kernel}_telemetry.ndjson`
+**Output location**: `results/{run-name}/kernel-data/{kernel}/telemetry.ndjson`
 
 **See**: [telemetry.md](../reference/telemetry.md) for schema details
 
@@ -220,10 +220,10 @@ Loop for duration:
 ### 5. Analysis Phase (Post-Run)
 
 ```
-1. Load NDJSON files from results/batch_{timestamp}/
+1. Load NDJSON files from results/{run-name}/kernel-data/
 2. Compute statistics (p50, p95, p99, deadline miss rate)
 3. Generate plots (latency CDF, comparison bar charts)
-4. Write SUMMARY.md
+4. Write SUMMARY.md to results/{run-name}/analysis/
 ```
 
 ## Design Principles
