@@ -485,7 +485,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
 static void show_usage(const char *program_name) {
     printf("Usage: %s [options]\n", program_name);
     printf("\nOptions:\n");
-    printf("  --kernel <name>     Test specific kernel (e.g., \"notch_iir\", \"fir_bandpass\")\n");
+    printf("  --kernel <name>     Test specific kernel (e.g., \"notch_iir\", \"bandpass_fir\")\n");
     printf("  --all               Test all kernels in registry (default)\n");
     printf("  --data <path>       Path to dataset\n");
     printf("  --windows <N>       Number of windows to test (default: 10)\n");

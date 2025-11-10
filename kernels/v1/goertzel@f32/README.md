@@ -86,10 +86,6 @@ plugins:
     params: {}  # Band definitions are fixed in default implementation
 ```
 
-## Reference
-
-See `docs/KERNELS.md` section "Goertzel Bandpower" for the complete mathematical specification.
-
 ## Implementation Status
 
 - ✅ Specification defined

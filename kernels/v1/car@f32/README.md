@@ -55,10 +55,6 @@ plugins:
     params: {}  # CAR has no kernel-specific parameters
 ```
 
-## Reference
-
-See `docs/KERNELS.md` section "Common Average Reference (CAR)" for the complete mathematical specification.
-
 ## Implementation Status
 
 - ✅ Specification defined

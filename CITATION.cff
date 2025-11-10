@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "CORTEX: Common Off-implant Runtime Test Ecosystem for BCI Kernels"
+version: "0.2.0"
+date-released: "2025-11-05"
+url: "https://github.com/WestonVoglesonger/CORTEX"
+repository-code: "https://github.com/WestonVoglesonger/CORTEX"
+authors:
+  - family-names: "Voglesonger"
+    given-names: "Weston"
+  - family-names: "Kumar"
+    given-names: "Avi"
+keywords:
+  - "brain-computer interface"
+  - "BCI"
+  - "benchmarking"
+  - "real-time systems"
+  - "EEG"
+  - "signal processing"
+  - "latency"
+  - "jitter"
+license: MIT
+abstract: >
+  CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface  
+  (BCI) kernels that measures latency, jitter, throughput, memory, and energy
+  consumption for signal processing kernels under real-time deadlines. It uses
+  a plugin architecture where kernels (Common Average Reference, Notch IIR, FIR
+  bandpass, Goertzel bandpower) are loaded dynamically and benchmarked against
+  reference implementations.

@@ -65,10 +65,6 @@ plugins:
       Q: 30.0
 ```
 
-## Reference
-
-See `docs/KERNELS.md` section "Notch IIR (biquad) at 50/60 Hz" for the complete mathematical specification.
-
 ## Implementation Status
 
 - ✅ Specification defined
