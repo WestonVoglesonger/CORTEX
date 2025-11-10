@@ -7,21 +7,23 @@ for plugins. Plugins never read YAML.
 ## Implementation Status
 
 **Not Yet Implemented** (Parsed but not used by harness):
-- `system.name`, `system.description` - Run identification metadata
-- `power.governor`, `power.turbo` - CPU power management settings
-- `benchmark.metrics` array - Metric selection (currently collects all metrics)
-- `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters
-- `plugins[].tolerances` - Per-plugin numerical tolerance specifications (loaded from kernel spec.yaml)
-- `plugins[].oracle` - Per-plugin oracle reference paths (referenced via kernel spec.yaml)
-- `output.include_raw_data` - Raw telemetry data export flag
-- `benchmark.load_profile` - Background load profile (parsed but stress-ng integration pending)
+- `system.name`, `system.description` - Run identification metadata (no struct fields exist)
+- `power.governor`, `power.turbo` - CPU power management settings (no struct fields exist)
+- `benchmark.metrics` array - Metric selection (currently collects all metrics; no struct field exists)
+- `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters (no struct fields exist)
+- `plugins[].params` - Kernel-specific parameters (parsed to config.h:29 but set to NULL in main.c:82-83)
+- `plugins[].spec_version` - Kernel spec version (parsed to config.h:26 but never validated or used)
+- `plugins[].tolerances` - Per-plugin numerical tolerance specifications (no struct field; loaded from kernel spec.yaml)
+- `plugins[].oracle` - Per-plugin oracle reference paths (no struct field; referenced via kernel spec.yaml)
+- `output.include_raw_data` - Raw telemetry data export flag (parsed to config.h:60 but never used)
+- `benchmark.load_profile` - Background load profile (parsed and passed to replayer but function is stub; replayer.c:107-110)
 
 **Fully Implemented**:
 - `dataset.*` - Used by replayer for streaming EEG data
 - `realtime.scheduler`, `realtime.priority`, `realtime.cpu_affinity`, `realtime.deadline_ms` - Used by scheduler
 - `benchmark.parameters.*` (duration_seconds, repeats, warmup_seconds) - Used by harness lifecycle
 - `output.directory`, `output.format` - Used by telemetry writer
-- `plugins[].name`, `plugins[].status`, `plugins[].spec_uri`, `plugins[].spec_version`, `plugins[].params` - Used by harness
+- `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
 
 See `docs/ROADMAP.md` for implementation timeline.
 
