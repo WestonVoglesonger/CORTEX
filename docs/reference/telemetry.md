@@ -101,7 +101,13 @@ All fields are identical to CSV columns (see "Common columns" above).
 - Can append records without rewriting file
 - Standard format for log aggregation systems
 
-**Usage with jq:**
+**Usage with jq (optional tool):**
+
+> **Note:** `jq` is not required and not installed by default. Install with:
+> - macOS: `brew install jq`
+> - Ubuntu/Debian: `sudo apt-get install jq`
+> - Or use Python examples below (no additional dependencies)
+
 ```bash
 # Pretty-print first record
 head -1 results/run-*/kernel-data/*/telemetry.ndjson | jq .
@@ -111,6 +117,32 @@ cat results/run-*/kernel-data/*/telemetry.ndjson | jq -r '.end_ts_ns - .start_ts
 
 # Count deadline misses
 cat results/run-*/kernel-data/*/telemetry.ndjson | jq -r '.deadline_missed' | grep 1 | wc -l
+```
+
+**Python alternatives (no extra dependencies):**
+```bash
+# Pretty-print first record
+head -1 results/run-*/kernel-data/*/telemetry.ndjson | python -m json.tool
+
+# Extract all latencies (Python one-liner)
+python -c "
+import json, glob
+for path in glob.glob('results/run-*/kernel-data/*/telemetry.ndjson'):
+    for line in open(path):
+        data = json.loads(line)
+        print(data['end_ts_ns'] - data['start_ts_ns'])
+"
+
+# Count deadline misses
+python -c "
+import json, glob
+count = 0
+for path in glob.glob('results/run-*/kernel-data/*/telemetry.ndjson'):
+    for line in open(path):
+        if json.loads(line).get('deadline_missed', 0) == 1:
+            count += 1
+print(count)
+"
 ```
 
 ## Aggregates (per plugin per run)
