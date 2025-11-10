@@ -165,11 +165,6 @@ After all plugins complete execution, the harness automatically generates an int
 
 The report is generated automatically after the plugin execution loop completes, providing a comprehensive overview of benchmark results with both summary statistics and detailed visualizations.
 
-## Reproducibility notes
-- Record git commit, build flags, CPU model, governor, turbo, and RT settings.
-- Each run is isolated in its own directory for reproducibility.
-- Run names provide semantic organization (e.g., `baseline-measurements`, `run-2025-11-10-001`).
-
 ## Timing Accuracy
 
 Latency measurements use `CLOCK_MONOTONIC` for high-resolution timing:
