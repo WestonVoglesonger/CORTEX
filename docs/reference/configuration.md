@@ -25,7 +25,7 @@ for plugins. Plugins never read YAML.
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
 
-See `docs/ROADMAP.md` for implementation timeline.
+See [docs/development/roadmap.md](../development/roadmap.md) for implementation timeline.
 
 ## Versioning
 - `cortex_version: <int>` — bump on breaking changes.
