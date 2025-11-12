@@ -244,7 +244,7 @@ The harness uses `dlopen()` to load plugins:
 # Looks for plugins/lib<name>.so
 ```
 
-See `docs/MACOS_COMPATIBILITY.md` for comprehensive platform documentation.
+See `docs/architecture/platform-compatibility.md` for comprehensive platform documentation.
 
 ## References
 

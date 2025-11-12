@@ -7,9 +7,9 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ### Infrastructure & Architecture
 - [x] Dataset selection and documentation (PhysioNet EEG Motor Movement/Imagery)
 - [x] Kernel specifications (individual README.md files for CAR, notch IIR, bandpass FIR, Goertzel)
-- [x] Plugin ABI definition (PLUGIN_INTERFACE.md, cortex_plugin.h)
-- [x] Run configuration schema (RUN_CONFIG.md)
-- [x] Telemetry schema (TELEMETRY.md)
+- [x] Plugin ABI definition ([plugin-interface.md](../reference/plugin-interface.md), cortex_plugin.h)
+- [x] Run configuration schema ([configuration.md](../reference/configuration.md))
+- [x] Telemetry schema ([telemetry.md](../reference/telemetry.md))
 - [x] Dataset replayer implementation (src/replayer/) with real-time cadence
 - [x] Scheduler with real-time support (src/scheduler/) - FIFO/RR policies, CPU affinity
 - [x] Harness with plugin loader (src/harness/) - sequential plugin execution
@@ -80,7 +80,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 See `include/cortex_plugin.h` for dtype definitions and `kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
 
 ### Unimplemented Configuration Fields
-These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the config loader but **not yet used** by the harness:
+These fields are **documented** in `docs/reference/configuration.md` and **parsed** by the config loader but **not yet used** by the harness:
 
 - `system.name`, `system.description` - Run metadata for identification
 - `power.governor`, `power.turbo` - CPU power management settings
@@ -91,7 +91,7 @@ These fields are **documented** in `docs/RUN_CONFIG.md` and **parsed** by the co
 - `output.include_raw_data` - Raw telemetry data export flag
 - `benchmark.load_profile` - Parsed but stress-ng integration pending
 
-**Reference**: `docs/RUN_CONFIG.md` "Implementation Status" section
+**Reference**: `docs/reference/configuration.md` "Implementation Status" section
 
 ### Planned Features (From TODOs)
 

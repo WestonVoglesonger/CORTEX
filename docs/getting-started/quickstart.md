@@ -50,10 +50,12 @@ Building and running tests...
 
 **What happens:**
 1. Validates all kernels against Python oracles
-2. Runs 125-second benchmarks on each kernel
+2. Runs benchmarks on each kernel (default: 5 seconds per kernel, configurable via `--duration`)
 3. Generates analysis plots and summary
 
-**Expected runtime:** ~8-10 minutes (depends on system)
+**Expected runtime:** ~2-3 minutes for default 5-second runs (depends on system and number of kernels)
+
+**Note**: To run longer benchmarks, use `./cortex.py pipeline --duration 125` for 125-second runs per kernel.
 
 ## 4. View Results
 
