@@ -18,7 +18,7 @@ results/
 
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 import re
 import os
 
@@ -201,7 +201,7 @@ def get_most_recent_run(base_dir: str = "results") -> Optional[str]:
     return run_dirs[0].name
 
 
-def get_all_runs(base_dir: str = "results") -> list[str]:
+def get_all_runs(base_dir: str = "results") -> List[str]:
     """
     Get all run directory names, sorted by modification time (most recent first).
 
@@ -226,7 +226,7 @@ def get_all_runs(base_dir: str = "results") -> list[str]:
     return [d.name for d in run_dirs]
 
 
-def create_run_structure(run_name: str, base_dir: str = "results") -> dict[str, Path]:
+def create_run_structure(run_name: str, base_dir: str = "results") -> Dict[str, Path]:
     """
     Create the directory structure for a new run.
 

@@ -80,7 +80,7 @@ To add a new kernel implementation:
    - Check `config->abi_version == CORTEX_ABI_VERSION`
    - Allocate persistent state in `init()`, free in `teardown()`
    - **No allocations in `process()`** - all memory must be pre-allocated
-   - Handle NaNs gracefully (see docs/reference/kernels.md)
+   - Handle NaNs gracefully (see docs/guides/adding-kernels.md)
 
 4. **Validation**:
    ```bash
