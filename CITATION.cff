@@ -3,7 +3,7 @@ message: "If you use this software, please cite it as below."
 type: software
 title: "CORTEX: Common Off-implant Runtime Test Ecosystem for BCI Kernels"
 version: "0.2.0"
-date-released: "2025-11-05"
+date-released: "2025-11-11"
 url: "https://github.com/WestonVoglesonger/CORTEX"
 repository-code: "https://github.com/WestonVoglesonger/CORTEX"
 authors:

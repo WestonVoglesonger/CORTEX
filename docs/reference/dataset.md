@@ -59,7 +59,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 - **EEG potentials**: Physical units as recorded in the EDF header, typically **microvolts (µV)**. All CORTEX kernels process and report values in µV.
 
 ## Reference Scheme
-- **As recorded in EDF** (dataset page does not impose a single fixed reference). Our pipeline applies **common average reference (CAR)** as the first step to ensure consistency across runs.
+- **As recorded in EDF** (dataset page does not impose a single fixed reference). To ensure consistency across runs, you can apply **common average reference (CAR)** by explicitly including the CAR kernel in your pipeline configuration.
 
 ## Annotations / Labels (kept for optional analyses)
 - EDF annotation channel (and `.event` file) encodes **T0/T1/T2**:
@@ -73,7 +73,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
   - No filtering applied before kernel processing
   - No artifact rejection
   - No resampling (native Fs = 160 Hz)
-- **Re-referencing**: Common Average Reference (CAR) is applied as the first kernel in the processing pipeline when configured.
+- **Re-referencing**: Common Average Reference (CAR) can be applied by explicitly including it as a kernel in your pipeline configuration. By default, no re-referencing is applied.
 - **Data quality**: This dataset consists of raw EEG recordings without preprocessing, as documented in the original BCI2000 publication.
 
 ---

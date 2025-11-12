@@ -38,7 +38,7 @@ Building and running tests...
 
 **Troubleshooting:**
 - **macOS "dylib not found"**: Ensure Xcode CLT installed
-- **Linux "libdl not found"**: `sudo apt-get install libdl-dev`
+- **Linux "libdl not found"**: `sudo apt-get install build-essential`
 - See [docs/guides/troubleshooting.md](../guides/troubleshooting.md) for more issues
 
 ## 3. Run Your First Benchmark
