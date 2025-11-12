@@ -25,8 +25,8 @@ The ABI is designed with these properties:
   **struct size**. New fields can be appended without breaking existing plugins.
   Plugins should ignore unknown trailing bytes if `struct_size` is honored.
 
-- **Modality agnostic**  
-  While v1 targets EEG kernels (Fs=160 Hz, W=160 samples, H=80, C=64), the ABI
+- **Modality agnostic**
+  While current kernel implementations target EEG parameters (Fs=160 Hz, W=160 samples, H=80, C=64), the ABI
   supports arbitrary sample rates, window sizes, and channel counts. Plugins
   never see YAML or file paths — only numeric runtime parameters.
 
@@ -42,26 +42,11 @@ The ABI is designed with these properties:
 
 ---
 
-## Pipeline Context
+## System Context
 
-Each run is driven by a YAML configuration (`cortex.yaml`) describing dataset,
-scheduler, harness settings, telemetry, and plugin list. Modules interact as:
+CORTEX plugins are dynamically loaded by the harness and process windowed EEG data. Each plugin implements four functions (`cortex_get_info()`, `cortex_init()`, `cortex_process()`, `cortex_teardown()`) and receives runtime configuration through structs—never YAML or file paths. The harness handles all dataset streaming, scheduling, deadline enforcement, and telemetry collection.
 
-- **Replayer** streams dataset samples at true sample rate Fs.  
-- **Scheduler** slices into windows of length W with hop H, assigns release
-  times and deadlines (H/Fs).  
-- **Harness** loads each plugin shared library, calls `init()` with a
-  `cortex_plugin_config_t`, and then calls `process()` for each window while
-  enforcing deadlines, CPU affinity, and scheduling. It records latency,
-  jitter, throughput, memory, and energy.  
-- **Reference oracles** (SciPy/MNE) verify correctness before timing; tolerances
-  are defined per-kernel. Kernel specs are versioned in `kernels/v1/{name}@{dtype}/`.
-- **Telemetry & outputs** are written to CSV/JSON. Energy (J) and power (mW)
-  are computed via RAPL.
-
-Plugins never see YAML or dataset paths. The harness extracts numeric fields
-and populates the configuration struct. Kernel specifications are maintained
-in the versioned `kernels/` registry for reproducibility and validation.
+For details on how the harness, replayer, scheduler, and analysis pipeline interact, see [Architecture Overview](../architecture/overview.md).
 
 ---
 
@@ -73,7 +58,7 @@ The harness fills this struct before `init()`:
 |-----------------------|-----------|-------------|
 | `abi_version`        | uint32_t  | Must equal `CORTEX_ABI_VERSION`. Reject if mismatched. |
 | `struct_size`        | uint32_t  | Size in bytes. Prevents reading past known fields. |
-| `sample_rate_hz`     | uint32_t  | Input sampling rate Fs (Hz). Default = 160 for EEG v1. |
+| `sample_rate_hz`     | uint32_t  | Input sampling rate Fs (Hz). Default = 160 for current EEG kernels. |
 | `window_length_samples` | uint32_t | Window length W (samples). Default = 160. |
 | `hop_samples`        | uint32_t  | Hop length H (samples). Default = 80. |
 | `channels`           | uint32_t  | Input channels C. Default = 64. Must equal dataset.channels. |
@@ -91,11 +76,11 @@ The harness fills this struct before `init()`:
 - `plugins[*].runtime.channels` → `channels`  
 - `plugins[*].runtime.dtype` → `dtype`  
 - `plugins[*].runtime.allow_in_place` → `allow_in_place`  
-- `plugins[*].params` → serialized into `kernel_params`  
-  **Note (v1)**: Currently NOT implemented. Harness sets `kernel_params = NULL` for all plugins 
-  (see `src/harness/app/main.c` lines 82-83). All v1 kernels use fixed parameters:
+- `plugins[*].params` → serialized into `kernel_params`
+  **Note (current limitation)**: Not yet implemented. Harness sets `kernel_params = NULL` for all plugins
+  (see `src/harness/app/main.c` lines 82-83). All current kernel implementations use fixed parameters:
   - `notch_iir`: f0=60 Hz, Q=30 (hardcoded in C)
-  - `fir_bandpass`: numtaps=129, passband=[8,30] Hz (hardcoded)
+  - `bandpass_fir`: numtaps=129, passband=[8,30] Hz (hardcoded)
   - `goertzel`: bands fixed to alpha (8-13 Hz), beta (13-30 Hz)
   
   To enable configurable parameters in future:
@@ -174,7 +159,7 @@ void cortex_teardown(void* handle);
 ## Guidelines for Plugin Authors
 
 * **Language & linkage**: Implement in C or C++, export with `extern "C"`.
-* **Numerical stability**: Follow specs in `docs/KERNELS.md`. Use float32 by default; quantised versions must saturate and round correctly.
+* **Numerical stability**: Follow tolerances in each kernel's `spec.yaml` file. Use float32 by default; quantised versions must saturate and round correctly.
 * **State management**: Store persistent state in memory allocated in `init()`.
 * **Thread safety**: No concurrent calls to `process()` on same handle; multiple instances may run in parallel.
 * **Error handling**: Return NULL from `init()` if unsupported. Handle NaNs gracefully.
@@ -182,9 +167,9 @@ void cortex_teardown(void* handle);
 
 ---
 
-## Defaults for EEG v1
+## Default EEG Parameters
 
-From the project proposal and implementation plan:
+From the project proposal and implementation plan (used by current kernel implementations):
 
 * **Sample rate (Fs):** 160 Hz
 * **Window length (W):** 160 samples (1 s)
@@ -259,7 +244,7 @@ The harness uses `dlopen()` to load plugins:
 # Looks for plugins/lib<name>.so
 ```
 
-See `docs/MACOS_COMPATIBILITY.md` for comprehensive platform documentation.
+See `docs/architecture/platform-compatibility.md` for comprehensive platform documentation.
 
 ## References
 

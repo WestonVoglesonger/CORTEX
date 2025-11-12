@@ -13,13 +13,17 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['font.size'] = 11
 
+# Pandas version compatibility
+# include_groups parameter was added in pandas 2.2.0
+PANDAS_VERSION = tuple(map(int, pd.__version__.split('.')[:2]))
+SUPPORTS_INCLUDE_GROUPS = PANDAS_VERSION >= (2, 2)
+
 def _extract_kernel_name(file_path: Path) -> Optional[str]:
     """
     Extract kernel name from telemetry file path or filename
 
-    Supports patterns:
-    - <run_id>_<kernel>_telemetry.{csv,ndjson}
-    - <kernel>_run/..._telemetry.{csv,ndjson}
+    Supports new structure:
+    - kernel-data/<kernel>/telemetry.{csv,ndjson}
 
     Args:
         file_path: Path to telemetry file
@@ -27,41 +31,18 @@ def _extract_kernel_name(file_path: Path) -> Optional[str]:
     Returns:
         Kernel name or None if not found
     """
-    filename = file_path.name
-    parts = file_path.parts
+    # New structure: kernel name is parent directory
+    # e.g., results/run-2025-11-10-001/kernel-data/bandpass_fir/telemetry.ndjson
+    parent_dir = file_path.parent.name
 
-    # Try filename pattern: <run_id>_<kernel>_telemetry.{ext}
-    if '_telemetry.' in filename:
-        # Remove extension and split
-        base = filename.rsplit('_telemetry.', 1)[0]
-        # Remove run_id (timestamp) prefix if present
-        if '_' in base:
-            # Split on underscores and assume first part is timestamp
-            # e.g., "1762315905289_goertzel" -> "goertzel"
-            parts_list = base.split('_')
-            if parts_list[0].isdigit() and len(parts_list) > 1:
-                kernel_name = '_'.join(parts_list[1:])
-                if kernel_name:  # Validate non-empty
-                    return kernel_name
-                print(f"Warning: Could not extract kernel name from {filename} (empty after split)")
-                return None
-            # If no numeric prefix, treat whole base as kernel name
-            if base:
-                return base
-        # No underscore, treat whole base as kernel name
-        if base:
-            return base
-        print(f"Warning: Could not extract kernel name from {filename} (empty base)")
-        return None
-
-    # Try directory pattern: kernel_run
-    for part in parts:
-        if part.endswith('_run'):
-            kernel_name = part.replace('_run', '')
-            if kernel_name:
-                return kernel_name
+    # Check if we're in the expected structure
+    if file_path.parent.parent.name == "kernel-data":
+        # Parent directory is the kernel name
+        if parent_dir:
+            return parent_dir
 
     print(f"Warning: Could not extract kernel name from path {file_path}")
+    print(f"Expected structure: .../kernel-data/<kernel>/telemetry.*")
     return None
 
 def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[pd.DataFrame]:
@@ -83,14 +64,9 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
         print(f"Error: Results directory not found: {results_dir}")
         return None
 
-    # Find all telemetry files (NDJSON and CSV)
-    ndjson_files = list(results_path.glob("*_run/*_telemetry.ndjson"))
-    csv_files = list(results_path.glob("*_run/*_telemetry.csv"))
-
-    # Try non-batch mode patterns as fallback
-    if not ndjson_files and not csv_files:
-        ndjson_files = list(results_path.glob("*/*/telemetry.ndjson"))
-        csv_files = list(results_path.glob("*/*/telemetry.csv"))
+    # Find all telemetry files in new structure (kernel-data/<kernel>/telemetry.*)
+    ndjson_files = list(results_path.glob("kernel-data/*/telemetry.ndjson"))
+    csv_files = list(results_path.glob("kernel-data/*/telemetry.csv"))
 
     # Determine which files to use based on preference
     if prefer_format == 'ndjson' and ndjson_files:
@@ -108,16 +84,20 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
         files_to_load = csv_files
         file_format = 'csv'
     else:
-        # Check if directory is completely empty or has kernel directories
-        all_subdirs = list(results_path.glob("*_run"))
-        if not all_subdirs:
-            print(f"Error: No kernel result directories found in {results_dir}")
-            print(f"Expected directories like: <kernel>_run/")
-            print(f"Run './cortex.py run --all' to generate results first")
+        # Check if directory has kernel-data structure
+        kernel_data_dir = results_path / "kernel-data"
+        if not kernel_data_dir.exists():
+            print(f"Error: No kernel-data directory found in {results_dir}")
+            print(f"Expected structure: {results_dir}/kernel-data/<kernel>/telemetry.*")
+            print(f"Run 'cortex run --all' to generate results first")
         else:
-            print(f"Error: Found {len(all_subdirs)} kernel directories but no telemetry files")
-            print(f"Directories found: {[d.name for d in all_subdirs]}")
-            print(f"This may indicate all kernel runs failed")
+            kernel_dirs = list(kernel_data_dir.glob("*"))
+            if not kernel_dirs:
+                print(f"Error: kernel-data directory exists but is empty")
+            else:
+                print(f"Error: Found {len(kernel_dirs)} kernel directories but no telemetry files")
+                print(f"Directories found: {[d.name for d in kernel_dirs]}")
+                print(f"This may indicate all kernel runs failed")
         return None
 
     print(f"Loading {len(files_to_load)} {file_format.upper()} telemetry file(s)...")
@@ -208,8 +188,12 @@ def calculate_statistics(df: pd.DataFrame) -> pd.DataFrame:
 
     return stats
 
-def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate latency comparison bar chart"""
+def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate latency comparison bar chart
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     stats = calculate_statistics(df)
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -233,14 +217,20 @@ def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'p
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate deadline miss rate comparison"""
+def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate deadline miss rate comparison
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     stats = calculate_statistics(df)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -262,14 +252,20 @@ def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate CDF overlay plot for all kernels"""
+def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate CDF overlay plot for all kernels
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     df_filtered = df[df['warmup'] == 0].copy()
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -293,25 +289,39 @@ def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate throughput comparison"""
+def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate throughput comparison
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     df_filtered = df[df['warmup'] == 0].copy()
 
     # Calculate throughput (windows per second)
     # Fs/H gives the theoretical throughput
     if 'Fs' in df_filtered.columns and 'H' in df_filtered.columns:
-        throughput = df_filtered.groupby('plugin').apply(
-            lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0
-        ).reset_index(name='throughput')
+        # Pandas 2.2.0+ requires include_groups=False to maintain backward compatibility
+        if SUPPORTS_INCLUDE_GROUPS:
+            throughput = df_filtered.groupby('plugin').apply(
+                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0,
+                include_groups=False
+            ).reset_index(name='throughput')
+        else:
+            # Pandas < 2.2.0: parameter doesn't exist, groups excluded by default
+            throughput = df_filtered.groupby('plugin').apply(
+                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0
+            ).reset_index(name='throughput')
     else:
         print("Warning: Could not calculate throughput (missing Fs/H columns)")
-        return
+        return False
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -327,9 +337,11 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
@@ -419,23 +431,57 @@ def run_full_analysis(
 
     print(f"\nGenerating analysis plots...")
 
+    # Track plot generation failures
+    plot_failures = []
+    plot_successes = []
+
     # Generate plots
     if 'latency' in plots:
-        plot_latency_comparison(df, str(output_path / f'latency_comparison.{format}'), format)
+        success = plot_latency_comparison(df, str(output_path / f'latency_comparison.{format}'), format)
+        if success:
+            plot_successes.append('latency')
+        else:
+            plot_failures.append('latency')
 
     if 'deadline' in plots:
-        plot_deadline_misses(df, str(output_path / f'deadline_miss_rate.{format}'), format)
+        success = plot_deadline_misses(df, str(output_path / f'deadline_miss_rate.{format}'), format)
+        if success:
+            plot_successes.append('deadline')
+        else:
+            plot_failures.append('deadline')
 
     if 'throughput' in plots:
-        plot_throughput_comparison(df, str(output_path / f'throughput_comparison.{format}'), format)
+        success = plot_throughput_comparison(df, str(output_path / f'throughput_comparison.{format}'), format)
+        if success:
+            plot_successes.append('throughput')
+        else:
+            plot_failures.append('throughput')
 
     if 'cdf' in plots:
-        plot_cdf_overlay(df, str(output_path / f'latency_cdf_overlay.{format}'), format)
+        success = plot_cdf_overlay(df, str(output_path / f'latency_cdf_overlay.{format}'), format)
+        if success:
+            plot_successes.append('cdf')
+        else:
+            plot_failures.append('cdf')
 
     # Generate summary table
-    generate_summary_table(df, str(output_path / 'SUMMARY.md'))
+    try:
+        generate_summary_table(df, str(output_path / 'SUMMARY.md'))
+        summary_success = True
+    except Exception as e:
+        print(f"Error: Could not generate summary table: {e}")
+        summary_success = False
 
-    print(f"\n✓ Analysis complete!")
+    # Report results
+    if plot_failures:
+        print(f"\n⚠ Analysis completed with {len(plot_failures)} plot failure(s): {', '.join(plot_failures)}")
+    else:
+        print(f"\n✓ Analysis complete!")
     print(f"Output directory: {output_dir}")
 
+    # Return False if all plots failed or summary failed, True otherwise
+    if plot_failures and len(plot_failures) == len(plots):
+        return False
+    if not summary_success:
+        return False
     return True

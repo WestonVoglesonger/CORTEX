@@ -12,6 +12,7 @@ def load_base_config(config_path: str = "configs/cortex.yaml") -> Dict:
 def generate_config(
     kernel_name: str,
     output_path: str,
+    output_dir: Optional[str] = None,
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
     warmup: Optional[int] = None,
@@ -23,6 +24,7 @@ def generate_config(
     Args:
         kernel_name: Name of kernel to configure
         output_path: Where to write the config file
+        output_dir: Override output directory for results (kernel-specific)
         duration: Override benchmark duration (seconds)
         repeats: Override number of repeats
         warmup: Override warmup duration (seconds)
@@ -56,6 +58,10 @@ def generate_config(
         config['benchmark']['parameters']['repeats'] = repeats
     if warmup is not None:
         config['benchmark']['parameters']['warmup_seconds'] = warmup
+
+    # Override output directory if provided
+    if output_dir is not None:
+        config['output']['directory'] = output_dir
 
     # Configure single plugin
     config['plugins'] = [

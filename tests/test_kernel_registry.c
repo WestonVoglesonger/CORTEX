@@ -27,7 +27,7 @@ typedef struct {
 static kernel_test_t expected_kernels[] = {
     {"car@f32", "[160, 64]", "[160, 64]", 0},
     {"notch_iir@f32", "[160, 64]", "[160, 64]", 1},
-    {"fir_bandpass@f32", "[160, 64]", "[160, 64]", 1},
+    {"bandpass_fir@f32", "[160, 64]", "[160, 64]", 1},
     {"goertzel@f32", "[160, 64]", "[2, 64]", 0}
 };
 

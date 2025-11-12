@@ -73,11 +73,9 @@ All kernels assume:
 - **Channels (C)**: 64
 - **Units**: µV
 
-See `docs/KERNELS.md` for detailed mathematical specifications.
-
 ## References
 
-- Mathematical specifications: `docs/KERNELS.md`
-- Plugin interface: `docs/PLUGIN_INTERFACE.md`
-- Run configuration: `docs/RUN_CONFIG.md`
+- Plugin interface: `docs/reference/plugin-interface.md`
+- Run configuration: `docs/reference/configuration.md`
+- Individual kernel specs: See each kernel's README.md in `v1/{name}@{dtype}/`
 
