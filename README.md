@@ -46,7 +46,7 @@ cat results/run-*/analysis/SUMMARY.md
 📚 **[Complete Documentation](docs/README.md)**
 
 - **Getting Started**: [Quick Start](docs/getting-started/quickstart.md) | [CLI Usage](docs/getting-started/cli-usage.md)
-- **Reference**: [Plugin API](docs/reference/plugin-interface.md) | [Kernel Specs](docs/reference/kernels.md) | [Configuration](docs/reference/configuration.md)
+- **Reference**: [Plugin API](docs/reference/plugin-interface.md) | [Configuration](docs/reference/configuration.md)
 - **Architecture**: [System Overview](docs/architecture/overview.md) | [Testing Strategy](docs/architecture/testing-strategy.md)
 - **Guides**: [Adding Kernels](docs/guides/adding-kernels.md) | [Troubleshooting](docs/guides/troubleshooting.md)
 - **Development**: [Roadmap](docs/development/roadmap.md) | [Contributing](CONTRIBUTING.md)

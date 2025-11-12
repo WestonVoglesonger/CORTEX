@@ -10,6 +10,37 @@ from cortex_cli.core.paths import (
     get_kernel_data_dir,
     get_run_directory
 )
+import shutil
+
+
+def _cleanup_partial_run(run_dir: Path) -> None:
+    """
+    Clean up a partial run directory on failure.
+    
+    Args:
+        run_dir: Path to the run directory to clean up
+    """
+    try:
+        if run_dir.exists():
+            # Check if directory is empty or only contains empty subdirectories
+            # Only remove if it's truly empty or contains no meaningful data
+            has_data = False
+            if (run_dir / "kernel-data").exists():
+                kernel_data = run_dir / "kernel-data"
+                for kernel_dir in kernel_data.iterdir():
+                    if kernel_dir.is_dir():
+                        # Check if kernel directory has any files
+                        if any(kernel_dir.iterdir()):
+                            has_data = True
+                            break
+            
+            # Only remove if no data was written
+            if not has_data:
+                shutil.rmtree(run_dir)
+                print(f"Cleaned up partial run directory: {run_dir}")
+    except Exception as e:
+        # Don't fail if cleanup fails - just log it
+        print(f"Warning: Could not clean up partial run directory {run_dir}: {e}")
 
 def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optional[str]:
     """
@@ -69,6 +100,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
 
     except Exception as e:
         print(f"Error running harness: {e}")
+        # Note: Cleanup is handled by the calling function (run_single_kernel or run_all_kernels)
         return None
 
 def run_single_kernel(
@@ -96,7 +128,7 @@ def run_single_kernel(
     from cortex_cli.core.config import generate_config
 
     # Create run directory structure
-    create_run_structure(run_name)
+    run_structure = create_run_structure(run_name)
     kernel_dir = create_kernel_directory(run_name, kernel_name)
 
     # Generate config
@@ -114,6 +146,8 @@ def run_single_kernel(
         repeats=repeats,
         warmup=warmup
     ):
+        # Cleanup: remove partial run directory on config generation failure
+        _cleanup_partial_run(run_structure['run'])
         return None
 
     print(f"Running benchmark for {kernel_name}...")
@@ -123,6 +157,9 @@ def run_single_kernel(
 
     if results_dir:
         print(f"✓ Benchmark complete: {results_dir}")
+    else:
+        # Cleanup: remove partial run directory on harness failure
+        _cleanup_partial_run(run_structure['run'])
 
     return results_dir
 

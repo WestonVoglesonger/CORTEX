@@ -183,8 +183,12 @@ def calculate_statistics(df: pd.DataFrame) -> pd.DataFrame:
 
     return stats
 
-def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate latency comparison bar chart"""
+def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate latency comparison bar chart
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     stats = calculate_statistics(df)
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -208,14 +212,20 @@ def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'p
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate deadline miss rate comparison"""
+def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate deadline miss rate comparison
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     stats = calculate_statistics(df)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -237,14 +247,20 @@ def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png'
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate CDF overlay plot for all kernels"""
+def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate CDF overlay plot for all kernels
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     df_filtered = df[df['warmup'] == 0].copy()
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -268,14 +284,20 @@ def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png'):
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
-def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png'):
-    """Generate throughput comparison"""
+def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
+    """Generate throughput comparison
+    
+    Returns:
+        True if plot was saved successfully, False otherwise
+    """
     df_filtered = df[df['warmup'] == 0].copy()
 
     # Calculate throughput (windows per second)
@@ -287,7 +309,7 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
         ).reset_index(name='throughput')
     else:
         print("Warning: Could not calculate throughput (missing Fs/H columns)")
-        return
+        return False
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -303,9 +325,11 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     try:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Saved: {output_path}")
+        return True
     except Exception as e:
         print(f"Error: Could not save plot to {output_path}: {e}")
         print("Tip: Try PNG format or install required backend")
+        return False
     finally:
         plt.close()
 
@@ -395,23 +419,57 @@ def run_full_analysis(
 
     print(f"\nGenerating analysis plots...")
 
+    # Track plot generation failures
+    plot_failures = []
+    plot_successes = []
+
     # Generate plots
     if 'latency' in plots:
-        plot_latency_comparison(df, str(output_path / f'latency_comparison.{format}'), format)
+        success = plot_latency_comparison(df, str(output_path / f'latency_comparison.{format}'), format)
+        if success:
+            plot_successes.append('latency')
+        else:
+            plot_failures.append('latency')
 
     if 'deadline' in plots:
-        plot_deadline_misses(df, str(output_path / f'deadline_miss_rate.{format}'), format)
+        success = plot_deadline_misses(df, str(output_path / f'deadline_miss_rate.{format}'), format)
+        if success:
+            plot_successes.append('deadline')
+        else:
+            plot_failures.append('deadline')
 
     if 'throughput' in plots:
-        plot_throughput_comparison(df, str(output_path / f'throughput_comparison.{format}'), format)
+        success = plot_throughput_comparison(df, str(output_path / f'throughput_comparison.{format}'), format)
+        if success:
+            plot_successes.append('throughput')
+        else:
+            plot_failures.append('throughput')
 
     if 'cdf' in plots:
-        plot_cdf_overlay(df, str(output_path / f'latency_cdf_overlay.{format}'), format)
+        success = plot_cdf_overlay(df, str(output_path / f'latency_cdf_overlay.{format}'), format)
+        if success:
+            plot_successes.append('cdf')
+        else:
+            plot_failures.append('cdf')
 
     # Generate summary table
-    generate_summary_table(df, str(output_path / 'SUMMARY.md'))
+    try:
+        generate_summary_table(df, str(output_path / 'SUMMARY.md'))
+        summary_success = True
+    except Exception as e:
+        print(f"Error: Could not generate summary table: {e}")
+        summary_success = False
 
-    print(f"\n✓ Analysis complete!")
+    # Report results
+    if plot_failures:
+        print(f"\n⚠ Analysis completed with {len(plot_failures)} plot failure(s): {', '.join(plot_failures)}")
+    else:
+        print(f"\n✓ Analysis complete!")
     print(f"Output directory: {output_dir}")
 
+    # Return False if all plots failed or summary failed, True otherwise
+    if plot_failures and len(plot_failures) == len(plots):
+        return False
+    if not summary_success:
+        return False
     return True

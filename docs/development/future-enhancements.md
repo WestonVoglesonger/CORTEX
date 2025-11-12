@@ -42,7 +42,7 @@ This document consolidates all planned features, deferred implementations, and f
 
 ---
 
-### Quantization Support (Q15/Q7)
+### Quantization Support (Q15/Q7) {#quantization-support-q15q7}
 
 **Status:** Infrastructure ready, implementations deferred
 

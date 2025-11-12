@@ -124,7 +124,7 @@ Execute benchmark experiments.
 
 ---
 
-## Benchmark Duration Guidelines
+## Benchmark Duration Guidelines {#benchmark-duration-guidelines}
 
 Selecting appropriate benchmark durations is critical for reliable latency statistics. Based on research in real-time system benchmarking and statistical requirements for percentile confidence:
 

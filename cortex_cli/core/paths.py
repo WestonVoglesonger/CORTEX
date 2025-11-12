@@ -20,6 +20,14 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import re
+import os
+
+# fcntl is Unix-only, handle import gracefully
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    HAS_FCNTL = False
 
 
 def generate_run_name(custom_name: Optional[str] = None, base_dir: str = "results") -> str:
@@ -38,14 +46,22 @@ def generate_run_name(custom_name: Optional[str] = None, base_dir: str = "result
     """
     if custom_name:
         # Validate custom name (alphanumeric, hyphens, underscores only)
+        # Explicitly check for path separators and directory traversal attempts
         if not re.match(r'^[a-zA-Z0-9_-]+$', custom_name):
             raise ValueError(
                 f"Invalid run name '{custom_name}'. "
                 "Only alphanumeric characters, hyphens, and underscores allowed."
             )
+        
+        # Additional security: reject any path separators
+        if '/' in custom_name or '\\' in custom_name or '..' in custom_name:
+            raise ValueError(
+                f"Invalid run name '{custom_name}'. "
+                "Path separators and directory traversal sequences are not allowed."
+            )
 
-        # Check if name already exists
-        results_path = Path(base_dir)
+        # Canonicalize base directory path to prevent directory traversal
+        results_path = Path(base_dir).resolve()
         if results_path.exists() and (results_path / custom_name).exists():
             raise ValueError(
                 f"Run name '{custom_name}' already exists in {base_dir}/. "
@@ -58,22 +74,61 @@ def generate_run_name(custom_name: Optional[str] = None, base_dir: str = "result
     today = datetime.now().strftime("%Y-%m-%d")
     prefix = f"run-{today}-"
 
-    # Find existing runs for today
-    results_path = Path(base_dir)
+    # Canonicalize base directory path
+    results_path = Path(base_dir).resolve()
     if not results_path.exists():
         return f"{prefix}001"
 
-    # Find highest sequence number for today
+    # Use file locking to prevent race conditions in parallel execution (Unix only)
+    # On Windows or systems without fcntl, we'll use a fallback approach
+    if HAS_FCNTL:
+        lock_file = results_path / ".run_name_lock"
+        
+        try:
+            # Create lock file if it doesn't exist
+            lock_file.touch(exist_ok=True)
+            
+            # Acquire exclusive lock for sequence number generation
+            with open(lock_file, 'r+') as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                try:
+                    # Find highest sequence number for today
+                    max_seq = 0
+                    for entry in results_path.iterdir():
+                        if entry.is_dir() and entry.name.startswith(prefix):
+                            # Extract sequence number
+                            match = re.match(rf'^{re.escape(prefix)}(\d{{3}})$', entry.name)
+                            if match:
+                                seq = int(match.group(1))
+                                max_seq = max(max_seq, seq)
+
+                    # Return next sequence number
+                    next_seq = max_seq + 1
+                    return f"{prefix}{next_seq:03d}"
+                finally:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        except (OSError, IOError) as e:
+            # Fallback if file locking fails (e.g., on NFS)
+            import warnings
+            warnings.warn(f"Could not acquire lock for run name generation: {e}. "
+                         "Race condition possible in parallel execution.")
+            # Fall through to non-locked path
+    
+    # Fallback: find sequence without locking (race condition possible on Windows/parallel execution)
+    import warnings
+    if not HAS_FCNTL:
+        warnings.warn("File locking not available on this platform. "
+                     "Race condition possible in parallel execution.")
+    
+    # Find highest sequence number for today (without lock)
     max_seq = 0
     for entry in results_path.iterdir():
         if entry.is_dir() and entry.name.startswith(prefix):
-            # Extract sequence number
             match = re.match(rf'^{re.escape(prefix)}(\d{{3}})$', entry.name)
             if match:
                 seq = int(match.group(1))
                 max_seq = max(max_seq, seq)
 
-    # Return next sequence number
     next_seq = max_seq + 1
     return f"{prefix}{next_seq:03d}"
 
@@ -87,9 +142,19 @@ def get_run_directory(run_name: str, base_dir: str = "results") -> Path:
         base_dir: Base results directory (default: "results")
 
     Returns:
-        Path object for the run directory
+        Path object for the run directory (canonicalized)
     """
-    return Path(base_dir) / run_name
+    # Canonicalize paths to prevent directory traversal
+    base_path = Path(base_dir).resolve()
+    run_path = (base_path / run_name).resolve()
+    
+    # Ensure the resolved path is still within the base directory
+    try:
+        run_path.relative_to(base_path)
+    except ValueError:
+        raise ValueError(f"Invalid run name '{run_name}': resolves outside base directory")
+    
+    return run_path
 
 
 def get_kernel_data_dir(run_name: str, kernel: Optional[str] = None, base_dir: str = "results") -> Path:
