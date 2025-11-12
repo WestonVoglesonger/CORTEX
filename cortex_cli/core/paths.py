@@ -46,18 +46,12 @@ def generate_run_name(custom_name: Optional[str] = None, base_dir: str = "result
     """
     if custom_name:
         # Validate custom name (alphanumeric, hyphens, underscores only)
-        # Explicitly check for path separators and directory traversal attempts
+        # This regex prevents path separators and directory traversal
         if not re.match(r'^[a-zA-Z0-9_-]+$', custom_name):
             raise ValueError(
                 f"Invalid run name '{custom_name}'. "
-                "Only alphanumeric characters, hyphens, and underscores allowed."
-            )
-        
-        # Additional security: reject any path separators
-        if '/' in custom_name or '\\' in custom_name or '..' in custom_name:
-            raise ValueError(
-                f"Invalid run name '{custom_name}'. "
-                "Path separators and directory traversal sequences are not allowed."
+                "Only alphanumeric characters, hyphens, and underscores allowed. "
+                "Path separators and directory traversal sequences are not permitted."
             )
 
         # Canonicalize base directory path to prevent directory traversal
@@ -79,57 +73,47 @@ def generate_run_name(custom_name: Optional[str] = None, base_dir: str = "result
     if not results_path.exists():
         return f"{prefix}001"
 
-    # Use file locking to prevent race conditions in parallel execution (Unix only)
-    # On Windows or systems without fcntl, we'll use a fallback approach
+    # Helper function to find highest sequence number for today
+    def find_max_sequence():
+        max_seq = 0
+        for entry in results_path.iterdir():
+            if entry.is_dir() and entry.name.startswith(prefix):
+                match = re.match(rf'^{re.escape(prefix)}(\d{{3}})$', entry.name)
+                if match:
+                    seq = int(match.group(1))
+                    max_seq = max(max_seq, seq)
+        return max_seq
+
+    # Try file locking on Unix to prevent race conditions in parallel execution
     if HAS_FCNTL:
         lock_file = results_path / ".run_name_lock"
-        
+
         try:
             # Create lock file if it doesn't exist
             lock_file.touch(exist_ok=True)
-            
+
             # Acquire exclusive lock for sequence number generation
             with open(lock_file, 'r+') as lock:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
                 try:
-                    # Find highest sequence number for today
-                    max_seq = 0
-                    for entry in results_path.iterdir():
-                        if entry.is_dir() and entry.name.startswith(prefix):
-                            # Extract sequence number
-                            match = re.match(rf'^{re.escape(prefix)}(\d{{3}})$', entry.name)
-                            if match:
-                                seq = int(match.group(1))
-                                max_seq = max(max_seq, seq)
-
-                    # Return next sequence number
-                    next_seq = max_seq + 1
+                    next_seq = find_max_sequence() + 1
                     return f"{prefix}{next_seq:03d}"
                 finally:
                     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         except (OSError, IOError) as e:
-            # Fallback if file locking fails (e.g., on NFS)
+            # Locking failed (e.g., on NFS) - fall back to unlocked approach
             import warnings
             warnings.warn(f"Could not acquire lock for run name generation: {e}. "
                          "Race condition possible in parallel execution.")
-            # Fall through to non-locked path
-    
-    # Fallback: find sequence without locking (race condition possible on Windows/parallel execution)
-    import warnings
-    if not HAS_FCNTL:
+    else:
+        # File locking not available on this platform (e.g., Windows)
+        import warnings
         warnings.warn("File locking not available on this platform. "
                      "Race condition possible in parallel execution.")
-    
-    # Find highest sequence number for today (without lock)
-    max_seq = 0
-    for entry in results_path.iterdir():
-        if entry.is_dir() and entry.name.startswith(prefix):
-            match = re.match(rf'^{re.escape(prefix)}(\d{{3}})$', entry.name)
-            if match:
-                seq = int(match.group(1))
-                max_seq = max(max_seq, seq)
 
-    next_seq = max_seq + 1
+    # Unlocked fallback: find sequence without locking
+    # (Reached on Windows or when Unix locking fails)
+    next_seq = find_max_sequence() + 1
     return f"{prefix}{next_seq:03d}"
 
 
