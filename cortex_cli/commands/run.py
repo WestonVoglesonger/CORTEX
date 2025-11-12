@@ -1,4 +1,5 @@
 """Run experiments command"""
+import sys
 from cortex_cli.core.runner import run_single_kernel, run_all_kernels
 from cortex_cli.core.paths import generate_run_name
 
@@ -59,8 +60,8 @@ def execute(args):
         except ValueError as e:
             print(f"Error: {e}")
             return 1
-    else:
-        # Interactive prompt
+    elif sys.stdin.isatty():
+        # Interactive prompt (only when stdin is a TTY)
         print("Enter a custom name for this run, or press Enter for auto-naming:")
         print("(Auto-naming format: run-YYYY-MM-DD-NNN)")
         user_input = input("Run name: ").strip()
@@ -77,6 +78,10 @@ def execute(args):
             # Auto-generate name
             run_name = generate_run_name()
             print(f"Auto-generated run name: {run_name}")
+    else:
+        # Non-interactive mode (CI/scripts) - auto-generate without prompting
+        run_name = generate_run_name()
+        print(f"Auto-generated run name: {run_name}")
 
     print()
 

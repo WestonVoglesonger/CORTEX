@@ -190,7 +190,7 @@ Deadline misses scored using kernel latency only: `(tend - tstart) > H/Fs`
 
 | Platform | Method | Precision | Notes |
 |----------|--------|-----------|-------|
-| x86 | RAPL (sysfs) | Package-level | Already implemented |
+| x86 | RAPL (sysfs) | Package-level | Planned for Spring 2026 |
 | STM32H7 | INA226 shunt | Per-rail | Requires GPIO triggers for alignment |
 | Jetson | tegrastats | Board sensors | Records temp/rail flags |
 
@@ -302,7 +302,6 @@ Capability matrix showing maximum sustainable configuration per kernel/device.
 - ✅ Kernel implementations (CAR, notch_iir, bandpass_fir, goertzel)
 - ✅ Numerical validation against oracles
 - ✅ Telemetry output (CSV/NDJSON + HTML reports)
-- ✅ RAPL energy measurement (Linux x86)
 
 ### Spring 2026 (Planned)
 - Device adapters:
@@ -310,6 +309,7 @@ Capability matrix showing maximum sustainable configuration per kernel/device.
   - Jetson Orin Nano (TCP, shared libraries)
 - Communication protocol implementation
 - Energy integration:
+  - RAPL for Linux x86
   - INA226 for STM32H7
   - tegrastats for Jetson
   - GPIO-triggered alignment
