@@ -36,10 +36,10 @@ cat results/run-*/analysis/SUMMARY.md
 - ✅ **Oracle Validation** - Numerical correctness verified against SciPy/MNE references
 
 **Current Kernels** (v1 float32):
+- CAR (Common Average Reference)
 - Notch IIR filter (60 Hz line noise removal)
 - FIR bandpass filter (8-30 Hz)
 - Goertzel bandpower (alpha/beta bands)
-- CAR (Common Average Reference) - _in progress_
 
 ## Documentation
 

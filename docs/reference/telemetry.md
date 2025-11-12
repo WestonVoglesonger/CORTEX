@@ -11,6 +11,21 @@ Use this spec to interpret CSV/JSON and build plots consistently.
 
 Format is determined by the `output.format` configuration setting (`ndjson` or `csv`, defaults to `ndjson`).
 
+## Implementation Status
+
+**Currently Collected** (Fall 2025):
+- ✅ Timing: `release_ts_ns`, `deadline_ts_ns`, `start_ts_ns`, `end_ts_ns`
+- ✅ Deadline tracking: `deadline_missed` flag
+- ✅ Context: `W`, `H`, `C`, `Fs`, `warmup`, `repeat`, `run_id`, `plugin` name
+- ✅ Derived metrics: latency, jitter (p50/p95/p99), throughput (computed in analysis)
+
+**Deferred to Spring 2026**:
+- ⚠️ Energy: `energy_j`, `power_mw` (RAPL integration planned for Linux x86)
+- ⚠️ Memory: `rss_bytes` (runtime RSS measurement not implemented)
+- ⚠️ Runtime memory: `state_bytes`, `workspace_bytes` (currently from plugin metadata only, not runtime measurement)
+
+**Note**: Energy and memory fields may appear in the schema but are currently zero/unset in actual telemetry output. See [Future Enhancements](../development/future-enhancements.md) for implementation timeline.
+
 ## Common columns (per window)
 | Column | Unit | Notes |
 |---|---|---|
@@ -37,15 +52,19 @@ Format is determined by the `output.format` configuration setting (`ndjson` or `
 ## Memory metrics (per window or per run)
 | Metric | Unit | Notes |
 |---|---|---|
-| rss_bytes | bytes | Process RSS (approx) |
-| state_bytes | bytes | From plugin metadata |
-| workspace_bytes | bytes | From plugin metadata |
+| rss_bytes | bytes | **Not currently measured** (deferred to Spring 2026) |
+| state_bytes | bytes | From plugin metadata (static, not runtime measurement) |
+| workspace_bytes | bytes | From plugin metadata (static, not runtime measurement) |
+
+**Note**: Memory metrics are currently limited. `state_bytes` and `workspace_bytes` come from plugin metadata (`cortex_get_info()`) and represent declared memory requirements, not actual runtime allocations. RSS measurement is planned for Spring 2026.
 
 ## Energy/Power (per window)
 | Metric | Unit | Definition |
 |---|---|---|
-| energy_j | J | RAPL delta around `process()` |
-| power_mw | mW | `energy_j * (Fs / H) * 1000` |
+| energy_j | J | RAPL delta around `process()` - **Currently unused** (deferred to Spring 2026) |
+| power_mw | mW | `energy_j * (Fs / H) * 1000` - **Currently unused** (deferred to Spring 2026) |
+
+**Note**: Energy fields are defined in the telemetry schema but are **not currently populated**. Energy measurement via RAPL (Linux x86) is planned for Spring 2026. Current telemetry files will have these fields as zero or unset.
 
 ## Shape/context columns
 | Column | Unit | Notes |
