@@ -13,6 +13,11 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['font.size'] = 11
 
+# Pandas version compatibility
+# include_groups parameter was added in pandas 2.2.0
+PANDAS_VERSION = tuple(map(int, pd.__version__.split('.')[:2]))
+SUPPORTS_INCLUDE_GROUPS = PANDAS_VERSION >= (2, 2)
+
 def _extract_kernel_name(file_path: Path) -> Optional[str]:
     """
     Extract kernel name from telemetry file path or filename
@@ -303,10 +308,17 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     # Calculate throughput (windows per second)
     # Fs/H gives the theoretical throughput
     if 'Fs' in df_filtered.columns and 'H' in df_filtered.columns:
-        throughput = df_filtered.groupby('plugin').apply(
-            lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0,
-            include_groups=False
-        ).reset_index(name='throughput')
+        # Pandas 2.2.0+ requires include_groups=False to maintain backward compatibility
+        if SUPPORTS_INCLUDE_GROUPS:
+            throughput = df_filtered.groupby('plugin').apply(
+                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0,
+                include_groups=False
+            ).reset_index(name='throughput')
+        else:
+            # Pandas < 2.2.0: parameter doesn't exist, groups excluded by default
+            throughput = df_filtered.groupby('plugin').apply(
+                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0
+            ).reset_index(name='throughput')
     else:
         print("Warning: Could not calculate throughput (missing Fs/H columns)")
         return False

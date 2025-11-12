@@ -88,7 +88,12 @@ def execute(args):
     # Custom config mode
     if args.config:
         from cortex_cli.core.runner import run_harness
+        from cortex_cli.core.paths import create_run_structure
         print(f"Using custom config: {args.config}")
+
+        # Create run directory structure (required by run_harness)
+        create_run_structure(run_name)
+
         results_dir = run_harness(args.config, run_name=run_name, verbose=args.verbose)
         if results_dir:
             print(f"\n✓ Benchmark complete")
