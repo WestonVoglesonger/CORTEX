@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 def discover_kernels() -> List[Dict]:
     """Discover all available kernels with their metadata"""
     kernels = []
-    kernels_dir = Path('kernels')
+    kernels_dir = Path('primitives/kernels')
 
     if not kernels_dir.exists():
         return kernels

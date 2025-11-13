@@ -57,9 +57,9 @@ static int test_kernel_structure(const char *kernel_name) {
     char oracle_path[MAX_PATH];
     char readme_path[MAX_PATH];
     
-    snprintf(spec_path, sizeof(spec_path), "kernels/v1/%s/spec.yaml", kernel_name);
-    snprintf(oracle_path, sizeof(oracle_path), "kernels/v1/%s/oracle.py", kernel_name);
-    snprintf(readme_path, sizeof(readme_path), "kernels/v1/%s/README.md", kernel_name);
+    snprintf(spec_path, sizeof(spec_path), "primitives/kernels/v1/%s/spec.yaml", kernel_name);
+    snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/oracle.py", kernel_name);
+    snprintf(readme_path, sizeof(readme_path), "primitives/kernels/v1/%s/README.md", kernel_name);
     
     if (!file_exists(spec_path)) {
         fprintf(stderr, "FAIL: %s/spec.yaml does not exist\n", kernel_name);
@@ -104,7 +104,7 @@ static int test_kernel_spec_fields(void) {
     for (int i = 0; i < num_kernels; i++) {
         const char *kernel = expected_kernels[i].name;
         char spec_path[MAX_PATH];
-        snprintf(spec_path, sizeof(spec_path), "kernels/v1/%s/spec.yaml", kernel);
+        snprintf(spec_path, sizeof(spec_path), "primitives/kernels/v1/%s/spec.yaml", kernel);
         
         // Check for key fields
         if (!find_string_in_file(spec_path, "input_shape:")) {
@@ -154,7 +154,7 @@ static int test_oracles_executable(void) {
     for (int i = 0; i < num_kernels; i++) {
         const char *kernel = expected_kernels[i].name;
         char oracle_path[MAX_PATH];
-        snprintf(oracle_path, sizeof(oracle_path), "kernels/v1/%s/oracle.py", kernel);
+        snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/oracle.py", kernel);
         
         // Check that oracle has shebang and main guard
         if (!find_string_in_file(oracle_path, "#!/usr")) {

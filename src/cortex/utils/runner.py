@@ -54,7 +54,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     Returns:
         Run directory path if successful, None otherwise
     """
-    harness_binary = Path('src/harness/cortex')
+    harness_binary = Path('src/engine/harness/cortex')
 
     if not harness_binary.exists():
         print(f"Error: Harness binary not found at {harness_binary}")

@@ -250,11 +250,11 @@ static int run_python_oracle(const char *kernel_name, const float *input,
         strncpy(base_name, kernel_name, base_len);
         base_name[base_len] = '\0';
         snprintf(command, sizeof(command),
-                 "python3 kernels/v2/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 "python3 primitives/kernels/v2/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
                  base_name, input_file, output_file, state_path);
     } else {
         snprintf(command, sizeof(command),
-                 "python3 kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
+                 "python3 primitives/kernels/v1/%s@f32/oracle.py --test %s --output %s --state %s > /dev/null 2>&1",
                  kernel_name, input_file, output_file, state_path);
     }
     
@@ -368,9 +368,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
         size_t base_len = strlen(kernel_name) - 3;
         strncpy(base_name, kernel_name, base_len);
         base_name[base_len] = '\0';
-        snprintf(spec_uri, sizeof(spec_uri), "kernels/v2/%s@f32", base_name);
+        snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v2/%s@f32", base_name);
     } else {
-        snprintf(spec_uri, sizeof(spec_uri), "kernels/v1/%s@f32", kernel_name);
+        snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v1/%s@f32", kernel_name);
     }
     
     if (cortex_plugin_build_path(spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
