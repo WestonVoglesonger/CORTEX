@@ -7,7 +7,7 @@ set -e  # Exit on error
 
 BASE_URL="https://physionet.org/files/eegmmidb/1.0.0"
 SUBJECT="${1:-S001}"  # Default to S001, but parameterized for other subjects
-OUTPUT_DIR="../datasets/eegmmidb/raw"
+OUTPUT_DIR="../eegmmidb/raw"  # Relative to datasets/tools/ where script is run
 
 echo "Downloading EDF files for subject ${SUBJECT}..."
 mkdir -p "$OUTPUT_DIR"

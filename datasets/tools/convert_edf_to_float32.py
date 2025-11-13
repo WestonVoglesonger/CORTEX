@@ -108,9 +108,9 @@ def convert_edf_to_float32(edf_path, output_path):
     return metadata, channel_labels
 
 def main():
-    # Paths
-    raw_dir = Path("../datasets/eegmmidb/raw")
-    output_dir = Path("../datasets/eegmmidb/converted")
+    # Paths (relative to datasets/tools/ where script is run)
+    raw_dir = Path("../eegmmidb/raw")
+    output_dir = Path("../eegmmidb/converted")
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Get sessions to convert
