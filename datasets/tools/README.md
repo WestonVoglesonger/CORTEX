@@ -7,14 +7,14 @@ This directory contains scripts for preparing EEG datasets for use with the CORT
 Python 3.8+ with dependencies:
 
 ```bash
-pip3 install -r requirements.txt
+pip install -e .[datasets]
 ```
 
 ## Quick Start
 
 1. Download EDF files:
 ```bash
-cd scripts
+cd datasets/tools
 chmod +x download_edf.sh
 ./download_edf.sh
 ```
@@ -100,7 +100,7 @@ Interleaved samples: `[sample0_ch0, sample0_ch1, ..., sample0_ch63, sample1_ch0,
 
 ## Using with CORTEX
 
-The main configuration `configs/cortex.yaml` will be updated to use the EDF data as the default dataset.
+The main configuration `primitives/configs/cortex.yaml` will be updated to use the EDF data as the default dataset.
 
 ## Dataset Information
 
@@ -122,13 +122,13 @@ Then re-run both download and conversion scripts.
 
 ## Troubleshooting
 
-**pyedflib import error**: Install dependencies with `pip3 install -r requirements.txt`
+**pyedflib import error**: Install dependencies with `pip install -e .[datasets]`
 
 **curl not found**: Install curl (pre-installed on macOS, `apt-get install curl` on Linux)
 
 **Permission denied**: Make script executable with `chmod +x download_edf.sh`
 
-**File not found**: Ensure you run scripts from the `scripts/` directory
+**File not found**: Ensure you run scripts from the `datasets/tools/` directory
 
 **Channel count warnings**: The dataset has 65 signals (64 EEG + 1 annotation). This is normal.
 
