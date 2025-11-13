@@ -412,16 +412,16 @@ dataset:
 
 **Symptom**: Shell doesn't recognize `cortex` command
 
-**Cause**: Script not executable or not in PATH
+**Cause**: CORTEX package not installed or virtual environment not activated
 
 **Solution**:
 ```bash
-# Use explicit path
-cortex list
+# Install CORTEX in editable mode
+pip install -e .
 
-# Or make executable and add to PATH
-chmod +x cortex.py
-export PATH="$PATH:$(pwd)"
+# Or activate your virtual environment first
+source my_venv/bin/activate  # or venv/bin/activate
+pip install -e .
 ```
 
 ---

@@ -270,8 +270,9 @@ dataset:
 
 **Validation**:
 ```bash
-# Verify dataset matches config
-cortex validate --config primitives/configs/cortex.yaml
+# Verify kernel implementations work with dataset
+cortex validate --kernel notch_iir
+cortex validate --kernel bandpass_fir
 ```
 
 ## Dataset Best Practices

@@ -142,8 +142,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 | Issue | Solution |
 |-------|----------|
-| `cortex: command not found` | Use `cortex` or add to PATH |
-| `Permission denied` | `chmod +x cortex.py` |
+| `cortex: command not found` | Run `pip install -e .` to install CLI |
 | `Plugin not found` | Run `make plugins` to rebuild |
 | `Dataset file not found` | Check `primitives/configs/cortex.yaml` dataset path |
 | High deadline miss rate | System overloaded, close other applications |
