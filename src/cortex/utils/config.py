@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Optional, List
 from .discovery import discover_kernels, find_kernel
 
-def load_base_config(config_path: str = "configs/cortex.yaml") -> Dict:
+def load_base_config(config_path: str = "primitives/configs/cortex.yaml") -> Dict:
     """Load base configuration template"""
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
@@ -16,7 +16,7 @@ def generate_config(
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
     warmup: Optional[int] = None,
-    base_config_path: str = "configs/cortex.yaml"
+    base_config_path: str = "primitives/configs/cortex.yaml"
 ) -> bool:
     """
     Generate a configuration file for a specific kernel

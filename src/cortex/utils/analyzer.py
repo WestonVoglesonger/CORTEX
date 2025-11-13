@@ -345,7 +345,7 @@ def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str =
     finally:
         plt.close()
 
-def _calculate_deadline_from_config(config_path: str = "configs/cortex.yaml") -> float:
+def _calculate_deadline_from_config(config_path: str = "primitives/configs/cortex.yaml") -> float:
     """Extract deadline from config or calculate from data"""
     try:
         import yaml

@@ -39,7 +39,7 @@ def execute(args):
     kernels = discover_kernels()
 
     if not kernels:
-        print("No kernels found in kernels/ directory")
+        print("No kernels found in primitives/kernels/ directory")
         return 1
 
     print(f"\nAvailable Kernels ({len(kernels)} found):")

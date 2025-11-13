@@ -49,7 +49,7 @@ def execute(args):
             print(f"Warning: Could not run make clean: {e}")
 
         # Clean generated configs
-        gen_configs = Path('configs/generated')
+        gen_configs = Path('primitives/configs/generated')
         if gen_configs.exists():
             try:
                 shutil.rmtree(gen_configs)

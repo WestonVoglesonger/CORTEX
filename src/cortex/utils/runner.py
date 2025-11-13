@@ -132,7 +132,7 @@ def run_single_kernel(
     kernel_dir = create_kernel_directory(run_name, kernel_name)
 
     # Generate config
-    config_dir = Path('configs/generated')
+    config_dir = Path('primitives/configs/generated')
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{kernel_name}.yaml"
 
@@ -189,7 +189,7 @@ def run_all_kernels(
     create_run_structure(run_name)
 
     # Generate all configs
-    config_dir = Path('configs/generated')
+    config_dir = Path('primitives/configs/generated')
     config_dir.mkdir(parents=True, exist_ok=True)
 
     print("Generating configs for all kernels...")
