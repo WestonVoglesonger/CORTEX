@@ -23,7 +23,7 @@ power:
 benchmark:
   metrics: [latency, jitter, throughput, memory_usage, energy_consumption]
   parameters:
-    duration_seconds: 125
+    duration_seconds: 5
     repeats: 3
     warmup_seconds: 5
   load_profile: "medium"
