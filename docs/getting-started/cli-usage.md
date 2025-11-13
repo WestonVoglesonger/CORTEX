@@ -6,10 +6,10 @@ The CORTEX CLI provides a unified interface for building, running, and analyzing
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Run full automated pipeline
-./cortex.py pipeline
+cortex pipeline
 
 # View results (stored in named run directories)
 cat results/run-*/analysis/SUMMARY.md
@@ -20,10 +20,7 @@ open results/run-*/analysis/latency_comparison.png
 
 ```bash
 # Install Python dependencies
-pip install -r requirements.txt
-
-# Ensure cortex.py is executable (should already be set in repo)
-chmod +x cortex.py
+pip install -e .
 ```
 
 ## Commands
@@ -32,8 +29,8 @@ chmod +x cortex.py
 List all available kernels with build status.
 
 ```bash
-./cortex.py list              # Table view
-./cortex.py list --verbose    # Detailed view
+cortex list              # Table view
+cortex list --verbose    # Detailed view
 ```
 
 **Example output:**
@@ -54,15 +51,15 @@ Summary: 3/4 implemented, 3/4 built
 Build harness, kernel plugins, and tests.
 
 ```bash
-./cortex.py build                    # Build everything
-./cortex.py build --clean            # Clean before building
-./cortex.py build --kernels-only     # Build only kernel plugins
-./cortex.py build --verbose          # Show build output
-./cortex.py build --jobs 4           # Parallel build (4 jobs)
+cortex build                    # Build everything
+cortex build --clean            # Clean before building
+cortex build --kernels-only     # Build only kernel plugins
+cortex build --verbose          # Show build output
+cortex build --jobs 4           # Parallel build (4 jobs)
 ```
 
 **What it builds:**
-- Harness binary (`src/harness/cortex`)
+- Harness binary (`src/engine/harness/cortex`)
 - All kernel plugins
 - Unit tests
 
@@ -72,8 +69,8 @@ Build harness, kernel plugins, and tests.
 Run kernel accuracy tests against Python oracles.
 
 ```bash
-./cortex.py validate --kernel notch_iir   # Test specific kernel
-./cortex.py validate --kernel goertzel --verbose  # With verbose output
+cortex validate --kernel notch_iir   # Test specific kernel
+cortex validate --kernel goertzel --verbose  # With verbose output
 ```
 
 **What it does:**
@@ -90,19 +87,19 @@ Execute benchmark experiments.
 
 #### Run single kernel:
 ```bash
-./cortex.py run --kernel goertzel
-./cortex.py run --kernel notch_iir --duration 60 --repeats 5
+cortex run --kernel goertzel
+cortex run --kernel notch_iir --duration 60 --repeats 5
 ```
 
 #### Run all kernels (batch mode):
 ```bash
-./cortex.py run --all
-./cortex.py run --all --duration 125 --repeats 3 --warmup 5
+cortex run --all
+cortex run --all --duration 125 --repeats 3 --warmup 5
 ```
 
 #### Use custom config:
 ```bash
-./cortex.py run --config my_custom_config.yaml
+cortex run --config my_custom_config.yaml
 ```
 
 **Options:**
@@ -156,19 +153,19 @@ With CORTEX's default configuration (2 windows/second):
 
 **Quick development test:**
 ```bash
-./cortex.py run --all --duration 10 --repeats 1 --warmup 5
+cortex run --all --duration 10 --repeats 1 --warmup 5
 # ~20 windows: Good for P50, limited P95/P99 confidence
 ```
 
 **Standard benchmark (recommended):**
 ```bash
-./cortex.py run --all --duration 60 --repeats 3 --warmup 5
+cortex run --all --duration 60 --repeats 3 --warmup 5
 # ~360 windows: Reliable P50/P95, acceptable P99
 ```
 
 **Publication-quality:**
 ```bash
-./cortex.py run --all --duration 300 --repeats 3 --warmup 5
+cortex run --all --duration 300 --repeats 3 --warmup 5
 # ~1,800 windows: Excellent for all percentiles, captures tail latencies
 ```
 
@@ -185,16 +182,16 @@ Generate comparison plots and summary from benchmark results.
 
 ```bash
 # Analyze most recent run (default)
-./cortex.py analyze
+cortex analyze
 
 # Analyze specific run
-./cortex.py analyze --run-name run-2025-11-10-001
+cortex analyze --run-name run-2025-11-10-001
 
 # Specify custom output directory and format
-./cortex.py analyze --run-name my-experiment --output custom_analysis --format pdf
+cortex analyze --run-name my-experiment --output custom_analysis --format pdf
 
 # Generate specific plots only
-./cortex.py analyze --plots latency deadline
+cortex analyze --plots latency deadline
 ```
 
 **Options:**
@@ -226,17 +223,17 @@ Run full end-to-end pipeline: build → validate → run → analyze.
 
 ```bash
 # Full pipeline (auto-named)
-./cortex.py pipeline
+cortex pipeline
 
 # Custom run name
-./cortex.py pipeline --run-name production-benchmark
+cortex pipeline --run-name production-benchmark
 
 # Skip steps
-./cortex.py pipeline --skip-build           # Assume already built
-./cortex.py pipeline --skip-validate        # Skip validation
+cortex pipeline --skip-build           # Assume already built
+cortex pipeline --skip-validate        # Skip validation
 
 # Override parameters
-./cortex.py pipeline --duration 60 --repeats 5
+cortex pipeline --duration 60 --repeats 5
 ```
 
 **Pipeline steps:**
@@ -262,14 +259,14 @@ Results:
 Clean build artifacts and results.
 
 ```bash
-./cortex.py clean               # Clean everything
-./cortex.py clean --build       # Clean only build artifacts
-./cortex.py clean --results     # Clean only results directory
+cortex clean               # Clean everything
+cortex clean --build       # Clean only build artifacts
+cortex clean --results     # Clean only results directory
 ```
 
 **What gets cleaned:**
 - Build artifacts (`.o`, `.dylib`, `.so` files)
-- Generated configs (`configs/generated/`)
+- Generated configs (`primitives/configs/generated/`)
 - Results directory (`results/`)
 - Analysis outputs (`results/analysis/`)
 
@@ -280,52 +277,52 @@ Clean build artifacts and results.
 ### First-Time Setup
 ```bash
 # 1. Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # 2. Build everything
-./cortex.py build
+cortex build
 
 # 3. Validate kernels work
-./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel bandpass_fir
-./cortex.py validate --kernel goertzel
+cortex validate --kernel notch_iir
+cortex validate --kernel bandpass_fir
+cortex validate --kernel goertzel
 
 # 4. Run quick test with one kernel
-./cortex.py run --kernel goertzel --duration 10 --repeats 1
+cortex run --kernel goertzel --duration 10 --repeats 1
 ```
 
 ### Full Experiment Run
 ```bash
 # One-command full pipeline (creates auto-named run)
-./cortex.py pipeline
+cortex pipeline
 
 # Or with custom name:
-./cortex.py pipeline --run-name baseline-measurements
+cortex pipeline --run-name baseline-measurements
 
 # Or step-by-step:
-./cortex.py build
-./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel bandpass_fir
-./cortex.py validate --kernel goertzel
-./cortex.py run --all --duration 125 --repeats 3
-./cortex.py analyze  # Analyzes most recent run
+cortex build
+cortex validate --kernel notch_iir
+cortex validate --kernel bandpass_fir
+cortex validate --kernel goertzel
+cortex run --all --duration 125 --repeats 3
+cortex analyze  # Analyzes most recent run
 ```
 
 ### Iterative Development
 ```bash
 # After modifying a kernel
-./cortex.py build --kernels-only
-./cortex.py validate --kernel my_kernel
-./cortex.py run --kernel my_kernel --duration 30
+cortex build --kernels-only
+cortex validate --kernel my_kernel
+cortex run --kernel my_kernel --duration 30
 ```
 
 ### Custom Analysis
 ```bash
 # Run experiments with custom name and settings
-./cortex.py run --all --run-name high-load-test --duration 60 --repeats 10
+cortex run --all --run-name high-load-test --duration 60 --repeats 10
 
 # Generate only specific plots for that run
-./cortex.py analyze --run-name high-load-test --plots latency cdf --format pdf
+cortex analyze --run-name high-load-test --plots latency cdf --format pdf
 ```
 
 ---
@@ -381,35 +378,35 @@ start_ts_ns, end_ts_ns, deadline_missed, W, H, C, Fs, warmup, repeat
 ### "Kernel not found"
 ```bash
 # Check available kernels
-./cortex.py list
+cortex list
 
 # Ensure kernel is built
-./cortex.py build --kernels-only
+cortex build --kernels-only
 ```
 
 ### "Harness binary not found"
 ```bash
 # Build harness
-./cortex.py build
+cortex build
 ```
 
 ### "No telemetry files found"
 - Ensure you're analyzing the correct run directory
 - Check that the run completed successfully
 - Look for telemetry files: `results/<run-name>/kernel-data/*/telemetry.*`
-- Use `./cortex.py analyze` without arguments to analyze the most recent run
+- Use `cortex analyze` without arguments to analyze the most recent run
 
 ### Python import errors
 ```bash
 # Install all dependencies
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Build failures
 ```bash
 # Clean and rebuild
-./cortex.py clean
-./cortex.py build --verbose  # See detailed error messages
+cortex clean
+cortex build --verbose  # See detailed error messages
 ```
 
 ---
@@ -421,13 +418,13 @@ To run experiments on two identical laptops:
 
 **Laptop 1:**
 ```bash
-./cortex.py run --all --run-name laptop1-baseline --duration 125 --repeats 3
+cortex run --all --run-name laptop1-baseline --duration 125 --repeats 3
 # Copy results/laptop1-baseline/ to shared location
 ```
 
 **Laptop 2:**
 ```bash
-./cortex.py run --all --run-name laptop2-baseline --duration 125 --repeats 3
+cortex run --all --run-name laptop2-baseline --duration 125 --repeats 3
 # Copy results/laptop2-baseline/ to shared location
 ```
 
@@ -438,8 +435,8 @@ cp -r shared/laptop1-baseline results/
 cp -r shared/laptop2-baseline results/
 
 # Analyze each separately
-./cortex.py analyze --run-name laptop1-baseline
-./cortex.py analyze --run-name laptop2-baseline
+cortex analyze --run-name laptop1-baseline
+cortex analyze --run-name laptop2-baseline
 
 # Or combine kernel data for joint analysis (advanced)
 mkdir results/combined-analysis
@@ -448,7 +445,7 @@ cp -r results/laptop2-baseline/kernel-data/* results/combined-analysis/
 ```
 
 ### Custom Configurations
-Edit `configs/cortex.yaml` template or create new configs:
+Edit `primitives/configs/cortex.yaml` template or create new configs:
 
 ```yaml
 dataset:
@@ -462,12 +459,12 @@ benchmark:
 
 plugins:
   - name: my_custom_kernel
-    spec_uri: "kernels/v1/my_kernel@f32"
+    spec_uri: "primitives/kernels/v1/my_kernel@f32"
 ```
 
 Run with:
 ```bash
-./cortex.py run --config my_custom_config.yaml
+cortex run --config my_custom_config.yaml
 ```
 
 ---
@@ -476,12 +473,12 @@ Run with:
 
 ```bash
 # General help
-./cortex.py --help
+cortex --help
 
 # Command-specific help
-./cortex.py build --help
-./cortex.py run --help
-./cortex.py analyze --help
+cortex build --help
+cortex run --help
+cortex analyze --help
 ```
 
 **Documentation:**
@@ -490,7 +487,7 @@ Run with:
 - Configuration: `docs/reference/configuration.md`
 - Telemetry: `docs/reference/telemetry.md`
 - Roadmap: `docs/development/roadmap.md`
-- Individual kernel specs: `kernels/v1/{name}@{dtype}/README.md`
+- Individual kernel specs: `primitives/kernels/v1/{name}@{dtype}/README.md`
 
 **Issues:**
 https://github.com/WestonVoglesonger/CORTEX/issues

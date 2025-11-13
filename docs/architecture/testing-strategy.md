@@ -162,7 +162,7 @@ python3 tests/test_cli.py
 
 Each kernel has a Python reference implementation (`oracle.py`) used for validation:
 
-**Location:** `kernels/v1/{name}@{dtype}/oracle.py`
+**Location:** `primitives/kernels/v1/{name}@{dtype}/oracle.py`
 
 **Available oracles:**
 - `car@f32/oracle.py` - Common Average Reference
@@ -173,7 +173,7 @@ Each kernel has a Python reference implementation (`oracle.py`) used for validat
 **CLI Interface:**
 ```bash
 # Test mode (used by test_kernel_accuracy)
-python3 kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
+python3 primitives/kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
 ```
 
 **Note:** Oracles only support `--test` mode. Standalone mode (without flags) is not supported.
@@ -220,8 +220,8 @@ python3 tests/test_cli.py
 ### Kernel Validation
 ```bash
 # Via CLI wrapper (recommended)
-./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel bandpass_fir --verbose
+cortex validate --kernel notch_iir
+cortex validate --kernel bandpass_fir --verbose
 
 # Direct test binary
 ./tests/test_kernel_accuracy --kernel notch_iir --windows 10 --verbose
@@ -264,7 +264,7 @@ TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
 
 ### Adding Kernel Validation
 
-1. Implement `kernels/v1/{name}@{dtype}/oracle.py`
+1. Implement `primitives/kernels/v1/{name}@{dtype}/oracle.py`
 2. Add kernel to `tests/test_kernel_registry.c` expected list
 3. Run `./tests/test_kernel_accuracy --kernel {name}`
 
@@ -273,7 +273,7 @@ TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
 Before submitting a pull request:
 
 - [ ] All unit tests pass: `make test`
-- [ ] Kernel validation passes: `./cortex.py validate --kernel {name}` (if applicable)
+- [ ] Kernel validation passes: `cortex validate --kernel {name}` (if applicable)
 - [ ] Build succeeds on macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] New functionality includes tests
@@ -307,17 +307,17 @@ Before submitting a pull request:
 **Format:** Float32 raw binary (little-endian)
 - 64 channels
 - 160 Hz sampling rate
-- Converted from EDF using `scripts/convert_edf_to_raw.py`
+- Converted from EDF using `datasets/tools/convert_edf_to_raw.py`
 
 **Location:** `datasets/eegmmidb/converted/S001R03.float32`
 
 **Used by:**
 - `test_kernel_accuracy` - Real EEG data for validation
-- Full harness runs via `./cortex.py run`
+- Full harness runs via `cortex run`
 
 **Conversion:**
 ```bash
-python3 scripts/convert_edf_to_raw.py \
+python3 datasets/tools/convert_edf_to_raw.py \
     datasets/eegmmidb/edf/S001R03.edf \
     datasets/eegmmidb/converted/S001R03.float32
 ```
@@ -383,7 +383,7 @@ The following testing capabilities are planned but not yet implemented:
 **Planned approach:**
 - GitHub Actions on push/PR
 - Matrix build: macOS (arm64 + x86_64) × Linux (Ubuntu)
-- Run `make test` and `./cortex.py validate` for all kernels
+- Run `make test` and `cortex validate` for all kernels
 - Fail on compiler warnings
 - Upload test logs as artifacts
 

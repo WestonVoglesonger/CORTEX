@@ -9,17 +9,17 @@ all: harness plugins tests
 # Build the harness
 harness:
 	@echo "Building harness..."
-	$(MAKE) -C src/harness
+	$(MAKE) -C src/engine/harness
 
 # Build plugins (kernels from registry)
 plugins:
 	@echo "Building kernel plugins from registry..."
-	@for version_dir in kernels/v*/; do \
+	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
 			for dir in $$version_dir*@*/; do \
 				if [ -f "$$dir/Makefile" ]; then \
 					echo "  Building $$(basename $$(dirname $$dir))/$$(basename $$dir)..."; \
-					$(MAKE) -C "$$dir" || true; \
+					$(MAKE) -C "$$dir"; \
 				fi \
 			done \
 		fi \
@@ -34,8 +34,8 @@ tests:
 # Clean everything
 clean:
 	@echo "Cleaning all build artifacts..."
-	$(MAKE) -C src/harness clean
-	@for version_dir in kernels/v*/; do \
+	$(MAKE) -C src/engine/harness clean
+	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
 			for dir in $$version_dir*@*/; do \
 				if [ -f "$$dir/Makefile" ]; then \

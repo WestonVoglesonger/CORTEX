@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../src/scheduler/scheduler.h"
+#include "../src/engine/scheduler/scheduler.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \

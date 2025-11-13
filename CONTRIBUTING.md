@@ -6,6 +6,92 @@ Thank you for your interest in contributing to CORTEX! This document provides gu
 
 Be respectful, collaborative, and professional. Focus on technical merit and constructive feedback.
 
+## Repository Structure
+
+CORTEX follows a clean 7-directory AWS-inspired structure:
+
+```
+CORTEX/
+├── primitives/        # Computational kernels and configurations
+│   ├── kernels/       # Kernel implementations organized by version
+│   │   └── v1/        # Version 1 kernels (e.g., fft@f32/, ema@f32/)
+│   └── configs/       # Kernel configuration files (YAML)
+├── datasets/          # Dataset management and conversion tools
+│   ├── raw/           # Original datasets (excluded from git)
+│   ├── processed/     # Converted CORTEX binary format
+│   └── tools/         # Dataset conversion scripts
+├── src/               # All source code
+│   ├── cortex/        # Python CLI application
+│   ├── engine/        # C execution engine
+│   │   ├── harness/   # Benchmark harness implementation
+│   │   └── include/   # C header files
+│   └── tests/         # Test suites
+├── docs/              # Documentation (guides, reference, architecture)
+├── outputs/           # Benchmark results and visualizations
+├── environments/      # Development environment configs
+└── tools/             # Development utilities
+```
+
+Understanding this structure is essential for contributing effectively.
+
+### Directory Details
+
+**primitives/**
+- Houses all computational kernels and their configurations
+- `primitives/kernels/v1/` contains versioned kernel implementations (e.g., `fft@f32/`, `ema@f32/`)
+- `primitives/configs/` contains YAML configuration files that reference kernel spec_uri paths
+- This is where you'll add new signal processing algorithms
+
+**datasets/**
+- `raw/` stores original datasets (git-ignored, not tracked)
+- `processed/` contains converted binary format datasets used by the harness
+- `tools/` has Python scripts for dataset conversion (e.g., EDF to CORTEX format)
+
+**src/**
+- All source code lives here, organized by component
+- `cortex/` is the Python CLI application (uses pyproject.toml for modern packaging)
+- `engine/` contains the C execution engine with `harness/` and `include/` subdirectories
+- `tests/` has all test suites for both Python and C components
+
+**docs/**
+- Structured documentation: `guides/` for how-tos, `reference/` for API docs, `architecture/` for design
+- Always update relevant docs when making changes
+
+**outputs/**
+- Benchmark results, visualizations, and analysis outputs
+- Generated during `cortex run` and `cortex analyze` commands
+
+**environments/** & **tools/**
+- Development environment configurations and utilities
+- Docker configs, CI/CD scripts, and development tools
+
+## Development Setup
+
+Before contributing, set up your development environment:
+
+```bash
+# Clone the repository
+git clone https://github.com/WestonVoglesonger/CORTEX.git
+cd CORTEX
+
+# Install Python package in editable mode with dev dependencies
+pip install -e .[dev]
+
+# Build C components
+make clean && make
+
+# Verify installation
+cortex --version
+cortex validate
+```
+
+**Key directories**:
+- `src/cortex/` - Python CLI application code
+- `src/engine/` - C execution engine and harness
+- `primitives/kernels/v1/` - Kernel implementations
+- `primitives/configs/` - Configuration files
+- `datasets/tools/` - Dataset conversion scripts
+
 ## How to Contribute
 
 ### Reporting Issues
@@ -64,8 +150,8 @@ To add a new kernel implementation:
 
 1. **Create directory structure**:
    ```bash
-   mkdir -p kernels/v1/{name}@f32
-   cd kernels/v1/{name}@f32
+   mkdir -p primitives/kernels/v1/{name}@f32
+   cd primitives/kernels/v1/{name}@f32
    ```
 
 2. **Required files**:
@@ -75,32 +161,71 @@ To add a new kernel implementation:
    - `{name}.c` - C implementation
    - `Makefile` - Build script
 
-3. **Implementation requirements**:
+3. **Makefile template**:
+   ```makefile
+   CC = cc
+   CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include
+
+   UNAME_S := $(shell uname -s)
+   ifeq ($(UNAME_S),Darwin)
+       SOFLAG = -dynamiclib
+       LIBEXT = .dylib
+   else
+       SOFLAG = -shared
+       LIBEXT = .so
+   endif
+
+   KERNEL_NAME = $(shell basename $(CURDIR) | sed 's/@.*//')
+   PLUGIN_SRC = $(KERNEL_NAME).c
+   PLUGIN_LIB = lib$(KERNEL_NAME)$(LIBEXT)
+
+   all: $(PLUGIN_LIB)
+
+   $(PLUGIN_LIB): $(PLUGIN_SRC)
+   	$(CC) $(CFLAGS) $(SOFLAG) -o $@ $< -lm
+
+   clean:
+   	rm -f $(PLUGIN_LIB) *.o
+   ```
+
+   **Note**: The include path `-I../../../../src/engine/include` points to the C headers from the kernel directory.
+
+4. **Implementation requirements**:
    - Implement `cortex_init()`, `cortex_process()`, `cortex_teardown()`
    - Check `config->abi_version == CORTEX_ABI_VERSION`
    - Allocate persistent state in `init()`, free in `teardown()`
    - **No allocations in `process()`** - all memory must be pre-allocated
    - Handle NaNs gracefully (see docs/guides/adding-kernels.md)
 
-4. **Validation**:
+5. **Register in configuration**:
+   Add your kernel to `primitives/configs/cortex.yaml`:
+   ```yaml
+   plugins:
+     - name: "{name}"
+       status: ready
+       spec_uri: "primitives/kernels/v1/{name}@f32"
+       spec_version: "1.0.0"
+   ```
+
+6. **Validation**:
    ```bash
    # Build your kernel
    make
-   
+
    # Test oracle implementation
    python oracle.py
-   
+
    # Validate C implementation against oracle
-   ./cortex validate --kernel {name} --verbose
+   cortex validate --kernel {name} --verbose
    ```
 
-5. **Testing**:
+7. **Testing**:
    ```bash
    # Run kernel in harness
-   ./cortex run --kernel {name} --duration 30 --run-name test-{name}
+   cortex run --kernel {name} --duration 30 --run-name test-{name}
 
    # Analyze results
-   ./cortex analyze --run-name test-{name}
+   cortex analyze --run-name test-{name}
    ```
 
 See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehensive guide.
@@ -118,17 +243,34 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 ### Before Submitting PRs
 
 - [ ] All unit tests pass: `make tests`
-- [ ] Kernel accuracy tests pass: `./cortex validate`
+- [ ] Kernel accuracy tests pass: `cortex validate`
 - [ ] Build succeeds on both macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] Documentation updated for changes
 
 ### Test Coverage
 
-- Unit tests for new components (see tests/)
+- Unit tests for new components (see `tests/`)
 - Integration tests for end-to-end workflows
 - Numerical validation against oracles (within tolerance)
 - Cross-platform builds (macOS .dylib + Linux .so)
+
+### Running Tests
+
+```bash
+# Run all unit tests
+make tests
+
+# Run specific test suites
+make -C tests test-replayer
+make -C tests test-scheduler
+
+# Validate all kernels
+cortex validate
+
+# Validate specific kernel
+cortex validate --kernel {name} --verbose
+```
 
 ## Pull Request Process
 
@@ -193,17 +335,27 @@ make -C tests test-replayer
 make -C tests test-scheduler
 
 # Validate kernels
-./cortex validate
+cortex validate
 
 # Run benchmarks (with custom name)
-./cortex run --all --duration 60 --run-name test-run
+cortex run --all --duration 60 --run-name test-run
 
 # Analyze results
-./cortex analyze --run-name test-run
+cortex analyze --run-name test-run
 
 # Full pipeline (auto-named)
-./cortex pipeline
+cortex pipeline
 ```
+
+**Common workflows**:
+
+1. **Adding a new kernel**: Follow the "Developing Kernels" section above, then validate with `cortex validate --kernel {name}`
+
+2. **Converting datasets**: Use tools in `datasets/tools/` to convert raw datasets to CORTEX format
+
+3. **Modifying the engine**: Edit C code in `src/engine/`, rebuild with `make`, and test with the harness
+
+4. **Updating the CLI**: Edit Python code in `src/cortex/`, changes are immediately available in development mode
 
 ## Questions?
 

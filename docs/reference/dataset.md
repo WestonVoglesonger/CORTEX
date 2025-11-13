@@ -53,7 +53,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 ## Channel Order
 - **Source of truth**: EDF header **signal order 0–63** for each file. We snapshot channel names from the first used record and reuse that order for all processing.
 - **Montage reference**: Official 64-electrode 10–10 montage figure provided with the dataset documentation (numbers under each label show the order 1–64; EDF signals are 0–63).
-- **Saved snapshot**: [channel_order.json](channel_order.json) (array of 64 channel names in EDF order)
+- **Saved snapshot**: [channel_order.json](../../datasets/eegmmidb/channel_order.json) (array of 64 channel names in EDF order)
 
 ## Units
 - **EEG potentials**: Physical units as recorded in the EDF header, typically **microvolts (µV)**. All CORTEX kernels process and report values in µV.
@@ -82,7 +82,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 
 ### Overview
 
-CORTEX currently requires EDF files to be converted to float32 binary format. The replayer is hardcoded to read float32 data. Conversion scripts and tools are provided in the `scripts/` directory.
+CORTEX currently requires EDF files to be converted to float32 binary format. The replayer is hardcoded to read float32 data. Conversion scripts and tools are provided in the `datasets/tools/` directory.
 
 **Note:** Dtype flexibility (Q15/Q7 support) is architecturally designed but not yet implemented. See [future-enhancements.md](../development/future-enhancements.md#quantization-support-q15q7) for planned quantization support in Spring 2026.
 
@@ -90,7 +90,7 @@ CORTEX currently requires EDF files to be converted to float32 binary format. Th
 
 ```bash
 # 1. Download EDF files from PhysioNet
-cd scripts
+cd datasets/tools
 ./download_edf.sh
 
 # 2. Convert to float32 binary
@@ -138,7 +138,7 @@ datasets/eegmmidb/
 
 ### Configuration
 
-Update `configs/cortex.yaml` to point to converted dataset:
+Update `primitives/configs/cortex.yaml` to point to converted dataset:
 
 ```yaml
 dataset:
@@ -180,7 +180,7 @@ After conversion, verify:
 **Conversion errors:**
 ```bash
 # Ensure dependencies installed
-pip install -r requirements.txt
+pip install -e .
 
 # Check EDF file integrity
 python3 -c "import pyedflib; f = pyedflib.EdfReader('S001R03.edf'); print(f.signals_in_file)"

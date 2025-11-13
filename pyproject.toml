@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cortex-bci"
+version = "0.2.0"
+description = "BCI Kernel Benchmarking Pipeline with Composable Primitives"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "CORTEX Contributors"}
+]
+keywords = ["bci", "eeg", "benchmarking", "neuroscience", "signal-processing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: C",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "pandas>=1.5.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.5.0",
+    "seaborn>=0.12.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.64.0",
+    "colorama>=0.4.6",
+]
+
+[project.optional-dependencies]
+# Dataset conversion and processing tools
+datasets = [
+    "pyedflib>=0.1.30",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+cortex = "cortex:main"
+
+[project.urls]
+Homepage = "https://github.com/WestonVoglesonger/CORTEX"
+Documentation = "https://github.com/WestonVoglesonger/CORTEX/tree/main/docs"
+Repository = "https://github.com/WestonVoglesonger/CORTEX"
+Issues = "https://github.com/WestonVoglesonger/CORTEX/issues"
+
+[tool.setuptools]
+# Enable src/ layout - packages will be found in src/ after reorganization
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cortex*"]

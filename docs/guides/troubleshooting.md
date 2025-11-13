@@ -80,7 +80,7 @@ sudo dnf install gcc      # Fedora/RHEL
 **Solution**:
 ```makefile
 # Ensure Makefile has correct include path
-CFLAGS = -I../../../include  # From kernels/v1/{name}@f32/
+CFLAGS = -I../../../../src/engine/include  # From primitives/kernels/v1/{name}@f32/
 ```
 
 ---
@@ -110,10 +110,10 @@ LDFLAGS = -lpthread -lm
 **Solution**:
 ```bash
 # Check if plugin exists
-ls -la kernels/v1/notch_iir@f32/libnotch_iir.*
+ls -la primitives/kernels/v1/notch_iir@f32/libnotch_iir.*
 
 # Rebuild if missing
-cd kernels/v1/notch_iir@f32 && make
+cd primitives/kernels/v1/notch_iir@f32 && make
 
 # Verify correct extension for platform
 # macOS: .dylib
@@ -134,7 +134,7 @@ cd kernels/v1/notch_iir@f32 && make
 make clean && make plugins
 
 # Or rebuild specific plugin
-cd kernels/v1/{name}@f32 && make clean && make
+cd primitives/kernels/v1/{name}@f32 && make clean && make
 ```
 
 ---
@@ -176,13 +176,13 @@ void cortex_teardown(void *handle);
 **Solution**:
 ```bash
 # Option 1: Run with sudo (not recommended for production)
-sudo ./src/harness/cortex run configs/cortex.yaml
+sudo ./src/engine/harness/cortex run primitives/configs/cortex.yaml
 
 # Option 2: Set capabilities (better)
-sudo setcap cap_sys_nice=eip ./src/harness/cortex
+sudo setcap cap_sys_nice=eip ./src/engine/harness/cortex
 
 # Option 3: Disable realtime in config
-# Edit configs/cortex.yaml:
+# Edit primitives/configs/cortex.yaml:
 realtime:
   scheduler: other  # Instead of fifo/rr
   priority: 0
@@ -203,7 +203,7 @@ top
 htop
 
 # Run shorter duration to isolate issue
-./cortex.py run --kernel {name} --duration 10
+cortex run --kernel {name} --duration 10
 
 # Check median latency in results
 jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/run-*/kernel-data/*/telemetry.ndjson | head -20
@@ -212,7 +212,7 @@ jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/run-*/kernel-data/*/telemet
 **Solutions**:
 1. Close other applications
 2. Disable background processes
-3. Increase deadline (edit `configs/cortex.yaml: realtime.deadline_ms`)
+3. Increase deadline (edit `primitives/configs/cortex.yaml: realtime.deadline_ms`)
 4. Optimize kernel implementation
 5. Use faster hardware
 
@@ -230,15 +230,15 @@ jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/run-*/kernel-data/*/telemet
 **Debug steps**:
 ```bash
 # Run with debugger
-gdb ./src/harness/cortex
-(gdb) run run configs/cortex.yaml
+gdb ./src/engine/harness/cortex
+(gdb) run run primitives/configs/cortex.yaml
 
 # When it crashes:
 (gdb) backtrace
 (gdb) print variable_name
 
 # Or use valgrind
-valgrind --leak-check=full ./src/harness/cortex run configs/cortex.yaml
+valgrind --leak-check=full ./src/engine/harness/cortex run primitives/configs/cortex.yaml
 ```
 
 ---
@@ -252,10 +252,10 @@ valgrind --leak-check=full ./src/harness/cortex run configs/cortex.yaml
 **Diagnosis**:
 ```bash
 # Check if debug mode enabled
-grep '\-O0' kernels/v1/{name}@f32/Makefile
+grep '\-O0' primitives/kernels/v1/{name}@f32/Makefile
 
 # Should have optimization enabled
-grep '\-O2' kernels/v1/{name}@f32/Makefile
+grep '\-O2' primitives/kernels/v1/{name}@f32/Makefile
 ```
 
 **Solution**:
@@ -268,7 +268,7 @@ CFLAGS = -Wall -Wextra -O2  # Optimized
 
 Then rebuild:
 ```bash
-cd kernels/v1/{name}@f32 && make clean && make
+cd primitives/kernels/v1/{name}@f32 && make clean && make
 ```
 
 ---
@@ -289,9 +289,9 @@ cd kernels/v1/{name}@f32 && make clean && make
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
 # Increase warmup period
-./cortex.py run --all --warmup 10
+cortex run --all --warmup 10
 
-# Pin to specific CPU core (edit configs/cortex.yaml)
+# Pin to specific CPU core (edit primitives/configs/cortex.yaml)
 realtime:
   cpu_affinity: [2]  # Use dedicated core
 ```
@@ -309,10 +309,10 @@ realtime:
 **Solution**:
 ```bash
 # Check library dependencies
-otool -L kernels/v1/{name}@f32/lib{name}.dylib
+otool -L primitives/kernels/v1/{name}@f32/lib{name}.dylib
 
 # Rebuild with correct flags
-cd kernels/v1/{name}@f32 && make clean && make
+cd primitives/kernels/v1/{name}@f32 && make clean && make
 ```
 
 ---
@@ -324,7 +324,7 @@ cd kernels/v1/{name}@f32 && make clean && make
 **Solution**:
 ```bash
 # Fix permissions
-chmod 755 kernels/v1/*/lib*.so
+chmod 755 primitives/kernels/v1/*/lib*.so
 
 # Or rebuild
 make plugins
@@ -353,13 +353,13 @@ make plugins
 **Solution**:
 ```bash
 # Check configured path
-grep "path:" configs/cortex.yaml
+grep "path:" primitives/configs/cortex.yaml
 
 # Verify file exists
 ls -lh datasets/eegmmidb/converted/S001R03.float32
 
 # Fix path in config if needed
-vim configs/cortex.yaml
+vim primitives/configs/cortex.yaml
 ```
 
 ---
@@ -379,7 +379,7 @@ ls -lh datasets/eegmmidb/converted/*.float32
 # bytes / (64 channels * 160 samples/sec * 4 bytes/float) = seconds
 
 # Either use shorter duration:
-./cortex.py run --kernel {name} --duration 60
+cortex run --kernel {name} --duration 60
 
 # Or use longer dataset file
 ```
@@ -398,7 +398,7 @@ ls -lh datasets/eegmmidb/converted/*.float32
 cat datasets/eegmmidb/converted/*_metadata.json
 
 # Update config to match
-vim configs/cortex.yaml
+vim primitives/configs/cortex.yaml
 # Ensure:
 dataset:
   channels: 64  # Match actual dataset
@@ -412,16 +412,16 @@ dataset:
 
 **Symptom**: Shell doesn't recognize `cortex` command
 
-**Cause**: Script not executable or not in PATH
+**Cause**: CORTEX package not installed or virtual environment not activated
 
 **Solution**:
 ```bash
-# Use explicit path
-./cortex.py list
+# Install CORTEX in editable mode
+pip install -e .
 
-# Or make executable and add to PATH
-chmod +x cortex.py
-export PATH="$PATH:$(pwd)"
+# Or activate your virtual environment first
+source my_venv/bin/activate  # or venv/bin/activate
+pip install -e .
 ```
 
 ---
@@ -435,7 +435,7 @@ export PATH="$PATH:$(pwd)"
 **Solution**:
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Or install individually
 pip install pandas numpy matplotlib seaborn pyyaml tqdm colorama
@@ -461,11 +461,11 @@ head -2 results/run-*/kernel-data/*/telemetry.ndjson
 **Solution**:
 ```bash
 # Ensure format is correct in config
-grep "format:" configs/cortex.yaml
+grep "format:" primitives/configs/cortex.yaml
 # Should be: format: "ndjson" or format: "csv"
 
 # Rerun benchmark if needed
-./cortex.py run --all
+cortex run --all
 ```
 
 ---
@@ -505,8 +505,8 @@ If your issue isn't listed here:
 
 3. **Enable verbose logging**:
    ```bash
-   ./cortex.py validate --kernel {name} --verbose
-   ./cortex.py run --kernel {name} --verbose
+   cortex validate --kernel {name} --verbose
+   cortex run --kernel {name} --verbose
    ```
 
 4. **Check system info**:

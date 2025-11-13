@@ -87,7 +87,7 @@ Array of objects:
 |---|---|---|
 | name | string | `car`, `notch_iir`, `bandpass_fir`, `goertzel`, … |
 | status | enum | `draft` \| `ready` |
-| spec_uri | string\|null | Path to kernel spec (e.g., `kernels/v1/car@f32`) |
+| spec_uri | string\|null | Path to kernel spec (e.g., `primitives/kernels/v1/car@f32`) |
 | spec_version | string\|null | Kernel spec version (e.g., `1.0.0`) |
 
 **plugins[i].runtime**

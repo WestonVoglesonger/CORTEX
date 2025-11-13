@@ -20,7 +20,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "../src/replayer/replayer.h"
+#include "../src/engine/replayer/replayer.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \
