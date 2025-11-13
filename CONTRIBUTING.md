@@ -250,7 +250,7 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 
 ### Test Coverage
 
-- Unit tests for new components (see `src/tests/`)
+- Unit tests for new components (see `tests/`)
 - Integration tests for end-to-end workflows
 - Numerical validation against oracles (within tolerance)
 - Cross-platform builds (macOS .dylib + Linux .so)
@@ -262,8 +262,8 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 make tests
 
 # Run specific test suites
-make -C src/tests test-replayer
-make -C src/tests test-scheduler
+make -C tests test-replayer
+make -C tests test-scheduler
 
 # Validate all kernels
 cortex validate
@@ -331,8 +331,8 @@ Closes #42
 make clean && make
 
 # Run specific tests
-make -C src/tests test-replayer
-make -C src/tests test-scheduler
+make -C tests test-replayer
+make -C tests test-scheduler
 
 # Validate kernels
 cortex validate

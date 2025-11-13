@@ -19,7 +19,7 @@ plugins:
 			for dir in $$version_dir*@*/; do \
 				if [ -f "$$dir/Makefile" ]; then \
 					echo "  Building $$(basename $$(dirname $$dir))/$$(basename $$dir)..."; \
-					$(MAKE) -C "$$dir" || true; \
+					$(MAKE) -C "$$dir"; \
 				fi \
 			done \
 		fi \
