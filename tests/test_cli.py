@@ -36,13 +36,13 @@ def test_extract_kernel_name():
     """Test kernel name extraction from paths"""
     from pathlib import Path
 
-    # Test filename pattern
-    path1 = Path("results/1762315905289_goertzel_telemetry.ndjson")
+    # Test new kernel-data structure
+    path1 = Path("results/run-2025-11-10-001/kernel-data/goertzel/telemetry.ndjson")
     assert _extract_kernel_name(path1) == "goertzel"
 
-    # Test directory pattern
-    path2 = Path("results/batch_123/goertzel_run/telemetry.csv")
-    assert _extract_kernel_name(path2) == "goertzel"
+    # Test another kernel
+    path2 = Path("results/batch_123/kernel-data/bandpass_fir/telemetry.csv")
+    assert _extract_kernel_name(path2) == "bandpass_fir"
 
     print("✓ test_extract_kernel_name passed")
 

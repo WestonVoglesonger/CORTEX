@@ -77,8 +77,8 @@ The harness loads kernel specifications from `kernels/v1/{name}@{dtype}/spec.yam
 - Realtime (`SCHED_FIFO`), affinity, RAPL and stress‑ng are Linux‑specific; harness must degrade gracefully on macOS/CI.
 
 ### Quick Start
-- Build: `make -C src/harness`
-- Run: `./src/harness/cortex run configs/example.yaml`
+- Build: `make -C src/engine/harness`
+- Run: `./src/engine/harness/cortex run primitives/configs/example.yaml`
 
 ### Immediate Milestones
 - M2: JSON writer + summary computation.
