@@ -27,7 +27,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 ## In Progress (Weeks 5-7, Current)
 
 ### Kernel C Implementations (In Progress)
-- CAR (Common Average Reference) - **IN PROGRESS** (Avi Kumar)
+- CAR (Common Average Reference) - **COMPLETED**
 - Notch IIR (60Hz line noise removal) - **COMPLETED**
 - FIR Bandpass (8-30 Hz) - **COMPLETED**
 - Goertzel Bandpower - **COMPLETED**
