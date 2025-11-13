@@ -1,0 +1,39 @@
+cortex_version: 1
+system:
+  name: cortex
+  description: EEG-first benchmark (real config)
+dataset:
+  path: datasets/eegmmidb/converted/S001R03.float32
+  format: float32
+  channels: 64
+  sample_rate_hz: 160
+realtime:
+  scheduler: fifo
+  priority: 90
+  cpu_affinity:
+  - 0
+  deadline_ms: 500
+power:
+  governor: performance
+  turbo: false
+benchmark:
+  metrics:
+  - latency
+  - jitter
+  - throughput
+  - memory_usage
+  - energy_consumption
+  parameters:
+    duration_seconds: 5
+    repeats: 3
+    warmup_seconds: 5
+  load_profile: medium
+output:
+  directory: results/run-2025-11-10-003/kernel-data/car
+  format: ndjson
+  include_raw_data: false
+plugins:
+- name: car
+  status: ready
+  spec_uri: kernels/v1/car@f32
+  spec_version: 1.0.0
