@@ -17,6 +17,11 @@ numerical:
       rtol: 1.0e-3
       atol: 1.0e-3
 
+computational:
+  flops_per_sample_channel: 2
+  bytes_per_sample_channel: 8
+  state_bytes_per_channel: 0
+
 oracle:
   path: "oracle.py"
   function: "car_ref"

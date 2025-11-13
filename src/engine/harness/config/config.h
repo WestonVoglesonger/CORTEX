@@ -17,6 +17,9 @@ typedef struct cortex_plugin_runtime_cfg {
     uint32_t channels;               /* C */
     uint32_t dtype;                  /* maps to cortex_dtype_bitmask_t */
     uint8_t allow_in_place;          /* 0/1 */
+    uint32_t flops_per_sample_channel;    /* FLOPs coefficient */
+    uint32_t bytes_per_sample_channel;    /* Bytes coefficient */
+    uint32_t state_bytes_per_channel;     /* State per channel */
 } cortex_plugin_runtime_cfg_t;
 
 typedef struct cortex_plugin_entry_cfg {

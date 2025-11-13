@@ -38,6 +38,9 @@ typedef struct cortex_scheduler_config {
     void *telemetry_buffer;          /* optional buffer for metrics (cortex_telemetry_buffer_t *) */
     const char *run_id;              /* run identifier for telemetry records */
     uint32_t current_repeat;         /* which repeat iteration (0 = warmup, 1+ = measurement) */
+    uint32_t flops_per_sample_channel;    /* FLOPs coefficient from kernel spec */
+    uint32_t bytes_per_sample_channel;    /* Bytes coefficient from kernel spec */
+    uint32_t state_bytes_per_channel;     /* State per channel from kernel spec */
 } cortex_scheduler_config_t;
 
 /* Opaque scheduler object. */

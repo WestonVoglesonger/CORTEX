@@ -157,6 +157,17 @@ def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[
     # Convert to microseconds for readability
     combined['latency_us'] = combined['latency_ns'] / 1000.0
 
+    # Calculate computational metrics if flops/bytes columns exist
+    if 'flops_per_window' in combined.columns and 'bytes_per_window' in combined.columns:
+        # Arithmetic intensity (FLOPs/byte)
+        combined['arithmetic_intensity'] = (
+            combined['flops_per_window'] / combined['bytes_per_window'].replace(0, np.nan)
+        )
+        # GFLOPS (billions of FLOPs per second)
+        combined['gflops'] = combined['flops_per_window'] / combined['latency_ns']
+        # Memory bandwidth (GB/s)
+        combined['bandwidth_gbs'] = combined['bytes_per_window'] / combined['latency_ns']
+
     print(f"Loaded {len(combined)} windows from {combined['plugin'].nunique()} kernel(s)")
 
     return combined
@@ -166,18 +177,47 @@ def calculate_statistics(df: pd.DataFrame) -> pd.DataFrame:
     # Filter out warmup windows
     df_filtered = df[df['warmup'] == 0].copy()
 
-    stats = df_filtered.groupby('plugin').agg({
+    # Build aggregation dictionary dynamically
+    agg_dict = {
         'window_index': 'count',
         'latency_us': ['min', 'max', 'mean', 'std',
                        lambda x: x.quantile(0.50),
                        lambda x: x.quantile(0.95),
                        lambda x: x.quantile(0.99)],
         'deadline_missed': ['sum', 'mean']
-    }).reset_index()
+    }
+
+    # Add computational metrics if they exist
+    if 'flops_per_window' in df_filtered.columns:
+        agg_dict['flops_per_window'] = 'first'
+    if 'bytes_per_window' in df_filtered.columns:
+        agg_dict['bytes_per_window'] = 'first'
+    if 'arithmetic_intensity' in df_filtered.columns:
+        agg_dict['arithmetic_intensity'] = 'mean'
+    if 'gflops' in df_filtered.columns:
+        agg_dict['gflops'] = 'mean'
+    if 'bandwidth_gbs' in df_filtered.columns:
+        agg_dict['bandwidth_gbs'] = 'mean'
+
+    stats = df_filtered.groupby('plugin').agg(agg_dict).reset_index()
 
     # Flatten column names
-    stats.columns = ['kernel', 'windows', 'lat_min', 'lat_max', 'lat_mean', 'lat_std',
-                     'lat_p50', 'lat_p95', 'lat_p99', 'deadline_misses', 'miss_rate']
+    col_names = ['kernel', 'windows', 'lat_min', 'lat_max', 'lat_mean', 'lat_std',
+                 'lat_p50', 'lat_p95', 'lat_p99', 'deadline_misses', 'miss_rate']
+
+    # Add computational metric columns if they exist
+    if 'flops_per_window' in df_filtered.columns:
+        col_names.append('flops_per_window')
+    if 'bytes_per_window' in df_filtered.columns:
+        col_names.append('bytes_per_window')
+    if 'arithmetic_intensity' in df_filtered.columns:
+        col_names.append('arithmetic_intensity')
+    if 'gflops' in df_filtered.columns:
+        col_names.append('gflops')
+    if 'bandwidth_gbs' in df_filtered.columns:
+        col_names.append('bandwidth_gbs')
+
+    stats.columns = col_names
 
     # Calculate jitter
     stats['jitter_p95_p50'] = stats['lat_p95'] - stats['lat_p50']

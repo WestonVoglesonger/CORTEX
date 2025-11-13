@@ -47,6 +47,9 @@ static int make_scheduler(const cortex_plugin_entry_cfg_t *plugin_cfg,
     sc.telemetry_buffer = NULL;  /* Will be set by caller */
     sc.run_id = NULL;           /* Will be set by caller */
     sc.current_repeat = 0;      /* Will be updated by caller */
+    sc.flops_per_sample_channel = plugin_cfg->runtime.flops_per_sample_channel;
+    sc.bytes_per_sample_channel = plugin_cfg->runtime.bytes_per_sample_channel;
+    sc.state_bytes_per_channel = plugin_cfg->runtime.state_bytes_per_channel;
     *out_sched = cortex_scheduler_create(&sc);
     return (*out_sched) ? 0 : -1;
 }

@@ -18,6 +18,8 @@ typedef struct cortex_telemetry_record {
     uint32_t W, H, C, Fs;
     uint8_t warmup;
     uint32_t repeat;
+    uint64_t flops_per_window;
+    uint64_t bytes_per_window;
 } cortex_telemetry_record_t;
 
 typedef struct cortex_telemetry_buffer {

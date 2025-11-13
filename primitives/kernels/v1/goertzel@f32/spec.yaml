@@ -17,6 +17,12 @@ numerical:
       rtol: 1.0e-3
       atol: 1.0e-3
 
+computational:
+  flops_per_sample_channel: 72
+  bytes_per_sample_channel: 4
+  state_bytes_per_channel: 0
+  note: "Approximate for standard bands [8-13, 13-30] Hz at 160 Hz sampling"
+
 oracle:
   path: "oracle.py"
   function: "goertzel_bandpower_ref"

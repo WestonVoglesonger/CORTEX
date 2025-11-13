@@ -45,10 +45,10 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,flops_per_window,bytes_per_window\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -59,7 +59,9 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
                 (unsigned)r->deadline_missed,
                 r->W, r->H, r->C, r->Fs,
                 (unsigned)r->warmup,
-                r->repeat);
+                r->repeat,
+                (unsigned long long)r->flops_per_window,
+                (unsigned long long)r->bytes_per_window);
     }
     fclose(f);
     return 0;
@@ -77,10 +79,10 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,flops_per_window,bytes_per_window\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -91,7 +93,9 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
                 (unsigned)r->deadline_missed,
                 r->W, r->H, r->C, r->Fs,
                 (unsigned)r->warmup,
-                r->repeat);
+                r->repeat,
+                (unsigned long long)r->flops_per_window,
+                (unsigned long long)r->bytes_per_window);
     }
     fclose(f);
     return 0;
@@ -167,7 +171,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             "\"C\":%u,"
             "\"Fs\":%u,"
             "\"warmup\":%u,"
-            "\"repeat\":%u}\n",
+            "\"repeat\":%u,"
+            "\"flops_per_window\":%llu,"
+            "\"bytes_per_window\":%llu}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -178,7 +184,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             (unsigned)r->deadline_missed,
             r->W, r->H, r->C, r->Fs,
             (unsigned)r->warmup,
-            r->repeat);
+            r->repeat,
+            (unsigned long long)r->flops_per_window,
+            (unsigned long long)r->bytes_per_window);
     }
 
     fclose(f);
@@ -223,7 +231,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             "\"C\":%u,"
             "\"Fs\":%u,"
             "\"warmup\":%u,"
-            "\"repeat\":%u}\n",
+            "\"repeat\":%u,"
+            "\"flops_per_window\":%llu,"
+            "\"bytes_per_window\":%llu}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -234,7 +244,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             (unsigned)r->deadline_missed,
             r->W, r->H, r->C, r->Fs,
             (unsigned)r->warmup,
-            r->repeat);
+            r->repeat,
+            (unsigned long long)r->flops_per_window,
+            (unsigned long long)r->bytes_per_window);
     }
 
     fclose(f);

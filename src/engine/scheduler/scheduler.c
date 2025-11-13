@@ -426,7 +426,14 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         rec.Fs = scheduler->config.sample_rate_hz;
         rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
         rec.repeat = scheduler->config.current_repeat;
-        
+
+        /* Calculate computational metrics from coefficients */
+        uint32_t W = scheduler->config.window_length_samples;
+        uint32_t C = scheduler->config.channels;
+        rec.flops_per_window = (uint64_t)W * C * scheduler->config.flops_per_sample_channel;
+        rec.bytes_per_window = (uint64_t)W * C * scheduler->config.bytes_per_sample_channel
+                             + (uint64_t)C * scheduler->config.state_bytes_per_channel;
+
         cortex_telemetry_add(buffer, &rec);
     }
 

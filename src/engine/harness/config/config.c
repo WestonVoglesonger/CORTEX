@@ -66,33 +66,54 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
         runtime->channels = dataset_channels;  /* Use dataset channels */
         runtime->dtype = 1; /* float32 */
         runtime->allow_in_place = 0;
+        runtime->flops_per_sample_channel = 0;
+        runtime->bytes_per_sample_channel = 0;
+        runtime->state_bytes_per_channel = 0;
         return 0;
     }
 
     char line[1024];
     char dtype_str[32] = "";
     uint32_t window_length = 160; /* Default W */
+    uint32_t flops_coeff = 0;
+    uint32_t bytes_coeff = 0;
+    uint32_t state_bytes = 0;
 
     /* Simple spec parser - look for key fields */
     while (fgets(line, sizeof(line), f)) {
         trim(line);
         if (line[0] == '\0' || line[0] == '#') continue;
 
-        if (starts_with(line, "  dtype:")) {
-            const char *v = line + strlen("  dtype:");
+        if (starts_with(line, "dtype:")) {
+            const char *v = line + strlen("dtype:");
             while (*v == ' ') v++;
             char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
             trim(tmp); unquote(tmp);
             strncpy(dtype_str, tmp, sizeof(dtype_str)-1);
         }
-        else if (starts_with(line, "  input_shape:")) {
+        else if (starts_with(line, "input_shape:")) {
             /* Parse [W, null] format - extract W only, ignore C (comes from dataset) */
-            const char *v = line + strlen("  input_shape:");
+            const char *v = line + strlen("input_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
                 window_length = (uint32_t)strtoul(v, (char**)&v, 10);
             }
+        }
+        else if (starts_with(line, "flops_per_sample_channel:")) {
+            const char *v = line + strlen("flops_per_sample_channel:");
+            while (*v == ' ') v++;
+            flops_coeff = (uint32_t)strtoul(v, NULL, 10);
+        }
+        else if (starts_with(line, "bytes_per_sample_channel:")) {
+            const char *v = line + strlen("bytes_per_sample_channel:");
+            while (*v == ' ') v++;
+            bytes_coeff = (uint32_t)strtoul(v, NULL, 10);
+        }
+        else if (starts_with(line, "state_bytes_per_channel:")) {
+            const char *v = line + strlen("state_bytes_per_channel:");
+            while (*v == ' ') v++;
+            state_bytes = (uint32_t)strtoul(v, NULL, 10);
         }
     }
 
@@ -104,6 +125,9 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     runtime->channels = dataset_channels;     /* Always use dataset channels */
     runtime->dtype = map_dtype(dtype_str[0] ? dtype_str : "float32");
     runtime->allow_in_place = 1; /* Most kernels can be in-place */
+    runtime->flops_per_sample_channel = flops_coeff;
+    runtime->bytes_per_sample_channel = bytes_coeff;
+    runtime->state_bytes_per_channel = state_bytes;
 
     return 0;
 }
