@@ -16,7 +16,7 @@ git clone https://github.com/WestonVoglesonger/CORTEX.git
 cd CORTEX
 
 # Install Python dependencies
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ## 2. Build Everything
@@ -119,10 +119,10 @@ goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 
 ```bash
 # Edit default config
-vim configs/cortex.yaml
+vim primitives/configs/cortex.yaml
 
 # Run with custom config
-./src/harness/cortex run configs/my-custom-config.yaml
+./src/engine/harness/cortex run primitives/configs/my-custom-config.yaml
 ```
 
 ### Add Your Own Kernel
@@ -145,7 +145,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 | `cortex: command not found` | Use `./cortex.py` or add to PATH |
 | `Permission denied` | `chmod +x cortex.py` |
 | `Plugin not found` | Run `make plugins` to rebuild |
-| `Dataset file not found` | Check `configs/cortex.yaml` dataset path |
+| `Dataset file not found` | Check `primitives/configs/cortex.yaml` dataset path |
 | High deadline miss rate | System overloaded, close other applications |
 
 ## Learning Resources

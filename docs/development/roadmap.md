@@ -10,17 +10,17 @@ This document tracks progress against the original Fall 2025 proposal and implem
 - [x] Plugin ABI definition ([plugin-interface.md](../reference/plugin-interface.md), cortex_plugin.h)
 - [x] Run configuration schema ([configuration.md](../reference/configuration.md))
 - [x] Telemetry schema ([telemetry.md](../reference/telemetry.md))
-- [x] Dataset replayer implementation (src/replayer/) with real-time cadence
-- [x] Scheduler with real-time support (src/scheduler/) - FIFO/RR policies, CPU affinity
-- [x] Harness with plugin loader (src/harness/) - sequential plugin execution
-- [x] Kernel registry system (kernels/v1/{name}@{dtype}/) with spec.yaml
+- [x] Dataset replayer implementation (src/engine/replayer/) with real-time cadence
+- [x] Scheduler with real-time support (src/engine/scheduler/) - FIFO/RR policies, CPU affinity
+- [x] Harness with plugin loader (src/engine/harness/) - sequential plugin execution
+- [x] Kernel registry system (primitives/kernels/v1/{name}@{dtype}/) with spec.yaml
 - [x] macOS compatibility (dylib support, cross-platform builds)
-- [x] Oracle reference implementations (Python/SciPy/MNE in kernels/v1/*/oracle.py)
+- [x] Oracle reference implementations (Python/SciPy/MNE in primitives/kernels/v1/*/oracle.py)
 - [x] Unit tests (replayer, scheduler, kernel registry)
 
 ### Design Decisions
 - Sequential plugin execution architecture (isolates per-kernel performance)
-- Kernel registry with versioned specifications (kernels/v1/{name}@{dtype}/)
+- Kernel registry with versioned specifications (primitives/kernels/v1/{name}@{dtype}/)
 - Runtime parameters derived from specs + dataset config
 - Separate kernel "what" (spec) from "how to run" (config)
 
@@ -77,7 +77,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 6. Validation: test against float32 oracles with looser tolerances
 7. Analysis: compare latency/memory/energy across float32/Q15/Q7 on embedded targets
 
-See `include/cortex_plugin.h` for dtype definitions and `kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
+See `src/engine/include/cortex_plugin/cortex_plugin.h` for dtype definitions and `primitives/kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
 
 ### Unimplemented Configuration Fields
 These fields are **documented** in `docs/reference/configuration.md` and **parsed** by the config loader but **not yet used** by the harness:
@@ -128,7 +128,7 @@ Instead of dynamically generating synthetic data for each user capability query 
 - Scalable to high channel counts without runtime complexity
 - Enables user-friendly "system compatibility checker" interface
 
-**Implementation Location**: `scripts/` directory with tools for dataset generation, benchmarking, and capability querying.
+**Implementation Location**: `datasets/tools/` directory with tools for dataset generation, benchmarking, and capability querying.
 
 ## Phase 3: Next Semester (HIL Extension)
 

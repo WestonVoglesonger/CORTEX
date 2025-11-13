@@ -24,8 +24,8 @@ A kernel in CORTEX is a signal processing algorithm (like filtering, feature ext
 KERNEL_NAME="your_kernel"  # e.g., "car", "notch_iir", "welch_psd"
 
 # Create directory for v1 float32 implementation
-mkdir -p kernels/v1/${KERNEL_NAME}@f32
-cd kernels/v1/${KERNEL_NAME}@f32
+mkdir -p primitives/kernels/v1/${KERNEL_NAME}@f32
+cd primitives/kernels/v1/${KERNEL_NAME}@f32
 ```
 
 **Naming conventions**:
@@ -123,7 +123,7 @@ Reference in `cortex.yaml`:
 ```yaml
 plugins:
   - name: "your_kernel"
-    spec_uri: "kernels/v1/your_kernel@f32"
+    spec_uri: "primitives/kernels/v1/your_kernel@f32"
     spec_version: "1.0.0"
     runtime:
       window_length_samples: 160
@@ -320,7 +320,7 @@ Copy and adapt from existing kernel:
 # Makefile for your_kernel@f32 plugin
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../include -fPIC
+CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../src/engine/include -fPIC
 LDFLAGS = -lm
 
 # Detect platform for plugin extension
@@ -361,8 +361,8 @@ make
 python oracle.py
 
 # Verify plugin loads (should see output dimensions)
-cd ../../..
-./src/harness/cortex --help  # Rebuild harness if needed
+cd ../../../..
+./src/engine/harness/cortex --help  # Rebuild harness if needed
 ```
 
 ### Step 8: Validate Against Oracle
@@ -406,8 +406,8 @@ cat results/batch_*/your_kernel_run/your_kernel_telemetry.ndjson | head -5
 Update configuration to include your kernel:
 
 ```bash
-# Edit configs/cortex.yaml
-vim configs/cortex.yaml
+# Edit primitives/configs/cortex.yaml
+vim primitives/configs/cortex.yaml
 ```
 
 Add entry:
@@ -415,7 +415,7 @@ Add entry:
 plugins:
   - name: "your_kernel"
     status: ready
-    spec_uri: "kernels/v1/your_kernel@f32"
+    spec_uri: "primitives/kernels/v1/your_kernel@f32"
     spec_version: "1.0.0"
 ```
 
@@ -424,7 +424,7 @@ plugins:
 After completing all steps, your kernel directory should contain:
 
 ```
-kernels/v1/your_kernel@f32/
+primitives/kernels/v1/your_kernel@f32/
 ├── spec.yaml                 # Machine-readable specification
 ├── README.md                 # Full documentation
 ├── oracle.py                 # Python reference (executable)
@@ -509,17 +509,17 @@ Before submitting your kernel:
 ## Next Steps
 
 - Read complete ABI spec: [plugin-interface.md](../reference/plugin-interface.md)
-- Study existing kernels: `kernels/v1/notch_iir@f32/`, `kernels/v1/bandpass_fir@f32/`
+- Study existing kernels: `primitives/kernels/v1/notch_iir@f32/`, `primitives/kernels/v1/bandpass_fir@f32/`
 - Platform-specific builds: [platform-compatibility.md](../architecture/platform-compatibility.md)
 
 ## Example Kernels
 
 Good reference implementations:
 
-- **Simple (stateless)**: `kernels/v1/car@f32/` - Common Average Reference
-- **IIR (stateful)**: `kernels/v1/notch_iir@f32/` - Biquad filter
-- **FIR (stateful)**: `kernels/v1/bandpass_fir@f32/` - Bandpass filter
-- **Frequency domain**: `kernels/v1/goertzel@f32/` - Bandpower extraction
+- **Simple (stateless)**: `primitives/kernels/v1/car@f32/` - Common Average Reference
+- **IIR (stateful)**: `primitives/kernels/v1/notch_iir@f32/` - Biquad filter
+- **FIR (stateful)**: `primitives/kernels/v1/bandpass_fir@f32/` - Bandpass filter
+- **Frequency domain**: `primitives/kernels/v1/goertzel@f32/` - Bandpower extraction
 
 ## Getting Help
 

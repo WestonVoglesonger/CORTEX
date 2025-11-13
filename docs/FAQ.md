@@ -13,7 +13,7 @@ Quick answers to common questions about CORTEX parameters, configuration, and us
 - **Channels (C)**: 64
 - **Deadline**: H/Fs = 500 ms per window
 
-These parameters are configured in `configs/cortex.yaml` and can be customized per benchmark.
+These parameters are configured in `primitives/configs/cortex.yaml` and can be customized per benchmark.
 
 ### What is the Plugin ABI version?
 
@@ -49,7 +49,7 @@ See [docs/reference/plugin-interface.md](reference/plugin-interface.md) for comp
 - **NDJSON** (default) - Newline-Delimited JSON, streaming-friendly
 - **CSV** - Legacy format for Excel/spreadsheets
 
-Set in `configs/cortex.yaml`:
+Set in `primitives/configs/cortex.yaml`:
 ```yaml
 output:
   format: "ndjson"  # or "csv"
@@ -167,7 +167,7 @@ echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governo
 ./cortex.py run --all --warmup 10
 
 # Pin to specific CPU core
-# Edit configs/cortex.yaml:
+# Edit primitives/configs/cortex.yaml:
 realtime:
   cpu_affinity: [2]
 ```
@@ -192,7 +192,7 @@ realtime:
 - **Relative tolerance (rtol)**: 1e-5
 - **Absolute tolerance (atol)**: 1e-6
 
-Defined in `kernels/v1/{name}@f32/spec.yaml`
+Defined in `primitives/kernels/v1/{name}@f32/spec.yaml`
 
 ### How do I validate a kernel?
 
@@ -213,23 +213,23 @@ Defined in `kernels/v1/{name}@f32/spec.yaml`
 
 ```bash
 # Rebuild plugin
-cd kernels/v1/{name}@f32 && make clean && make
+cd primitives/kernels/v1/{name}@f32 && make clean && make
 
 # Verify plugin exists
-ls -la kernels/v1/{name}@f32/lib{name}.dylib
+ls -la primitives/kernels/v1/{name}@f32/lib{name}.dylib
 ```
 
 ### "Permission denied" for real-time scheduling (Linux)
 
 ```bash
 # Option 1: Run with sudo (not recommended)
-sudo ./src/harness/cortex run configs/cortex.yaml
+sudo ./src/engine/harness/cortex run primitives/configs/cortex.yaml
 
 # Option 2: Set capabilities (better)
-sudo setcap cap_sys_nice=eip ./src/harness/cortex
+sudo setcap cap_sys_nice=eip ./src/engine/harness/cortex
 
 # Option 3: Disable real-time in config
-# Edit configs/cortex.yaml:
+# Edit primitives/configs/cortex.yaml:
 realtime:
   scheduler: other
 ```

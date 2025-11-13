@@ -78,7 +78,7 @@ The harness fills this struct before `init()`:
 - `plugins[*].runtime.allow_in_place` → `allow_in_place`  
 - `plugins[*].params` → serialized into `kernel_params`
   **Note (current limitation)**: Not yet implemented. Harness sets `kernel_params = NULL` for all plugins
-  (see `src/harness/app/main.c` lines 82-83). All current kernel implementations use fixed parameters:
+  (see `src/engine/harness/app/main.c` lines 82-83). All current kernel implementations use fixed parameters:
   - `notch_iir`: f0=60 Hz, Q=30 (hardcoded in C)
   - `bandpass_fir`: numtaps=129, passband=[8,30] Hz (hardcoded)
   - `goertzel`: bands fixed to alpha (8-13 Hz), beta (13-30 Hz)
@@ -236,11 +236,11 @@ The harness uses `dlopen()` to load plugins:
 
 ```bash
 # macOS
-./cortex run configs/example.yaml
+./cortex run primitives/configs/example.yaml
 # Looks for plugins/lib<name>.dylib
 
 # Linux
-./cortex run configs/example.yaml
+./cortex run primitives/configs/example.yaml
 # Looks for plugins/lib<name>.so
 ```
 

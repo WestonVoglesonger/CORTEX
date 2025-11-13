@@ -68,12 +68,12 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 
 ## Core Components
 
-### 1. Harness (`src/harness/`)
+### 1. Harness (`src/engine/harness/`)
 
 **Purpose**: Orchestration and coordination layer
 
 **Responsibilities**:
-- Parse YAML configuration (`configs/cortex.yaml`)
+- Parse YAML configuration (`primitives/configs/cortex.yaml`)
 - Initialize replayer with dataset parameters
 - Load kernel plugins dynamically (`.dylib` on macOS, `.so` on Linux)
 - Create separate scheduler instance per plugin
@@ -82,14 +82,14 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 - Generate HTML reports with visualizations
 
 **Key files**:
-- `src/harness/app/main.c` - Entry point and orchestration
-- `src/harness/loader/loader.c` - Dynamic plugin loading
-- `src/harness/telemetry/telemetry.c` - Metrics collection
-- `src/harness/config/config.c` - YAML parsing
+- `src/engine/harness/app/main.c` - Entry point and orchestration
+- `src/engine/harness/loader/loader.c` - Dynamic plugin loading
+- `src/engine/harness/telemetry/telemetry.c` - Metrics collection
+- `src/engine/harness/config/config.c` - YAML parsing
 
-**Binary output**: `src/harness/cortex`
+**Binary output**: `src/engine/harness/cortex`
 
-### 2. Replayer (`src/replayer/`)
+### 2. Replayer (`src/engine/replayer/`)
 
 **Purpose**: Dataset streaming with real-time cadence
 
@@ -111,9 +111,9 @@ Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 
 **Formats supported**:
 - Float32 raw (current)
-- EDF+ (via conversion scripts in `scripts/`)
+- EDF+ (via conversion scripts in `datasets/tools/`)
 
-### 3. Scheduler (`src/scheduler/`)
+### 3. Scheduler (`src/engine/scheduler/`)
 
 **Purpose**: Windowing, buffering, and deadline enforcement
 
@@ -150,7 +150,7 @@ Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 
 **See**: [plugin-interface.md](../reference/plugin-interface.md) for complete API specification, function signatures, and implementation constraints
 
-### 5. Telemetry (`src/harness/telemetry/`)
+### 5. Telemetry (`src/engine/harness/telemetry/`)
 
 **Purpose**: Metrics collection and output
 
@@ -174,7 +174,7 @@ Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 ### 1. Configuration Phase
 
 ```
-configs/cortex.yaml  →  config parser  →  cortex_run_config_t
+primitives/configs/cortex.yaml  →  config parser  →  cortex_run_config_t
 ```
 
 Configuration specifies:
@@ -188,7 +188,7 @@ Configuration specifies:
 ```
 1. Load dataset → replayer_init()
 2. For each plugin:
-   a. dlopen("kernels/v1/{name}@f32/lib{name}.dylib")
+   a. dlopen("primitives/kernels/v1/{name}@f32/lib{name}.dylib")
    b. cortex_init() → allocate state, return output shape
    c. scheduler_init() → create dedicated scheduler instance
 ```
@@ -292,7 +292,7 @@ Each plugin gets complete lifecycle isolation:
 
 ### Plugin Versioning
 
-**Structure**: `kernels/v{version}/{name}@{dtype}/`
+**Structure**: `primitives/kernels/v{version}/{name}@{dtype}/`
 
 **Versions**:
 - `v1/` - Initial float32 implementations
@@ -340,24 +340,28 @@ YAML → config parser → numerical parameters → cortex_plugin_config_t
 
 ```
 CORTEX/
-├── src/
-│   ├── harness/       # Main orchestration
-│   ├── replayer/      # Dataset streaming
-│   └── scheduler/     # Windowing & deadlines
-├── include/
-│   └── cortex_plugin.h  # Public ABI
-├── kernels/
-│   └── v1/            # Kernel implementations
-│       ├── car@f32/
-│       ├── notch_iir@f32/
-│       ├── bandpass_fir@f32/
-│       └── goertzel@f32/
-├── configs/           # YAML configurations
-├── datasets/          # EEG data
-├── results/           # Benchmark output
-├── tests/             # Unit/integration tests
-├── scripts/           # Dataset conversion
-└── cortex_cli/        # Python analysis tools
+├── src/               # All source code
+│   ├── cortex/        # Python CLI and analysis tools
+│   └── engine/        # C engine (harness, replayer, scheduler, include)
+│       ├── harness/   # Main orchestration
+│       ├── replayer/  # Dataset streaming
+│       ├── scheduler/ # Windowing & deadlines
+│       └── include/   # Public ABI headers
+│           └── cortex_plugin/
+│               └── cortex_plugin.h
+├── primitives/        # Composable building blocks
+│   ├── kernels/       # Kernel implementations
+│   │   └── v1/        # Initial float32 implementations
+│   │       ├── car@f32/
+│   │       ├── notch_iir@f32/
+│   │       ├── bandpass_fir@f32/
+│   │       └── goertzel@f32/
+│   └── configs/       # YAML configuration templates
+├── datasets/          # Input datasets
+│   └── tools/         # Dataset conversion utilities
+├── results/           # Benchmark outputs (generated)
+├── tests/             # Test suite
+└── docs/              # Documentation
 ```
 
 ## Next Steps

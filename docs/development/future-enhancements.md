@@ -31,7 +31,7 @@ This document consolidates all planned features, deferred implementations, and f
 - Plugin architecture will support inline measurement (RAPL, INA3221) and external measurement (GPIO triggers)
 
 **Code Changes Required:**
-- `src/harness/energy_rapl.{h,c}` - RAPL energy measurement for Linux x86
+- `src/engine/harness/energy_rapl.{h,c}` - RAPL energy measurement for Linux x86
 - Telemetry integration for energy metrics
 - Platform detection for energy measurement capabilities
 
@@ -58,7 +58,7 @@ This document consolidates all planned features, deferred implementations, and f
 **Implementation Plan:**
 
 1. **Dataset Conversion Scripts**
-   - Extend `scripts/convert_edf_to_float32.py` to support Q15/Q7 output formats
+   - Extend `datasets/tools/convert_edf_to_float32.py` to support Q15/Q7 output formats
    - Q15: 16-bit signed integers with scale S=32768 (value ≈ q / S)
    - Q7: 8-bit signed integers with scale S=128
 
@@ -74,10 +74,10 @@ This document consolidates all planned features, deferred implementations, and f
 
 4. **Kernel Implementations**
    - Implement 4 kernels × 2 quantized formats = 8 new plugins:
-     - `kernels/v1/car@q15/`, `kernels/v1/car@q7/`
-     - `kernels/v1/notch_iir@q15/`, `kernels/v1/notch_iir@q7/`
-     - `kernels/v1/bandpass_fir@q15/`, `kernels/v1/bandpass_fir@q7/`
-     - `kernels/v1/goertzel@q15/`, `kernels/v1/goertzel@q7/`
+     - `primitives/kernels/v1/car@q15/`, `primitives/kernels/v1/car@q7/`
+     - `primitives/kernels/v1/notch_iir@q15/`, `primitives/kernels/v1/notch_iir@q7/`
+     - `primitives/kernels/v1/bandpass_fir@q15/`, `primitives/kernels/v1/bandpass_fir@q7/`
+     - `primitives/kernels/v1/goertzel@q15/`, `primitives/kernels/v1/goertzel@q7/`
    - Implement fixed-point arithmetic: manual scaling, overflow protection, saturation
 
 5. **Validation**
@@ -89,11 +89,11 @@ This document consolidates all planned features, deferred implementations, and f
    - Measure quantization impact on BCI signal quality
 
 **Code Changes Required:**
-- `src/replayer/replayer.c` lines 123, 176, 184-185 - Remove float32 hardcoding
-- `src/replayer/replayer.h` line 32 - Use dtype field
-- `src/harness/app/main.c` line 102 - Remove hardcoded `dtype=1u`
-- `src/scheduler/scheduler.c` line 185 - Variable dtype size
-- `src/scheduler/scheduler.h` lines 82-83 - Dtype-agnostic buffers
+- `src/engine/replayer/replayer.c` lines 123, 176, 184-185 - Remove float32 hardcoding
+- `src/engine/replayer/replayer.h` line 32 - Use dtype field
+- `src/engine/harness/app/main.c` line 102 - Remove hardcoded `dtype=1u`
+- `src/engine/scheduler/scheduler.c` line 185 - Variable dtype size
+- `src/engine/scheduler/scheduler.h` lines 82-83 - Dtype-agnostic buffers
 
 **Current Limitations:**
 - Replayer comment (line 19): "Dataset path semantics: assumes float32 file; enforce or validate."
@@ -102,8 +102,8 @@ This document consolidates all planned features, deferred implementations, and f
 
 **Documentation:**
 - Overview: `docs/development/roadmap.md` lines 59-80
-- ABI: `include/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
-- Tolerances: `kernels/v1/{name}@{dtype}/spec.yaml`
+- ABI: `src/engine/include/cortex_plugin/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
+- Tolerances: `primitives/kernels/v1/{name}@{dtype}/spec.yaml`
 
 ---
 
@@ -155,7 +155,7 @@ This document consolidates all planned features, deferred implementations, and f
    - Collect 5k-10k windows to model jitter **ε** (lognormal distribution)
 
 3. **Output Artifact:**
-   - `configs/calibration/<platform>.yaml` storing:
+   - `primitives/configs/calibration/<platform>.yaml` storing:
      - Overhead parameters (a, b, ε distribution parameters)
      - Board/RTOS/toolchain metadata
      - Calibration conditions and date
@@ -195,7 +195,7 @@ This document consolidates all planned features, deferred implementations, and f
 **Status:** Parsed but NOT wired up in harness
 
 **Current Limitation:**
-- `kernel_params` set to NULL in `src/harness/app/main.c` lines 82-83
+- `kernel_params` set to NULL in `src/engine/harness/app/main.c` lines 82-83
 - All v1 kernels use hardcoded parameters:
   - `notch_iir`: f0=60 Hz, Q=30
   - `bandpass_fir`: numtaps=129, passband=[8,30] Hz
@@ -214,9 +214,9 @@ This document consolidates all planned features, deferred implementations, and f
 - Support multiple frequency bands for Goertzel
 
 **Code Changes Required:**
-- `src/harness/app/main.c` lines 82-83 - Implement kernel_params serialization
-- All `kernels/v1/*/` C implementations - Add parameter parsing
-- All `kernels/v1/*/spec.yaml` - Document parameter schemas
+- `src/engine/harness/app/main.c` lines 82-83 - Implement kernel_params serialization
+- All `primitives/kernels/v1/*/` C implementations - Add parameter parsing
+- All `primitives/kernels/v1/*/spec.yaml` - Document parameter schemas
 
 **Documentation:**
 - Interface: `docs/reference/plugin-interface.md` lines 95-104
@@ -251,7 +251,7 @@ This document consolidates all planned features, deferred implementations, and f
 - Research-grade real-time performance characterization
 
 **Code Changes Required:**
-- `src/scheduler/scheduler.c` lines 310-322 - Add SCHED_DEADLINE case
+- `src/engine/scheduler/scheduler.c` lines 310-322 - Add SCHED_DEADLINE case
 
 **Documentation:**
 - Overview: `CLAUDE.md` lines 389-404
@@ -307,8 +307,8 @@ This document consolidates all planned features, deferred implementations, and f
 4. Documentation and usage examples
 
 **Code Changes Required:**
-- Implement stubs in `src/replayer/replayer.c` lines 107, 115, 154, 216, 221
-- Create `src/harness/bg_load.{h,c}` for stress-ng management
+- Implement stubs in `src/engine/replayer/replayer.c` lines 107, 115, 154, 216, 221
+- Create `src/engine/harness/bg_load.{h,c}` for stress-ng management
 
 **Documentation:** `docs/development/roadmap.md` lines 98-101
 
@@ -379,7 +379,7 @@ From `docs/architecture/testing-strategy.md`:
 - Scalable to high channel counts
 - User-friendly "system compatibility checker" interface
 
-**Implementation Location:** `scripts/capability_database/`
+**Implementation Location:** `datasets/tools/capability_database/`
 
 **Documentation:** `docs/development/roadmap.md` lines 115-131
 
@@ -406,8 +406,8 @@ From `docs/architecture/testing-strategy.md`:
 - Documentation completeness review
 
 **Code References:**
-- Replayer TODOs: `src/replayer/replayer.c` lines 14-19, 107, 115, 154, 159, 216, 221
-- Oracle TODO: `kernels/v1/bandpass_fir@f32/oracle.py` line 117
+- Replayer TODOs: `src/engine/replayer/replayer.c` lines 14-19, 107, 115, 154, 159, 216, 221
+- Oracle TODO: `primitives/kernels/v1/bandpass_fir@f32/oracle.py` line 117
 
 ---
 

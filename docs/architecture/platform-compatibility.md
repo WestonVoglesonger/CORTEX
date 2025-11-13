@@ -113,7 +113,7 @@ ldd cortex
 - Full SCHED_FIFO and SCHED_RR support
 - Requires elevated privileges or capabilities:
   ```bash
-  sudo setcap cap_sys_nice=eip ./src/harness/cortex
+  sudo setcap cap_sys_nice=eip ./src/engine/harness/cortex
   ```
 
 ## Troubleshooting
@@ -122,12 +122,12 @@ ldd cortex
 
 **macOS**: Verify `.dylib` extension
 ```bash
-ls kernels/v1/*/lib*.dylib
+ls primitives/kernels/v1/*/lib*.dylib
 ```
 
 **Linux**: Verify `.so` extension
 ```bash
-ls kernels/v1/*/lib*.so
+ls primitives/kernels/v1/*/lib*.so
 ```
 
 ### Linker Errors

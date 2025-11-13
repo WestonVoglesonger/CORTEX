@@ -162,7 +162,7 @@ python3 tests/test_cli.py
 
 Each kernel has a Python reference implementation (`oracle.py`) used for validation:
 
-**Location:** `kernels/v1/{name}@{dtype}/oracle.py`
+**Location:** `primitives/kernels/v1/{name}@{dtype}/oracle.py`
 
 **Available oracles:**
 - `car@f32/oracle.py` - Common Average Reference
@@ -173,7 +173,7 @@ Each kernel has a Python reference implementation (`oracle.py`) used for validat
 **CLI Interface:**
 ```bash
 # Test mode (used by test_kernel_accuracy)
-python3 kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
+python3 primitives/kernels/v1/notch_iir@f32/oracle.py --test input.bin --output output.bin --state state.bin
 ```
 
 **Note:** Oracles only support `--test` mode. Standalone mode (without flags) is not supported.
@@ -264,7 +264,7 @@ TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
 
 ### Adding Kernel Validation
 
-1. Implement `kernels/v1/{name}@{dtype}/oracle.py`
+1. Implement `primitives/kernels/v1/{name}@{dtype}/oracle.py`
 2. Add kernel to `tests/test_kernel_registry.c` expected list
 3. Run `./tests/test_kernel_accuracy --kernel {name}`
 
@@ -307,7 +307,7 @@ Before submitting a pull request:
 **Format:** Float32 raw binary (little-endian)
 - 64 channels
 - 160 Hz sampling rate
-- Converted from EDF using `scripts/convert_edf_to_raw.py`
+- Converted from EDF using `datasets/tools/convert_edf_to_raw.py`
 
 **Location:** `datasets/eegmmidb/converted/S001R03.float32`
 
@@ -317,7 +317,7 @@ Before submitting a pull request:
 
 **Conversion:**
 ```bash
-python3 scripts/convert_edf_to_raw.py \
+python3 datasets/tools/convert_edf_to_raw.py \
     datasets/eegmmidb/edf/S001R03.edf \
     datasets/eegmmidb/converted/S001R03.float32
 ```

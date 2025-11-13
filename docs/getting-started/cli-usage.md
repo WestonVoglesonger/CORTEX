@@ -6,7 +6,7 @@ The CORTEX CLI provides a unified interface for building, running, and analyzing
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Run full automated pipeline
 ./cortex.py pipeline
@@ -20,7 +20,7 @@ open results/run-*/analysis/latency_comparison.png
 
 ```bash
 # Install Python dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Ensure cortex.py is executable (should already be set in repo)
 chmod +x cortex.py
@@ -62,7 +62,7 @@ Build harness, kernel plugins, and tests.
 ```
 
 **What it builds:**
-- Harness binary (`src/harness/cortex`)
+- Harness binary (`src/engine/harness/cortex`)
 - All kernel plugins
 - Unit tests
 
@@ -269,7 +269,7 @@ Clean build artifacts and results.
 
 **What gets cleaned:**
 - Build artifacts (`.o`, `.dylib`, `.so` files)
-- Generated configs (`configs/generated/`)
+- Generated configs (`primitives/configs/generated/`)
 - Results directory (`results/`)
 - Analysis outputs (`results/analysis/`)
 
@@ -280,7 +280,7 @@ Clean build artifacts and results.
 ### First-Time Setup
 ```bash
 # 1. Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # 2. Build everything
 ./cortex.py build
@@ -402,7 +402,7 @@ start_ts_ns, end_ts_ns, deadline_missed, W, H, C, Fs, warmup, repeat
 ### Python import errors
 ```bash
 # Install all dependencies
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Build failures
@@ -448,7 +448,7 @@ cp -r results/laptop2-baseline/kernel-data/* results/combined-analysis/
 ```
 
 ### Custom Configurations
-Edit `configs/cortex.yaml` template or create new configs:
+Edit `primitives/configs/cortex.yaml` template or create new configs:
 
 ```yaml
 dataset:
@@ -462,7 +462,7 @@ benchmark:
 
 plugins:
   - name: my_custom_kernel
-    spec_uri: "kernels/v1/my_kernel@f32"
+    spec_uri: "primitives/kernels/v1/my_kernel@f32"
 ```
 
 Run with:
@@ -490,7 +490,7 @@ Run with:
 - Configuration: `docs/reference/configuration.md`
 - Telemetry: `docs/reference/telemetry.md`
 - Roadmap: `docs/development/roadmap.md`
-- Individual kernel specs: `kernels/v1/{name}@{dtype}/README.md`
+- Individual kernel specs: `primitives/kernels/v1/{name}@{dtype}/README.md`
 
 **Issues:**
 https://github.com/WestonVoglesonger/CORTEX/issues
