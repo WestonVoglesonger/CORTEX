@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 # CORTEX executables (only ignore compiled binary, not Python script)
-src/harness/cortex
+src/engine/harness/cortex
 
 # Distribution / packaging
 .Python
@@ -173,7 +173,7 @@ output/
 logs/
 
 # Generated config files (created by CLI at runtime)
-configs/generated/
+primitives/configs/generated/
 
 # Temporary files
 tmp/
