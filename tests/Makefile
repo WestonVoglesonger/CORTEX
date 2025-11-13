@@ -1,15 +1,15 @@
 # Makefile for CORTEX C tests
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../include
+CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../src/engine/include
 LDFLAGS = -lpthread -lm
 
 # Source files
-REPLAYER_SRC = ../src/replayer/replayer.c
-SCHEDULER_SRC = ../src/scheduler/scheduler.c
-TELEMETRY_SRC = ../src/harness/telemetry/telemetry.c
-UTIL_SRC = ../src/harness/util/util.c
-LOADER_SRC = ../src/harness/loader/loader.c
+REPLAYER_SRC = ../src/engine/replayer/replayer.c
+SCHEDULER_SRC = ../src/engine/scheduler/scheduler.c
+TELEMETRY_SRC = ../src/engine/harness/telemetry/telemetry.c
+UTIL_SRC = ../src/engine/harness/util/util.c
+LOADER_SRC = ../src/engine/harness/loader/loader.c
 
 # Test binaries
 TEST_REPLAYER = test_replayer
@@ -32,7 +32,7 @@ $(TEST_KERNEL_REGISTRY): test_kernel_registry.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(TEST_KERNEL_ACCURACY): test_kernel_accuracy.c $(LOADER_SRC)
-	$(CC) $(CFLAGS) -I../src -I../src/scheduler -I../src/replayer -I../src/harness/telemetry -I../src/harness/config -I../src/harness/util -o $@ $^ $(LDFLAGS) -ldl -lm
+	$(CC) $(CFLAGS) -I../src/engine -I../src/engine/scheduler -I../src/engine/replayer -I../src/engine/harness/telemetry -I../src/engine/harness/config -I../src/engine/harness/util -o $@ $^ $(LDFLAGS) -ldl -lm
 
 $(TEST_CLOCK_RESOLUTION): test_clock_resolution.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)

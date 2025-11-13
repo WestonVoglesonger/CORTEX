@@ -31,8 +31,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "../include/cortex_plugin.h"
-#include "../src/harness/loader/loader.h"
+#include "../src/engine/include/cortex_plugin.h"
+#include "../src/engine/harness/loader/loader.h"
 
 /* Test configuration */
 typedef struct {

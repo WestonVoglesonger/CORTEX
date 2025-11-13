@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil -Ireport
+CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil -Ireport
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)

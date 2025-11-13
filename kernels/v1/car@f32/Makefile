@@ -2,7 +2,7 @@
 # Platform-specific shared library build
 
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../include
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../src/engine/include
 
 # Detect platform and set extension/flag
 UNAME_S := $(shell uname -s)
