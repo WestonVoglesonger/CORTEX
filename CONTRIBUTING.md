@@ -59,7 +59,7 @@ Understanding this structure is essential for contributing effectively.
 
 **outputs/**
 - Benchmark results, visualizations, and analysis outputs
-- Generated during `./cortex run` and `./cortex analyze` commands
+- Generated during `cortex run` and `cortex analyze` commands
 
 **environments/** & **tools/**
 - Development environment configurations and utilities
@@ -81,8 +81,8 @@ pip install -e .[dev]
 make clean && make
 
 # Verify installation
-./cortex --version
-./cortex validate
+cortex --version
+cortex validate
 ```
 
 **Key directories**:
@@ -216,16 +216,16 @@ To add a new kernel implementation:
    python oracle.py
 
    # Validate C implementation against oracle
-   ./cortex validate --kernel {name} --verbose
+   cortex validate --kernel {name} --verbose
    ```
 
 7. **Testing**:
    ```bash
    # Run kernel in harness
-   ./cortex run --kernel {name} --duration 30 --run-name test-{name}
+   cortex run --kernel {name} --duration 30 --run-name test-{name}
 
    # Analyze results
-   ./cortex analyze --run-name test-{name}
+   cortex analyze --run-name test-{name}
    ```
 
 See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehensive guide.
@@ -243,7 +243,7 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 ### Before Submitting PRs
 
 - [ ] All unit tests pass: `make tests`
-- [ ] Kernel accuracy tests pass: `./cortex validate`
+- [ ] Kernel accuracy tests pass: `cortex validate`
 - [ ] Build succeeds on both macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] Documentation updated for changes
@@ -266,10 +266,10 @@ make -C src/tests test-replayer
 make -C src/tests test-scheduler
 
 # Validate all kernels
-./cortex validate
+cortex validate
 
 # Validate specific kernel
-./cortex validate --kernel {name} --verbose
+cortex validate --kernel {name} --verbose
 ```
 
 ## Pull Request Process
@@ -335,21 +335,21 @@ make -C src/tests test-replayer
 make -C src/tests test-scheduler
 
 # Validate kernels
-./cortex validate
+cortex validate
 
 # Run benchmarks (with custom name)
-./cortex run --all --duration 60 --run-name test-run
+cortex run --all --duration 60 --run-name test-run
 
 # Analyze results
-./cortex analyze --run-name test-run
+cortex analyze --run-name test-run
 
 # Full pipeline (auto-named)
-./cortex pipeline
+cortex pipeline
 ```
 
 **Common workflows**:
 
-1. **Adding a new kernel**: Follow the "Developing Kernels" section above, then validate with `./cortex validate --kernel {name}`
+1. **Adding a new kernel**: Follow the "Developing Kernels" section above, then validate with `cortex validate --kernel {name}`
 
 2. **Converting datasets**: Use tools in `datasets/tools/` to convert raw datasets to CORTEX format
 

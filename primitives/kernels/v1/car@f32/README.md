@@ -44,7 +44,7 @@ Reference in `cortex.yaml`:
 ```yaml
 plugins:
   - name: "car"
-    spec_uri: "kernels/v1/car@f32"
+    spec_uri: "primitives/kernels/v1/car@f32"
     spec_version: "1.0.0"
     runtime:
       window_length_samples: 160

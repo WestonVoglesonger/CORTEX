@@ -3,8 +3,8 @@
 Purpose: Orchestrate replayer → scheduler → plugins behind the stable ABI, apply runtime policy (affinity/scheduling), persist telemetry, and manage run lifecycle per `docs/RUN_CONFIG.md` and `docs/TELEMETRY.md`. Loads kernel specifications from the registry to configure plugin runtime parameters.
 
 ### Responsibilities
-- Parse YAML config (`configs/*.yaml`) and validate per `docs/RUN_CONFIG.md`.
-- Load kernel specifications from registry (`kernels/v1/{name}@{dtype}/spec.yaml`) to populate runtime parameters.
+- Parse YAML config (`primitives/configs/*.yaml`) and validate per `docs/RUN_CONFIG.md`.
+- Load kernel specifications from registry (`primitives/kernels/v1/{name}@{dtype}/spec.yaml`) to populate runtime parameters.
 - Build `cortex_scheduler_config_t` and per‑plugin `cortex_plugin_config_t` (YAML + specs → struct mapping).
 - Load plugins via `dlopen`/`dlsym` and register with the scheduler (only when `status: ready`; otherwise skipped).
 - Start replayer; forward hop‑sized chunks to `cortex_scheduler_feed_samples`.
@@ -14,19 +14,19 @@ Purpose: Orchestrate replayer → scheduler → plugins behind the stable ABI, a
 - Planned: background load (stress‑ng) and RAPL energy (Linux only).
 
 ### File Layout
-- `src/harness/app/main.c` — CLI entrypoint; loads YAML; orchestrates lifecycle.
-- `src/harness/config/config.{h,c}` — YAML parsing, kernel spec loading, and validation; mapping to structs.
-- `src/harness/loader/loader.{h,c}` — `dlopen`/`dlsym` helpers; build `cortex_scheduler_plugin_api_t`.
-- `src/harness/telemetry/telemetry.{h,c}` — Basic CSV writer (Week 3). JSON + summaries planned.
-- `src/harness/util/util.{h,c}` — time helpers and run‑id utilities.
-- `src/harness/Makefile` — builds `cortex` binary (links scheduler and replayer).
+- `src/engine/harness/app/main.c` — CLI entrypoint; loads YAML; orchestrates lifecycle.
+- `src/engine/harness/config/config.{h,c}` — YAML parsing, kernel spec loading, and validation; mapping to structs.
+- `src/engine/harness/loader/loader.{h,c}` — `dlopen`/`dlsym` helpers; build `cortex_scheduler_plugin_api_t`.
+- `src/engine/harness/telemetry/telemetry.{h,c}` — Basic CSV writer (Week 3). JSON + summaries planned.
+- `src/engine/harness/util/util.{h,c}` — time helpers and run‑id utilities.
+- `src/engine/harness/Makefile` — builds `cortex` binary (links scheduler and replayer).
 - Planned: `energy_rapl.{h,c}` (Linux) and `bg_load.{h,c}`.
 
 Build notes: link with `-ldl -lpthread -lm` (and `-lrt` on some Linux distros if needed); guard RAPL and realtime with `#ifdef __linux__`.
 
 ### YAML + Spec → Struct Mapping
 - **YAML parsing**: `dataset.*`, `realtime.*`, `benchmark.*`, `output.*`, `plugins[*].{name, spec_uri, spec_version, params}`.
-- **Spec loading**: `kernels/v1/{name}@{dtype}/spec.yaml` → extracts `input_shape` (W), `dtype`, tolerances.
+- **Spec loading**: `primitives/kernels/v1/{name}@{dtype}/spec.yaml` → extracts `input_shape` (W), `dtype`, tolerances.
 - **Runtime derivation**: `W` (from spec), `H = W/2`, `C` (from dataset), `dtype` (from spec).
 - **Final mapping**:
   - `dataset.sample_rate_hz` → `cortex_replayer_config_t.sample_rate_hz`, `cortex_scheduler_config_t.sample_rate_hz`.
@@ -43,9 +43,9 @@ Validation: enforce rules from `docs/RUN_CONFIG.md` (Fs>0, C>0, 0 < H ≤ W, cha
 
 ### Kernel Registry Integration
 
-The harness loads kernel specifications from `kernels/v1/{name}@{dtype}/spec.yaml` to configure runtime parameters:
+The harness loads kernel specifications from `primitives/kernels/v1/{name}@{dtype}/spec.yaml` to configure runtime parameters:
 
-- **Spec discovery**: `plugins[*].spec_uri` references registry path (e.g., `"kernels/v1/car@f32"`)
+- **Spec discovery**: `plugins[*].spec_uri` references registry path (e.g., `"primitives/kernels/v1/car@f32"`)
 - **Parameter extraction**: Loads `input_shape` (W), `dtype`, and validation tolerances
 - **Runtime derivation**:
   - `window_length_samples = spec.input_shape[0]`

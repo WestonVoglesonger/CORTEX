@@ -54,7 +54,7 @@ static uint32_t map_dtype(const char *s) {
 int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cortex_plugin_runtime_cfg_t *runtime) {
     if (!spec_uri || !runtime) return -1;
 
-    /* Build spec path: kernels/v1/{name}@{dtype}/spec.yaml */
+    /* Build spec path: primitives/kernels/v1/{name}@{dtype}/spec.yaml */
     char spec_path[512];
     snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
 

@@ -15,7 +15,7 @@
  * - Benchmark system capabilities once to build capability database
  * - Provide instant answers to "can system X handle config Y?" queries
  * - Benefits: Fast queries, reproducible benchmarks, scalable to high channel counts
- * - Location: scripts/ directory with generation/benchmarking/query tools
+ * - Location: datasets/tools/ directory with generation/benchmarking/query tools
  */
 
 #define _POSIX_C_SOURCE 200809L

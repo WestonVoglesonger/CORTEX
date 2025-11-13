@@ -1,6 +1,6 @@
 /*
  * Harness configuration loader for CORTEX.
- * Minimal YAML reader tailored to configs/cortex.yaml structure.
+ * Minimal YAML reader tailored to primitives/configs/cortex.yaml structure.
  */
 
 #ifndef CORTEX_HARNESS_CONFIG_H

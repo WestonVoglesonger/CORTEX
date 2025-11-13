@@ -30,11 +30,11 @@ static void sanitize_name(const char *in, char *out, size_t out_sz) {
 int cortex_plugin_build_path(const char *spec_uri, char *out_path, size_t out_sz) {
     if (!spec_uri || !out_path || out_sz == 0) return -1;
     
-    /* spec_uri is like "kernels/v1/car@f32" - build path to libcar.dylib in that directory */
+    /* spec_uri is like "primitives/kernels/v1/car@f32" - build path to libcar.dylib in that directory */
     char clean[256];
     sanitize_name(spec_uri, clean, sizeof(clean));
-    
-    /* Extract kernel name from spec_uri (e.g., "car" from "kernels/v1/car@f32") */
+
+    /* Extract kernel name from spec_uri (e.g., "car" from "primitives/kernels/v1/car@f32") */
     const char *name_start = strrchr(spec_uri, '/');
     if (!name_start) name_start = spec_uri;
     else name_start++; /* Skip the '/' */
