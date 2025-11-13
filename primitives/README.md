@@ -45,7 +45,7 @@ primitives/
 
 **Structure**: Each kernel is a complete, self-documenting package:
 ```
-kernels/v1/{name}@{dtype}/
+primitives/kernels/v1/{name}@{dtype}/
 ├── spec.yaml          # Formal specification (dimensions, tolerances, params)
 ├── {name}.c           # C implementation using CORTEX plugin ABI
 ├── oracle.py          # Reference implementation for validation

@@ -164,7 +164,7 @@ Use `$(LIBEXT)` variable in Makefiles for cross-platform compatibility.
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
 # Increase warmup period
-./cortex.py run --all --warmup 10
+cortex run --all --warmup 10
 
 # Pin to specific CPU core
 # Edit primitives/configs/cortex.yaml:
@@ -198,8 +198,8 @@ Defined in `primitives/kernels/v1/{name}@f32/spec.yaml`
 
 ```bash
 # Validate specific kernel (required - testing all at once not implemented)
-./cortex.py validate --kernel notch_iir
-./cortex.py validate --kernel goertzel --verbose
+cortex validate --kernel notch_iir
+cortex validate --kernel goertzel --verbose
 
 # Or use test binary directly
 ./tests/test_kernel_accuracy --kernel goertzel --windows 10 --verbose
@@ -242,7 +242,7 @@ realtime:
 htop
 
 # Run shorter test
-./cortex.py run --kernel {name} --duration 10
+cortex run --kernel {name} --duration 10
 
 # Check median latency
 jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/*/telemetry.ndjson | head

@@ -38,8 +38,8 @@ Understanding this structure is essential for contributing effectively.
 
 **primitives/**
 - Houses all computational kernels and their configurations
-- `kernels/v1/` contains versioned kernel implementations (e.g., `fft@f32/`, `ema@f32/`)
-- `configs/` contains YAML configuration files that reference kernel spec_uri paths
+- `primitives/kernels/v1/` contains versioned kernel implementations (e.g., `fft@f32/`, `ema@f32/`)
+- `primitives/configs/` contains YAML configuration files that reference kernel spec_uri paths
 - This is where you'll add new signal processing algorithms
 
 **datasets/**

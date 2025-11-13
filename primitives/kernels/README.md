@@ -38,7 +38,7 @@ Each kernel directory contains:
 
 ## Adding New Kernels
 
-1. Create directory: `kernels/v1/{name}@{dtype}/`
+1. Create directory: `primitives/kernels/v1/{name}@{dtype}/`
 2. Write `spec.yaml` with minimal fields:
    - `kernel`: name, version, dtype
    - `abi`: input_shape, output_shape, stateful
@@ -53,14 +53,14 @@ Each kernel directory contains:
 4. Write `oracle.py` with reference implementation
 5. Write `{name}.c` implementing the cortex kernel ABI
 6. Copy `Makefile` template from another kernel and update
-7. Build: `cd kernels/v1/{name}@{dtype} && make`
+7. Build: `cd primitives/kernels/v1/{name}@{dtype} && make`
 8. The harness will automatically load `lib{name}.dylib` from this directory
 
 ## Spec Validation
 
 Test your kernel spec:
 ```bash
-cd kernels/v1/{name}@{dtype}
+cd primitives/kernels/v1/{name}@{dtype}
 python oracle.py  # Should run without errors
 ```
 

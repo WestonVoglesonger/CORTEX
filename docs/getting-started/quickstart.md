@@ -45,7 +45,7 @@ Building and running tests...
 
 ```bash
 # Run automated pipeline (build + validate + benchmark + analyze)
-./cortex.py pipeline
+cortex pipeline
 ```
 
 **What happens:**
@@ -55,7 +55,7 @@ Building and running tests...
 
 **Expected runtime:** ~2-3 minutes for default 5-second runs (depends on system and number of kernels)
 
-**Note**: To run longer benchmarks, use `./cortex.py pipeline --duration 125` for 125-second runs per kernel.
+**Note**: To run longer benchmarks, use `cortex pipeline --duration 125` for 125-second runs per kernel.
 
 ## 4. View Results
 
@@ -88,19 +88,19 @@ goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 
 ```bash
 # List available kernels
-./cortex.py list
+cortex list
 
 # Validate a specific kernel
-./cortex.py validate --kernel goertzel
+cortex validate --kernel goertzel
 
 # Run a single benchmark with custom name
-./cortex.py run --kernel notch_iir --duration 30 --run-name quick-test
+cortex run --kernel notch_iir --duration 30 --run-name quick-test
 
 # Analyze most recent run
-./cortex.py analyze
+cortex analyze
 
 # Analyze specific run
-./cortex.py analyze --run-name quick-test
+cortex analyze --run-name quick-test
 ```
 
 ## Next Steps
@@ -109,10 +109,10 @@ goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
 
 ```bash
 # Longer duration for more statistical confidence
-./cortex.py run --all --duration 300 --repeats 5
+cortex run --all --duration 300 --repeats 5
 
 # Single kernel with custom settings
-./cortex.py run --kernel bandpass_fir --duration 60 --warmup 5
+cortex run --kernel bandpass_fir --duration 60 --warmup 5
 ```
 
 ### Modify Configuration
@@ -133,7 +133,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 - [x] Build completes without errors
 - [x] Tests pass (`make tests`)
-- [x] Kernels validate successfully (`./cortex.py validate --kernel <name>` for each kernel)
+- [x] Kernels validate successfully (`cortex validate --kernel <name>` for each kernel)
 - [x] Benchmarks run and produce results
 - [x] Analysis generates plots
 - [x] SUMMARY.md shows realistic latencies (< 1 ms for EEG kernels)
@@ -142,7 +142,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 | Issue | Solution |
 |-------|----------|
-| `cortex: command not found` | Use `./cortex.py` or add to PATH |
+| `cortex: command not found` | Use `cortex` or add to PATH |
 | `Permission denied` | `chmod +x cortex.py` |
 | `Plugin not found` | Run `make plugins` to rebuild |
 | `Dataset file not found` | Check `primitives/configs/cortex.yaml` dataset path |

@@ -382,7 +382,7 @@ cd tests
 
 Or use CLI:
 ```bash
-./cortex.py validate --kernel your_kernel --verbose
+cortex validate --kernel your_kernel --verbose
 ```
 
 ### Step 9: Integration Test
@@ -391,14 +391,14 @@ Run full benchmark to ensure integration works:
 
 ```bash
 # Short test run
-./cortex.py run --kernel your_kernel --duration 30
+cortex run --kernel your_kernel --duration 30
 
 # Check results
 ls results/batch_*/your_kernel_run/
 cat results/batch_*/your_kernel_run/your_kernel_telemetry.ndjson | head -5
 
 # Analyze
-./cortex.py analyze results/batch_*
+cortex analyze results/batch_*
 ```
 
 ### Step 10: Add to Registry
@@ -497,8 +497,8 @@ Before submitting your kernel:
 
 - [ ] `make` builds without warnings
 - [ ] `python oracle.py` runs successfully
-- [ ] `./cortex.py validate --kernel {name}` passes
-- [ ] `./cortex.py run --kernel {name} --duration 30` completes
+- [ ] `cortex validate --kernel {name}` passes
+- [ ] `cortex run --kernel {name} --duration 30` completes
 - [ ] Median latency < 500 ms (EEG real-time deadline)
 - [ ] No deadline misses under normal load
 - [ ] Handles NaN inputs gracefully

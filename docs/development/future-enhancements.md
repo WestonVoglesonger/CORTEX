@@ -324,7 +324,7 @@ This document consolidates all planned features, deferred implementations, and f
 **Planned Approach:**
 - GitHub Actions on push/PR
 - Matrix build: macOS (arm64 + x86_64) × Linux (Ubuntu)
-- Run `make -C tests test` and `./cortex.py validate` for all kernels
+- Run `make -C tests test` and `cortex validate` for all kernels
 - Fail on compiler warnings
 - Upload test logs as artifacts
 

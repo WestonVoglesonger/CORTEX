@@ -203,7 +203,7 @@ top
 htop
 
 # Run shorter duration to isolate issue
-./cortex.py run --kernel {name} --duration 10
+cortex run --kernel {name} --duration 10
 
 # Check median latency in results
 jq '.end_ts_ns - .start_ts_ns | . / 1000000' results/run-*/kernel-data/*/telemetry.ndjson | head -20
@@ -289,7 +289,7 @@ cd primitives/kernels/v1/{name}@f32 && make clean && make
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
 # Increase warmup period
-./cortex.py run --all --warmup 10
+cortex run --all --warmup 10
 
 # Pin to specific CPU core (edit primitives/configs/cortex.yaml)
 realtime:
@@ -379,7 +379,7 @@ ls -lh datasets/eegmmidb/converted/*.float32
 # bytes / (64 channels * 160 samples/sec * 4 bytes/float) = seconds
 
 # Either use shorter duration:
-./cortex.py run --kernel {name} --duration 60
+cortex run --kernel {name} --duration 60
 
 # Or use longer dataset file
 ```
@@ -417,7 +417,7 @@ dataset:
 **Solution**:
 ```bash
 # Use explicit path
-./cortex.py list
+cortex list
 
 # Or make executable and add to PATH
 chmod +x cortex.py
@@ -465,7 +465,7 @@ grep "format:" primitives/configs/cortex.yaml
 # Should be: format: "ndjson" or format: "csv"
 
 # Rerun benchmark if needed
-./cortex.py run --all
+cortex run --all
 ```
 
 ---
@@ -505,8 +505,8 @@ If your issue isn't listed here:
 
 3. **Enable verbose logging**:
    ```bash
-   ./cortex.py validate --kernel {name} --verbose
-   ./cortex.py run --kernel {name} --verbose
+   cortex validate --kernel {name} --verbose
+   cortex run --kernel {name} --verbose
    ```
 
 4. **Check system info**:
