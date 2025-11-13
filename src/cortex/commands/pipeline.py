@@ -1,8 +1,8 @@
 """Pipeline command - Full end-to-end benchmarking"""
-from cortex_cli.commands import build, validate, run, analyze
-from cortex_cli.core.runner import run_all_kernels
-from cortex_cli.core.analyzer import run_full_analysis
-from cortex_cli.core.paths import generate_run_name, get_analysis_dir
+from cortex.commands import build, validate, run, analyze
+from cortex.utils.runner import run_all_kernels
+from cortex.utils.analyzer import run_full_analysis
+from cortex.utils.paths import generate_run_name, get_analysis_dir
 import argparse
 
 def setup_parser(parser):

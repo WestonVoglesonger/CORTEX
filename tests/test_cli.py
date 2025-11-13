@@ -8,10 +8,10 @@ import os
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-from cortex_cli.core.config import discover_kernels, generate_config
-from cortex_cli.core.analyzer import _extract_kernel_name
+from cortex.utils.config import discover_kernels, generate_config
+from cortex.utils.analyzer import _extract_kernel_name
 
 def test_discover_kernels():
     """Test kernel discovery from registry"""

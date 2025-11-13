@@ -1,7 +1,7 @@
 """Run experiments command"""
 import sys
-from cortex_cli.core.runner import run_single_kernel, run_all_kernels
-from cortex_cli.core.paths import generate_run_name
+from cortex.utils.runner import run_single_kernel, run_all_kernels
+from cortex.utils.paths import generate_run_name
 
 def setup_parser(parser):
     """Setup argument parser for run command"""
@@ -87,8 +87,8 @@ def execute(args):
 
     # Custom config mode
     if args.config:
-        from cortex_cli.core.runner import run_harness
-        from cortex_cli.core.paths import create_run_structure
+        from cortex.utils.runner import run_harness
+        from cortex.utils.paths import create_run_structure
         print(f"Using custom config: {args.config}")
 
         # Create run directory structure (required by run_harness)

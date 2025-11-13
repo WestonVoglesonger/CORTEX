@@ -1,6 +1,6 @@
 """Analyze results command"""
-from cortex_cli.core.analyzer import run_full_analysis
-from cortex_cli.core.paths import get_most_recent_run, get_run_directory, get_analysis_dir
+from cortex.utils.analyzer import run_full_analysis
+from cortex.utils.paths import get_most_recent_run, get_run_directory, get_analysis_dir
 
 def setup_parser(parser):
     """Setup argument parser for analyze command"""

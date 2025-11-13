@@ -2,7 +2,7 @@
 import os
 import sys
 from pathlib import Path
-from cortex_cli.core.discovery import discover_kernels as discover_kernels_base
+from cortex.utils.discovery import discover_kernels as discover_kernels_base
 
 def setup_parser(parser):
     """Setup argument parser for list command"""

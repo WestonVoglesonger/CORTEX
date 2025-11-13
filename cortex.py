@@ -8,9 +8,9 @@ import sys
 import os
 
 # Add project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
-from cortex_cli.commands import (
+from cortex.commands import (
     build, run, analyze, pipeline,
     list_kernels, validate, clean
 )

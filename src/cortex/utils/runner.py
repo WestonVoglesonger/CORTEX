@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
-from cortex_cli.core.paths import (
+from cortex.utils.paths import (
     create_run_structure,
     create_kernel_directory,
     get_kernel_data_dir,
@@ -125,7 +125,7 @@ def run_single_kernel(
     Returns:
         Run directory path if successful, None otherwise
     """
-    from cortex_cli.core.config import generate_config
+    from cortex.utils.config import generate_config
 
     # Create run directory structure
     run_structure = create_run_structure(run_name)
@@ -183,7 +183,7 @@ def run_all_kernels(
     Returns:
         Run directory path if successful, None otherwise
     """
-    from cortex_cli.core.config import generate_batch_configs
+    from cortex.utils.config import generate_batch_configs
 
     # Create run directory structure
     create_run_structure(run_name)
@@ -221,7 +221,7 @@ def run_all_kernels(
         kernel_dir = create_kernel_directory(run_name, kernel_name)
 
         # Need to regenerate config with specific output directory
-        from cortex_cli.core.config import generate_config
+        from cortex.utils.config import generate_config
         if not generate_config(
             kernel_name,
             config_path,
