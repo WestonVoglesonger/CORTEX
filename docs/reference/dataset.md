@@ -53,7 +53,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 ## Channel Order
 - **Source of truth**: EDF header **signal order 0–63** for each file. We snapshot channel names from the first used record and reuse that order for all processing.
 - **Montage reference**: Official 64-electrode 10–10 montage figure provided with the dataset documentation (numbers under each label show the order 1–64; EDF signals are 0–63).
-- **Saved snapshot**: [channel_order.json](channel_order.json) (array of 64 channel names in EDF order)
+- **Saved snapshot**: [channel_order.json](../../datasets/eegmmidb/channel_order.json) (array of 64 channel names in EDF order)
 
 ## Units
 - **EEG potentials**: Physical units as recorded in the EDF header, typically **microvolts (µV)**. All CORTEX kernels process and report values in µV.
