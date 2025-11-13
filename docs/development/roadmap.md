@@ -106,6 +106,55 @@ These fields are **documented** in `docs/reference/configuration.md` and **parse
 - Multi-session dataset concatenation support (future enhancement)
 - Per-window energy (E_window) and derived power (P = E_window × Fs/H) - deferred to Spring 2026
 
+## Removed from Scope
+
+### Analytical FLOPs/Bytes Counters - **REMOVED** (November 2025)
+
+**Original Proposal Requirement** (Week 5-6):
+> "We additionally log rough FLOPs and bytes-per-window (analytical counters) to estimate arithmetic intensity for accelerator targeting."
+
+**Decision Rationale**:
+Analytical (theoretical) FLOPs/bytes metrics were **removed from scope** rather than deferred because they provide **limited practical value** for the BCI real-time analysis use case:
+
+1. **Latency is sufficient**: The core question "Does this kernel meet real-time deadlines?" is conclusively answered by measured latency (µs) compared to deadline (ms). Theoretical operation counts don't add actionable information.
+
+2. **Misleading for accelerator decisions**: Analytical metrics (e.g., "high FLOPs/byte → GPU candidate") ignore reality:
+   - Current performance: Goertzel @ 134µs with 500ms deadline = **3,731× safety margin**
+   - GPU overhead: PCIe transfer + kernel launch ≈ 100-500µs would make it **slower**
+   - The analytical metric would incorrectly suggest GPU acceleration
+
+3. **Ignores real-world constraints**: Theoretical FLOPs don't account for:
+   - Cache behavior (cache miss = 100× slowdown)
+   - Vectorization (SIMD = 8× speedup)
+   - Memory bandwidth limitations
+   - Branch prediction effects
+   - Compiler optimizations
+
+4. **Alternative metrics are more valuable**: For the same implementation effort (~45 min), these provide better insight:
+   - **Deadline slack** = `(deadline - p99_latency) / deadline × 100%` → Shows optimization headroom
+   - **Memory footprint** = actual heap usage → Critical for embedded targets (STM32H7: 1MB RAM)
+   - **Throughput saturation** = max sustainable rate → Shows real capacity limits
+
+5. **Embedded porting decisions rely on empirical data**: Cross-platform performance estimation requires:
+   - Measured latency on reference platform (x86)
+   - Empirical scaling factors from target hardware benchmarks
+   - Not theoretical operation counts
+
+**What We Have Instead**:
+- ✅ **Measured latency** (P50/P95/P99) - actual execution time
+- ✅ **Jitter analysis** - consistency/predictability
+- ✅ **Deadline miss tracking** - hard real-time compliance
+- ✅ **Throughput** (windows/second) - derived from measured latency
+
+These **measured metrics** directly answer the research questions and support evidence-based recommendations for BCI kernel deployment.
+
+**Academic Note**: Analytical FLOPs remain useful for:
+- HPC benchmarking comparisons (achieving X% of theoretical peak)
+- Algorithm comparison before implementation
+- Cross-platform rough estimation (with large error bars)
+
+For **BCI real-time viability analysis**, measured latency is the definitive metric.
+
 #### Code Cleanup
 - Remove unused globals (g_dtype) or implement proper dtype handling (replayer.c:14-19)
 - Mark g_replayer_running as volatile/atomic for cross-thread safety (replayer.c:14-19)
