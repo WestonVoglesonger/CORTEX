@@ -90,25 +90,73 @@ def generate_batch_configs(
     output_dir: str,
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
-    warmup: Optional[int] = None
+    warmup: Optional[int] = None,
+    base_config_path: str = "primitives/configs/cortex.yaml"
 ) -> List[tuple]:
     """
-    Generate configs for all available kernels
+    Generate configs for kernels based on base config
+
+    Behavior:
+    - If base config has explicit plugins: section -> use those kernels only
+    - If no plugins: section (auto-detect mode) -> use all built kernels
+
+    This matches the C harness auto-detection behavior for consistency.
 
     Returns:
         List of (kernel_name, config_path) tuples
     """
-    kernels = discover_kernels()
-    built_kernels = [k for k in kernels if k['built']]
+    # Load base config to check for explicit plugins list
+    try:
+        base_config = load_base_config(base_config_path)
+    except Exception as e:
+        print(f"Error loading base config: {e}")
+        return []
 
-    if not built_kernels:
-        print("No built kernels found")
+    # Check if plugins key exists in config
+    # Three cases:
+    # 1. No 'plugins' key → auto-detect all built kernels
+    # 2. 'plugins: []' → explicit empty list, run zero kernels
+    # 3. 'plugins: [...]' → explicit list, run only those kernels
+
+    if 'plugins' in base_config:
+        explicit_plugins = base_config['plugins']
+
+        if not explicit_plugins:
+            # Empty list - user explicitly wants zero kernels
+            print(f"Empty plugins list in {base_config_path}, running zero kernels")
+            return []
+
+        # Explicit mode: use only specified kernels
+        kernel_names = [p['name'] for p in explicit_plugins if p.get('status') == 'ready']
+        print(f"Using explicit plugins list from {base_config_path}: {kernel_names}")
+
+        # Verify each kernel is built
+        all_kernels = discover_kernels()
+        kernel_map = {k['display_name']: k for k in all_kernels}
+
+        kernels_to_run = []
+        for name in kernel_names:
+            if name in kernel_map:
+                if kernel_map[name]['built']:
+                    kernels_to_run.append(kernel_map[name])
+                else:
+                    print(f"Warning: Kernel '{name}' in config but not built, skipping")
+            else:
+                print(f"Warning: Kernel '{name}' in config but not found, skipping")
+    else:
+        # Auto-detect mode: discover all built kernels
+        print(f"No plugins section in {base_config_path}, auto-detecting all built kernels")
+        kernels = discover_kernels()
+        kernels_to_run = [k for k in kernels if k['built']]
+
+    if not kernels_to_run:
+        print("No kernels available to benchmark")
         return []
 
     configs = []
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    for kernel in built_kernels:
+    for kernel in kernels_to_run:
         config_path = Path(output_dir) / f"{kernel['display_name']}.yaml"
 
         if generate_config(
@@ -116,7 +164,8 @@ def generate_batch_configs(
             str(config_path),
             duration=duration,
             repeats=repeats,
-            warmup=warmup
+            warmup=warmup,
+            base_config_path=base_config_path
         ):
             configs.append((kernel['display_name'], str(config_path)))
 
