@@ -32,8 +32,9 @@ This document tracks progress against the original Fall 2025 proposal and implem
 - FIR Bandpass (8-30 Hz) - **COMPLETED**
 - Goertzel Bandpower - **COMPLETED**
 
-### Measurement Infrastructure (In Progress)
+### Measurement Infrastructure
 - Background load profiles (stress-ng integration) - **COMPLETED**
+- Kernel auto-detection system - **COMPLETED**
 
 ## Remaining This Semester (Weeks 7-9)
 

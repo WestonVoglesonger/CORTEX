@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>      /* for readdir() */
+#include <sys/stat.h>    /* for stat() */
+#include <unistd.h>      /* for access() */
 
 /*
  * Minimal, line-oriented parser for our known YAML structure.
@@ -108,9 +111,182 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     return 0;
 }
 
+/* Comparison function for qsort - sort plugins alphabetically by name */
+static int compare_plugin_names(const void *a, const void *b) {
+    const cortex_plugin_entry_cfg_t *pa = (const cortex_plugin_entry_cfg_t *)a;
+    const cortex_plugin_entry_cfg_t *pb = (const cortex_plugin_entry_cfg_t *)b;
+    return strcmp(pa->name, pb->name);
+}
+
+/*
+ * Discover built kernels in primitives/kernels/ directory.
+ * Scans for v star slash name at dtype directories with built shared libraries.
+ * Returns number of kernels discovered (may be 0), or -1 on error.
+ */
+int cortex_discover_kernels(cortex_run_config_t *cfg) {
+    if (!cfg) return -1;
+
+    /* Scan primitives/kernels/ for version directories */
+    const char *kernels_base = "primitives/kernels";
+    DIR *base_dir = opendir(kernels_base);
+    if (!base_dir) {
+        fprintf(stderr, "[discovery] warning: cannot open %s\n", kernels_base);
+        return 0;  /* Not a fatal error - just no kernels */
+    }
+
+    size_t kernel_count = 0;
+    struct dirent *version_entry;
+
+    /* Iterate version directories (v1, v2, etc.) */
+    while ((version_entry = readdir(base_dir)) != NULL) {
+        if (version_entry->d_name[0] != 'v') continue;  /* Skip non-version dirs */
+        if (version_entry->d_name[0] == '.') continue;  /* Skip hidden */
+
+        char version_path[512];
+        snprintf(version_path, sizeof(version_path), "%s/%s",
+                 kernels_base, version_entry->d_name);
+
+        /* Check if it's a directory */
+        struct stat st;
+        if (stat(version_path, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+
+        DIR *version_dir = opendir(version_path);
+        if (!version_dir) continue;
+
+        struct dirent *kernel_entry;
+
+        /* Iterate kernel@dtype directories */
+        while ((kernel_entry = readdir(version_dir)) != NULL) {
+            if (kernel_entry->d_name[0] == '.') continue;
+
+            /* Parse {name}@{dtype} format */
+            char *at_sign = strchr(kernel_entry->d_name, '@');
+            if (!at_sign) continue;
+
+            /* Extract kernel name and dtype */
+            size_t name_len = at_sign - kernel_entry->d_name;
+            if (name_len == 0 || name_len >= 64) continue;
+
+            char kernel_name[64];
+            strncpy(kernel_name, kernel_entry->d_name, name_len);
+            kernel_name[name_len] = '\0';
+
+            const char *dtype = at_sign + 1;
+
+            /* Build kernel directory path */
+            char kernel_path[768];
+            snprintf(kernel_path, sizeof(kernel_path), "%s/%s",
+                     version_path, kernel_entry->d_name);
+
+            /* Check if built (has shared library) */
+            char lib_path_dylib[900];
+            char lib_path_so[900];
+            snprintf(lib_path_dylib, sizeof(lib_path_dylib),
+                     "%s/lib%s.dylib", kernel_path, kernel_name);
+            snprintf(lib_path_so, sizeof(lib_path_so),
+                     "%s/lib%s.so", kernel_path, kernel_name);
+
+            int is_built = (access(lib_path_dylib, F_OK) == 0) ||
+                          (access(lib_path_so, F_OK) == 0);
+
+            if (!is_built) {
+                continue;  /* Skip unbuilt kernels silently for clean output */
+            }
+
+            /* Check implementation exists */
+            char impl_path[900];
+            snprintf(impl_path, sizeof(impl_path), "%s/%s.c",
+                     kernel_path, kernel_name);
+            if (access(impl_path, F_OK) != 0) {
+                continue;  /* Skip if no .c file */
+            }
+
+            /* Add to plugin list */
+            if (kernel_count >= CORTEX_MAX_PLUGINS) {
+                fprintf(stderr, "[discovery] warning: max plugins reached (%d)\n",
+                        CORTEX_MAX_PLUGINS);
+                closedir(version_dir);
+                closedir(base_dir);
+                cfg->plugin_count = kernel_count;
+                return kernel_count;
+            }
+
+            cortex_plugin_entry_cfg_t *plugin = &cfg->plugins[kernel_count];
+            memset(plugin, 0, sizeof(*plugin));
+
+            /* Set plugin name */
+            strncpy(plugin->name, kernel_name, sizeof(plugin->name) - 1);
+            plugin->name[sizeof(plugin->name) - 1] = '\0';
+
+            /* Set status to ready (auto-detected kernels are assumed ready) */
+            strncpy(plugin->status, "ready", sizeof(plugin->status) - 1);
+            plugin->status[sizeof(plugin->status) - 1] = '\0';
+
+            /* Set spec_uri (kernel directory path) */
+            snprintf(plugin->spec_uri, sizeof(plugin->spec_uri), "%s", kernel_path);
+            plugin->spec_uri[sizeof(plugin->spec_uri) - 1] = '\0';
+
+            /* Load spec version if spec.yaml exists */
+            char spec_path[900];
+            snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", kernel_path);
+            FILE *spec_file = fopen(spec_path, "r");
+            if (spec_file) {
+                /* Simple version extraction from spec.yaml */
+                char line[256];
+                while (fgets(line, sizeof(line), spec_file)) {
+                    if (strstr(line, "version:")) {
+                        /* Extract version value */
+                        char *colon = strchr(line, ':');
+                        if (colon) {
+                            const char *v = colon + 1;
+                            while (*v == ' ' || *v == '"' || *v == '\'') v++;
+                            char tmp[32];
+                            strncpy(tmp, v, sizeof(tmp) - 1);
+                            tmp[sizeof(tmp) - 1] = '\0';
+                            trim(tmp);
+                            if (strlen(tmp) > 0 && tmp[0] != '\0') {
+                                strncpy(plugin->spec_version, tmp,
+                                        sizeof(plugin->spec_version) - 1);
+                                plugin->spec_version[sizeof(plugin->spec_version) - 1] = '\0';
+                                break;
+                            }
+                        }
+                    }
+                }
+                fclose(spec_file);
+            }
+
+            /* Default spec version if not found */
+            if (plugin->spec_version[0] == '\0') {
+                strncpy(plugin->spec_version, "1.0.0", sizeof(plugin->spec_version) - 1);
+            }
+
+            printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
+                   kernel_name, dtype, kernel_path);
+
+            kernel_count++;
+        }
+
+        closedir(version_dir);
+    }
+
+    closedir(base_dir);
+
+    cfg->plugin_count = kernel_count;
+
+    /* Sort kernels alphabetically for reproducible ordering */
+    if (kernel_count > 0) {
+        qsort(cfg->plugins, kernel_count, sizeof(cortex_plugin_entry_cfg_t),
+              compare_plugin_names);
+    }
+
+    return kernel_count;
+}
+
 int cortex_config_load(const char *path, cortex_run_config_t *out) {
     if (!path || !out) return -1;
     memset(out, 0, sizeof(*out));
+    out->auto_detect_kernels = 1;  /* Default to auto-detect mode */
 
     FILE *f = fopen(path, "r");
     if (!f) return -1;
@@ -129,7 +305,11 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         if (strcmp(raw, "realtime:") == 0) { st = IN_REALTIME; continue; }
         if (strcmp(raw, "benchmark:") == 0) { st = IN_BENCH; continue; }
         if (strcmp(raw, "output:") == 0) { st = IN_OUTPUT; continue; }
-        if (strcmp(raw, "plugins:") == 0) { st = IN_PLUGINS; continue; }
+        if (strcmp(raw, "plugins:") == 0) {
+            st = IN_PLUGINS;
+            out->auto_detect_kernels = 0;  /* Explicit plugins specified */
+            continue;
+        }
 
         if (st == IN_PLUGINS) {
             if (starts_with(raw, "- name:")) {

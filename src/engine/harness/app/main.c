@@ -271,6 +271,43 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Auto-detect kernels if not explicitly specified */
+    if (ctx.run_cfg.auto_detect_kernels) {
+        printf("[harness] No plugins specified in config, auto-detecting kernels...\n");
+        int discovered = cortex_discover_kernels(&ctx.run_cfg);
+        if (discovered < 0) {
+            fprintf(stderr, "[harness] kernel auto-detection failed\n");
+            return 1;
+        }
+        if (discovered == 0) {
+            fprintf(stderr, "[harness] warning: no built kernels found in primitives/kernels/\n");
+            fprintf(stderr, "[harness] hint: run 'cortex build' to build available kernels\n");
+            /* Not a fatal error - allow harness to run with no plugins */
+        } else {
+            printf("[harness] auto-detected %d built kernel(s)\n", discovered);
+        }
+
+        /* Load kernel specs for all auto-detected kernels */
+        for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
+            cortex_plugin_entry_cfg_t *plugin = &ctx.run_cfg.plugins[i];
+            if (strcmp(plugin->status, "ready") != 0) continue;
+
+            if (cortex_load_kernel_spec(plugin->spec_uri, ctx.run_cfg.dataset.channels,
+                                        &plugin->runtime) != 0) {
+                fprintf(stderr, "[harness] warning: failed to load spec for %s, skipping\n",
+                        plugin->name);
+                strncpy(plugin->status, "skip", sizeof(plugin->status) - 1);
+                continue;
+            }
+        }
+
+        /* Re-validate config with auto-detected kernels */
+        if (cortex_config_validate(&ctx.run_cfg, err, sizeof(err)) != 0) {
+            fprintf(stderr, "invalid config after auto-detection: %s\n", err);
+            return 1;
+        }
+    }
+
     /* Sequential plugin execution */
     for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
         if (strcmp(ctx.run_cfg.plugins[i].status, "ready") != 0) {

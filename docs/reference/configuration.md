@@ -27,6 +27,64 @@ for plugins. Plugins never read YAML.
 
 See [docs/development/roadmap.md](../development/roadmap.md) for implementation timeline.
 
+## Kernel Auto-Detection
+
+**Status:** ✅ Implemented (Phase 2)
+
+When the `plugins:` section is **omitted** from the configuration file, CORTEX automatically discovers and runs all built kernels from the `primitives/kernels/` directory.
+
+### Behavior
+
+**Auto-detection mode (no `plugins:` section):**
+```yaml
+cortex_version: 1
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  channels: 64
+  sample_rate_hz: 160
+# No plugins section - auto-detect mode
+```
+- Scans `primitives/kernels/v*/` for built kernels
+- Includes all kernels with compiled shared libraries (.dylib/.so)
+- Skips kernels without implementations or unbuilt kernels
+- Runs all discovered kernels sequentially in alphabetical order
+
+**Explicit mode (has `plugins:` section):**
+```yaml
+plugins:
+  - name: "goertzel"
+    status: ready
+    spec_uri: "primitives/kernels/v1/goertzel@f32"
+```
+- Only runs explicitly listed kernels
+- Empty `plugins:` section means run zero kernels (valid for testing)
+
+### Discovery Criteria
+
+A kernel is auto-detected if:
+1. ✅ Located in `primitives/kernels/v{N}/{name}@{dtype}/` directory
+2. ✅ Has `{name}.c` implementation file
+3. ✅ Has compiled shared library (`lib{name}.dylib` or `lib{name}.so`)
+
+Auto-detected kernels:
+- Are marked with status: `ready`
+- Load runtime config from `spec.yaml` if present
+- Use default config if no spec (W=160, H=80, dtype=float32)
+- Are validated same as explicitly specified kernels
+- Run in alphabetical order for reproducibility
+
+### Use Cases
+
+**Auto-detection mode** - Best for:
+- Comprehensive benchmarking of all available kernels
+- Testing after building new kernels
+- Quick performance surveys
+
+**Explicit mode** - Best for:
+- Focused benchmarking of specific kernels
+- Production runs with known kernel sets
+- Kernel development (test single kernel)
+
 ## Versioning
 - `cortex_version: <int>` — bump on breaking changes.
 
