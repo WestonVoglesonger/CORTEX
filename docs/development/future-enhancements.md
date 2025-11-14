@@ -288,29 +288,27 @@ This document consolidates all planned features, deferred implementations, and f
 
 ### Background Load Profiles
 
-**Status:** Parsed, stress-ng integration pending
+**Status:** ✅ COMPLETED (November 2024)
 
-**Planned Features:**
-- stress-ng integration for idle/medium/heavy system load profiles
-- Controlled chunk dropout/delay simulation
-- Background load startup/teardown orchestration
-- CPU/memory/IO stress scenarios
+**Implemented Features:**
+- ✅ stress-ng integration for idle/medium/heavy system load profiles
+- ✅ Background load startup/teardown orchestration
+- ✅ CPU/memory/IO stress scenarios via stress-ng
+- ✅ Load profile definitions (idle=0%, medium=50%, heavy=90% CPU)
 
-**Current State:**
-- Config field `benchmark.load_profile` parsed but ignored
-- Background load functions are stubs
+**Implementation Details:**
+- Config field `benchmark.load_profile` fully implemented in replayer
+- Background load functions implemented in `src/engine/replayer/replayer.c`
+- Functions: `cortex_replayer_start_background_load()`, `cortex_replayer_stop_background_load()`
+- Process management: proper SIGTERM/SIGKILL handling with 2-second timeout
+- Platform support: Linux (stress-ng), macOS (graceful degradation)
 
-**Implementation Needed:**
-1. stress-ng process management (launch, monitor, cleanup)
-2. Load profile definitions (idle=0%, medium=50%, heavy=90% CPU)
-3. Integration with replayer lifecycle
-4. Documentation and usage examples
+**Code Location:**
+- Implementation: `src/engine/replayer/replayer.c` (functions `prepare_background_load`, `cortex_replayer_start_background_load`, `cortex_replayer_stop_background_load`)
+- Integration: `src/engine/harness/app/main.c` lines 108-112, 116, 130
+- Header: `src/engine/replayer/replayer.h`
 
-**Code Changes Required:**
-- Implement stubs in `src/engine/replayer/replayer.c` lines 107, 115, 154, 216, 221
-- Create `src/engine/harness/bg_load.{h,c}` for stress-ng management
-
-**Documentation:** `docs/development/roadmap.md` lines 98-101
+**Documentation:** `docs/development/roadmap.md`
 
 ---
 

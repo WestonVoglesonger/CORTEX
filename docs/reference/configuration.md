@@ -16,12 +16,12 @@ for plugins. Plugins never read YAML.
 - `plugins[].tolerances` - Per-plugin numerical tolerance specifications (no struct field; loaded from kernel spec.yaml)
 - `plugins[].oracle` - Per-plugin oracle reference paths (no struct field; referenced via kernel spec.yaml)
 - `output.include_raw_data` - Raw telemetry data export flag (parsed to config.h:60 but never used)
-- `benchmark.load_profile` - Background load profile (parsed and passed to replayer but function is stub; replayer.c:107-110)
 
 **Fully Implemented**:
 - `dataset.*` - Used by replayer for streaming EEG data
 - `realtime.scheduler`, `realtime.priority`, `realtime.cpu_affinity`, `realtime.deadline_ms` - Used by scheduler
 - `benchmark.parameters.*` (duration_seconds, repeats, warmup_seconds) - Used by harness lifecycle
+- `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see replayer.c)
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
 

@@ -89,16 +89,15 @@ These fields are **documented** in `docs/reference/configuration.md` and **parse
 - `plugins[].tolerances` - Per-plugin numerical tolerance specs
 - `plugins[].oracle` - Per-plugin oracle reference paths
 - `output.include_raw_data` - Raw telemetry data export flag
-- `benchmark.load_profile` - Parsed but stress-ng integration pending
 
 **Reference**: `docs/reference/configuration.md` "Implementation Status" section
 
 ### Planned Features (From TODOs)
 
-#### Background Load Profiles (Deferred)
-- Stress-ng integration for idle/medium/heavy profiles (replayer.c:216, 107, 115)
-- Controlled chunk dropout/delay simulation (replayer.c:154)
-- Background load startup/teardown functions (currently stubs)
+#### Background Load Profiles
+- [x] Stress-ng integration for idle/medium/heavy profiles (✅ COMPLETED)
+- [x] Background load startup/teardown functions (✅ COMPLETED)
+- [ ] Controlled chunk dropout/delay simulation (deferred - not currently needed)
 
 #### Telemetry & Analysis
 - [x] NDJSON telemetry output format (completed - alternative to CSV)
