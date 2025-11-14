@@ -105,8 +105,15 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     rcfg.enable_dropouts = 0;
     rcfg.load_profile = ctx->run_cfg.benchmark.load_profile;
 
+    /* Start background load profile before replayer */
+    if (cortex_replayer_start_background_load(rcfg.load_profile) != 0) {
+        fprintf(stderr, "[harness] warning: failed to start background load\n");
+        /* Continue anyway - not a fatal error */
+    }
+
     if (cortex_replayer_run(&rcfg, on_replayer_chunk, ctx) != 0) {
         fprintf(stderr, "failed to start replayer\n");
+        cortex_replayer_stop_background_load();
         return -1;
     }
 
@@ -120,6 +127,7 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     }
 
     cortex_replayer_stop();
+    cortex_replayer_stop_background_load();
     cortex_scheduler_flush(ctx->scheduler);
     return 0;
 }

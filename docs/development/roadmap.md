@@ -33,7 +33,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 - Goertzel Bandpower - **COMPLETED**
 
 ### Measurement Infrastructure (In Progress)
-- Background load profiles (stress-ng integration - 5 TODOs in replayer.c) - **DEFERRED**
+- Background load profiles (stress-ng integration) - **COMPLETED**
 
 ## Remaining This Semester (Weeks 7-9)
 

@@ -84,20 +84,35 @@ int cortex_replayer_stop(void);
 void cortex_replayer_enable_dropouts(int enabled);
 
 /*
- * Record the desired background load profile.  The profile is interpreted when
- * starting stress-ng or other load generators (TODO).
+ * Set the background load profile name for validation and logging.
+ * Valid profiles: "idle" (no load), "medium" (50% CPU), "heavy" (90% CPU).
+ * Invalid profiles default to "idle". This is informational only;
+ * actual load is controlled by start_background_load().
  */
 void cortex_replayer_set_load_profile(const char *profile_name);
 
 /*
- * Start a background load generator (stub).  Intended to spawn stress-ng with
- * parameters derived from docs/RUN_CONFIG.md.  Returns 0 on success.
+ * Start background system load using stress-ng.
+ *
+ * Spawns stress-ng process with CPU workers based on profile:
+ *   - "idle":   No load (returns success without spawning)
+ *   - "medium": N/2 CPU workers at 50% load
+ *   - "heavy":  N CPU workers at 90% load
+ *
+ * Returns 0 on success, -1 if already running or fork fails.
+ * Gracefully falls back to idle if stress-ng not found in PATH.
+ * Thread safety: Must be called from main thread only.
  */
 int cortex_replayer_start_background_load(const char *profile_name);
 
 /*
- * Stop the background load generator (stub).  TODO: actually terminate
- * stress-ng and clean up OS resources.
+ * Stop background load and terminate stress-ng process.
+ *
+ * Sends SIGTERM with 2-second grace period, then SIGKILL if needed.
+ * Reaps zombie process with waitpid() to prevent resource leaks.
+ * Safe to call multiple times or when no load is running.
+ *
+ * Thread safety: Must be called from main thread only.
  */
 void cortex_replayer_stop_background_load(void);
 
