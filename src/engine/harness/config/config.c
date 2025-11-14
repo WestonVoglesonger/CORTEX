@@ -139,8 +139,8 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
 
     /* Iterate version directories (v1, v2, etc.) */
     while ((version_entry = readdir(base_dir)) != NULL) {
-        if (version_entry->d_name[0] != 'v') continue;  /* Skip non-version dirs */
         if (version_entry->d_name[0] == '.') continue;  /* Skip hidden */
+        if (version_entry->d_name[0] != 'v') continue;  /* Skip non-version dirs */
 
         char version_path[512];
         snprintf(version_path, sizeof(version_path), "%s/%s",
@@ -298,8 +298,15 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
     while (fgets(line, sizeof(line), f)) {
         char raw[1024];
         strncpy(raw, line, sizeof(raw)-1); raw[sizeof(raw)-1] = '\0';
+
+        /* Strip inline comments before trimming (YAML standard behavior) */
+        char *comment_pos = strchr(raw, '#');
+        if (comment_pos) {
+            *comment_pos = '\0';
+        }
+
         trim(raw);
-        if (raw[0] == '\0' || raw[0] == '#') continue;
+        if (raw[0] == '\0') continue;
 
         if (strcmp(raw, "dataset:") == 0) { st = IN_DATASET; continue; }
         if (strcmp(raw, "realtime:") == 0) { st = IN_REALTIME; continue; }
