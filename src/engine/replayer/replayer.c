@@ -158,6 +158,13 @@ void cortex_replayer_stop_background_load(void) {
 
     /* Send SIGTERM for graceful shutdown */
     if (kill(g_stress_ng_pid, SIGTERM) != 0) {
+        if (errno == ESRCH) {
+            /* Process already dead, but still need to reap it */
+            waitpid(g_stress_ng_pid, NULL, WNOHANG);
+            g_stress_ng_pid = 0;
+            fprintf(stdout, "[load] background load already exited\n");
+            return;
+        }
         perror("[load] failed to send SIGTERM");
         g_stress_ng_pid = 0;
         return;
@@ -171,6 +178,12 @@ void cortex_replayer_stop_background_load(void) {
     for (int i = 0; i < 20; i++) {  /* 20 * 100ms = 2 seconds */
         result = waitpid(g_stress_ng_pid, &status, WNOHANG);
         if (result > 0) {
+            /* Log abnormal exit */
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                fprintf(stderr, "[load] stress-ng exited with code %d\n", WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                fprintf(stderr, "[load] stress-ng killed by signal %d\n", WTERMSIG(status));
+            }
             exited = 1;
             break;
         } else if (result < 0 && errno != EINTR) {
@@ -354,7 +367,7 @@ static char **build_stress_ng_args(const char *profile_name, int num_cpus) {
     }
 
     /* Allocate argv array: ["stress-ng", "--cpu", "N", "--cpu-load", "X", "--timeout", "0", NULL] */
-    char **argv = malloc(8 * sizeof(char *));
+    char **argv = calloc(8, sizeof(char *));
     if (!argv) return NULL;
 
     argv[0] = strdup("stress-ng");
