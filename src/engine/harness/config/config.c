@@ -111,7 +111,13 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     return 0;
 }
 
-/* Comparison function for qsort - sort plugins alphabetically by name */
+/* Comparison function for qsort - sort plugins alphabetically by name
+ *
+ * TODO(Spring 2026 - Quantization): When multiple dtypes exist (f32/q15/q7),
+ * this sorting may produce inconsistent ordering across runs. Should implement
+ * secondary sort by dtype priority: f32 > q15 > q7.
+ * Currently safe because only @f32 variants exist.
+ */
 static int compare_plugin_names(const void *a, const void *b) {
     const cortex_plugin_entry_cfg_t *pa = (const cortex_plugin_entry_cfg_t *)a;
     const cortex_plugin_entry_cfg_t *pb = (const cortex_plugin_entry_cfg_t *)b;
@@ -261,6 +267,10 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
                 strncpy(plugin->spec_version, "1.0.0", sizeof(plugin->spec_version) - 1);
             }
 
+            /* TODO(Spring 2026 - Quantization): Display full {name}@{dtype} instead of
+             * just kernel_name to disambiguate when multiple dtypes exist.
+             * Currently safe because only @f32 variants exist.
+             */
             printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
                    kernel_name, dtype, kernel_path);
 

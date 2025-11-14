@@ -85,6 +85,20 @@ Auto-detected kernels:
 - Production runs with known kernel sets
 - Kernel development (test single kernel)
 
+### Current Limitations
+
+**Multi-Dtype Support** (Spring 2026):
+
+The current auto-detection system has known limitations when multiple data types exist for the same kernel:
+
+1. **Alphabetical sorting limitation**: Kernels are sorted by name only, not by dtype. When `goertzel@f32`, `goertzel@q15`, and `goertzel@q7` all exist, their relative order may vary across runs.
+
+2. **Display ambiguity**: Console output shows kernel name without dtype suffix, making it unclear which variant executed when multiple dtypes are present.
+
+**Current Impact**: These limitations are **not observable** in Fall 2025 because only `@f32` implementations exist. They will be addressed during Spring 2026 quantization implementation.
+
+See `docs/development/future-enhancements.md` for planned fixes and `docs/development/roadmap.md` for implementation timeline.
+
 ## Versioning
 - `cortex_version: <int>` — bump on breaking changes.
 

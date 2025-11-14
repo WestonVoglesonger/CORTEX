@@ -105,6 +105,23 @@ This document consolidates all planned features, deferred implementations, and f
 - ABI: `src/engine/include/cortex_plugin/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
 - Tolerances: `primitives/kernels/v1/{name}@{dtype}/spec.yaml`
 
+**Current Auto-Detection Limitations** (Fall 2025):
+
+The kernel auto-detection system (`cortex_discover_kernels()`) has known limitations that will be addressed during Spring 2026 quantization implementation:
+
+1. **Sorting treats all dtypes equally**: When multiple dtypes exist for the same kernel (e.g., `goertzel@f32`, `goertzel@q15`), the alphabetical sort on kernel name will group them together but their relative order is unpredictable. This may cause inconsistent ordering across runs when multiple dtypes are present.
+
+2. **Display names drop dtype suffix**: User-facing output shows only kernel name (e.g., "goertzel") without the dtype (e.g., "goertzel@f32"), making it ambiguous which variant ran when multiple dtypes are available.
+
+**Impact**: These limitations are **not currently observable** because only `@f32` variants exist (Fall 2025). They will become relevant when `@q15` and `@q7` implementations are added next semester.
+
+**Planned Fixes** (Spring 2026):
+- Enhanced sorting: Primary sort by kernel name, secondary sort by dtype priority (f32 > q15 > q7)
+- Qualified display names: Show full `{name}@{dtype}` in console output and telemetry
+- Dtype filtering: Optional config field to select specific dtypes for auto-detection
+
+See `src/engine/harness/config/config.c` TODOs for implementation locations.
+
 ---
 
 ### Hardware-in-the-Loop (HIL) Infrastructure
