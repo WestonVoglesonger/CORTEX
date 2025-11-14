@@ -246,6 +246,8 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             if (starts_with(raw, "duration_seconds:")) { const char *v = raw + strlen("duration_seconds:"); while (*v==' ') v++; out->benchmark.parameters.duration_seconds = parse_u32(v); continue; }
             if (starts_with(raw, "repeats:")) { const char *v = raw + strlen("repeats:"); while (*v==' ') v++; out->benchmark.parameters.repeats = parse_u32(v); continue; }
             if (starts_with(raw, "warmup_seconds:")) { const char *v = raw + strlen("warmup_seconds:"); while (*v==' ') v++; out->benchmark.parameters.warmup_seconds = parse_u32(v); continue; }
+            /* load_profile can appear after parameters block, so parse it here too */
+            if (starts_with(raw, "load_profile:")) { const char *v = raw + strlen("load_profile:"); while (*v==' ') v++; char tmp[16]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->benchmark.load_profile, tmp, sizeof(out->benchmark.load_profile)-1); out->benchmark.load_profile[sizeof(out->benchmark.load_profile)-1] = '\0'; continue; }
         }
 
         if (st == IN_OUTPUT) {
