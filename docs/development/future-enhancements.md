@@ -105,6 +105,23 @@ This document consolidates all planned features, deferred implementations, and f
 - ABI: `src/engine/include/cortex_plugin/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
 - Tolerances: `primitives/kernels/v1/{name}@{dtype}/spec.yaml`
 
+**Current Auto-Detection Limitations** (Fall 2025):
+
+The kernel auto-detection system (`cortex_discover_kernels()`) has known limitations that will be addressed during Spring 2026 quantization implementation:
+
+1. **Sorting treats all dtypes equally**: When multiple dtypes exist for the same kernel (e.g., `goertzel@f32`, `goertzel@q15`), the alphabetical sort on kernel name will group them together but their relative order is unpredictable. This may cause inconsistent ordering across runs when multiple dtypes are present.
+
+2. **Display names drop dtype suffix**: User-facing output shows only kernel name (e.g., "goertzel") without the dtype (e.g., "goertzel@f32"), making it ambiguous which variant ran when multiple dtypes are available.
+
+**Impact**: These limitations are **not currently observable** because only `@f32` variants exist (Fall 2025). They will become relevant when `@q15` and `@q7` implementations are added next semester.
+
+**Planned Fixes** (Spring 2026):
+- Enhanced sorting: Primary sort by kernel name, secondary sort by dtype priority (f32 > q15 > q7)
+- Qualified display names: Show full `{name}@{dtype}` in console output and telemetry
+- Dtype filtering: Optional config field to select specific dtypes for auto-detection
+
+See `src/engine/harness/config/config.c` TODOs for implementation locations.
+
 ---
 
 ### Hardware-in-the-Loop (HIL) Infrastructure
@@ -288,29 +305,27 @@ This document consolidates all planned features, deferred implementations, and f
 
 ### Background Load Profiles
 
-**Status:** Parsed, stress-ng integration pending
+**Status:** ✅ COMPLETED (November 2024)
 
-**Planned Features:**
-- stress-ng integration for idle/medium/heavy system load profiles
-- Controlled chunk dropout/delay simulation
-- Background load startup/teardown orchestration
-- CPU/memory/IO stress scenarios
+**Implemented Features:**
+- ✅ stress-ng integration for idle/medium/heavy system load profiles
+- ✅ Background load startup/teardown orchestration
+- ✅ CPU/memory/IO stress scenarios via stress-ng
+- ✅ Load profile definitions (idle=0%, medium=50%, heavy=90% CPU)
 
-**Current State:**
-- Config field `benchmark.load_profile` parsed but ignored
-- Background load functions are stubs
+**Implementation Details:**
+- Config field `benchmark.load_profile` fully implemented in replayer
+- Background load functions implemented in `src/engine/replayer/replayer.c`
+- Functions: `cortex_replayer_start_background_load()`, `cortex_replayer_stop_background_load()`
+- Process management: proper SIGTERM/SIGKILL handling with 2-second timeout
+- Platform support: Linux (stress-ng), macOS (graceful degradation)
 
-**Implementation Needed:**
-1. stress-ng process management (launch, monitor, cleanup)
-2. Load profile definitions (idle=0%, medium=50%, heavy=90% CPU)
-3. Integration with replayer lifecycle
-4. Documentation and usage examples
+**Code Location:**
+- Implementation: `src/engine/replayer/replayer.c` (functions `prepare_background_load`, `cortex_replayer_start_background_load`, `cortex_replayer_stop_background_load`)
+- Integration: `src/engine/harness/app/main.c` lines 108-112, 116, 130
+- Header: `src/engine/replayer/replayer.h`
 
-**Code Changes Required:**
-- Implement stubs in `src/engine/replayer/replayer.c` lines 107, 115, 154, 216, 221
-- Create `src/engine/harness/bg_load.{h,c}` for stress-ng management
-
-**Documentation:** `docs/development/roadmap.md` lines 98-101
+**Documentation:** `docs/development/roadmap.md`
 
 ---
 

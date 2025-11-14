@@ -16,16 +16,88 @@ for plugins. Plugins never read YAML.
 - `plugins[].tolerances` - Per-plugin numerical tolerance specifications (no struct field; loaded from kernel spec.yaml)
 - `plugins[].oracle` - Per-plugin oracle reference paths (no struct field; referenced via kernel spec.yaml)
 - `output.include_raw_data` - Raw telemetry data export flag (parsed to config.h:60 but never used)
-- `benchmark.load_profile` - Background load profile (parsed and passed to replayer but function is stub; replayer.c:107-110)
 
 **Fully Implemented**:
 - `dataset.*` - Used by replayer for streaming EEG data
 - `realtime.scheduler`, `realtime.priority`, `realtime.cpu_affinity`, `realtime.deadline_ms` - Used by scheduler
 - `benchmark.parameters.*` (duration_seconds, repeats, warmup_seconds) - Used by harness lifecycle
+- `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see replayer.c)
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
 
 See [docs/development/roadmap.md](../development/roadmap.md) for implementation timeline.
+
+## Kernel Auto-Detection
+
+**Status:** ✅ Implemented (Phase 2)
+
+When the `plugins:` section is **omitted** from the configuration file, CORTEX automatically discovers and runs all built kernels from the `primitives/kernels/` directory.
+
+### Behavior
+
+**Auto-detection mode (no `plugins:` section):**
+```yaml
+cortex_version: 1
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  channels: 64
+  sample_rate_hz: 160
+# No plugins section - auto-detect mode
+```
+- Scans `primitives/kernels/v*/` for built kernels
+- Includes all kernels with compiled shared libraries (.dylib/.so)
+- Skips kernels without implementations or unbuilt kernels
+- Runs all discovered kernels sequentially in alphabetical order
+
+**Explicit mode (has `plugins:` section):**
+```yaml
+plugins:
+  - name: "goertzel"
+    status: ready
+    spec_uri: "primitives/kernels/v1/goertzel@f32"
+```
+- Only runs explicitly listed kernels
+- Empty `plugins:` section means run zero kernels (valid for testing)
+
+### Discovery Criteria
+
+A kernel is auto-detected if:
+1. ✅ Located in `primitives/kernels/v{N}/{name}@{dtype}/` directory
+2. ✅ Has `{name}.c` implementation file
+3. ✅ Has compiled shared library (`lib{name}.dylib` or `lib{name}.so`)
+
+Auto-detected kernels:
+- Are marked with status: `ready`
+- Load runtime config from `spec.yaml` if present
+- Use default config if no spec (W=160, H=80, dtype=float32)
+- Are validated same as explicitly specified kernels
+- Run in alphabetical order for reproducibility
+
+### Use Cases
+
+**Auto-detection mode** - Best for:
+- Comprehensive benchmarking of all available kernels
+- Testing after building new kernels
+- Quick performance surveys
+
+**Explicit mode** - Best for:
+- Focused benchmarking of specific kernels
+- Production runs with known kernel sets
+- Kernel development (test single kernel)
+
+### Current Limitations
+
+**Multi-Dtype Support** (Spring 2026):
+
+The current auto-detection system has known limitations when multiple data types exist for the same kernel:
+
+1. **Alphabetical sorting limitation**: Kernels are sorted by name only, not by dtype. When `goertzel@f32`, `goertzel@q15`, and `goertzel@q7` all exist, their relative order may vary across runs.
+
+2. **Display ambiguity**: Console output shows kernel name without dtype suffix, making it unclear which variant executed when multiple dtypes are present.
+
+**Current Impact**: These limitations are **not observable** in Fall 2025 because only `@f32` implementations exist. They will be addressed during Spring 2026 quantization implementation.
+
+See `docs/development/future-enhancements.md` for planned fixes and `docs/development/roadmap.md` for implementation timeline.
 
 ## Versioning
 - `cortex_version: <int>` — bump on breaking changes.

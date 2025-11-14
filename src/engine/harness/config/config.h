@@ -68,6 +68,7 @@ typedef struct cortex_run_config {
     cortex_output_cfg_t output;
     cortex_plugin_entry_cfg_t plugins[CORTEX_MAX_PLUGINS];
     size_t plugin_count;
+    int auto_detect_kernels;  /* 1 if no plugins: section in YAML, 0 otherwise */
 } cortex_run_config_t;
 
 /* Load kernel spec from spec.yaml. Returns 0 on success. */
@@ -78,6 +79,9 @@ int cortex_config_load(const char *path, cortex_run_config_t *out);
 
 /* Validate required invariants; returns 0 on success, -1 on error. */
 int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err_sz);
+
+/* Auto-detect and populate built kernels. Returns number of kernels found, -1 on error. */
+int cortex_discover_kernels(cortex_run_config_t *cfg);
 
 #endif /* CORTEX_HARNESS_CONFIG_H */
 

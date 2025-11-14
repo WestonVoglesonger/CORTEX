@@ -11,7 +11,7 @@ Purpose: Orchestrate replayer → scheduler → plugins behind the stable ABI, a
 - Enforce warm‑up vs measured windows; run for duration and repeats.
 - Record per‑window telemetry. Week 3: print timing to stdout and optionally write a basic CSV if a telemetry path is provided. (JSON writers and summaries are planned.)
 - Apply realtime attributes (policy, priority, CPU affinity) with graceful degradation.
-- Planned: background load (stress‑ng) and RAPL energy (Linux only).
+- ✅ Implemented: background load (stress‑ng). Planned: RAPL energy (Linux only).
 
 ### File Layout
 - `src/engine/harness/app/main.c` — CLI entrypoint; loads YAML; orchestrates lifecycle.
@@ -71,7 +71,7 @@ The harness loads kernel specifications from `primitives/kernels/v1/{name}@{dtyp
 - Planned: run_id, dtype, load_profile, warmup flag, energy_j/power_mw, and summary aggregates (p50/p95/p99, miss rate).
 
 ### Background Load Profiles
-- Planned: idle / medium / heavy mapped to stress‑ng (Linux). Disabled on non‑Linux.
+- ✅ Implemented: idle / medium / heavy mapped to stress‑ng. Cross-platform (macOS/Linux with graceful degradation).
 
 ### Cross‑Platform & Privileges
 - Realtime (`SCHED_FIFO`), affinity, RAPL and stress‑ng are Linux‑specific; harness must degrade gracefully on macOS/CI.
