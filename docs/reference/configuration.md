@@ -142,7 +142,75 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 | parameters.duration_seconds | int | Total time |
 | parameters.repeats | int | Number of runs |
 | parameters.warmup_seconds | int | Discard at start |
-| load_profile | enum | `idle` \| `medium` \| `heavy` |
+| load_profile | enum | `idle` \| `medium` \| `heavy` (see detailed section below) |
+
+#### Background Load Profiles (`load_profile`)
+
+**Status:** ✅ Fully implemented in `src/engine/replayer/replayer.c`
+
+Background load profiles simulate system stress during benchmarking to test kernel robustness under realistic operating conditions.
+
+**Available Profiles:**
+
+| Profile | Description | stress-ng Parameters | Use Case |
+|---------|-------------|---------------------|----------|
+| `idle` | No artificial load | (none) | Clean baseline measurements, default mode |
+| `medium` | Moderate CPU load | `--cpu N/2 --cpu-load 50%` | Simulate typical system usage |
+| `heavy` | High CPU load | `--cpu N --cpu-load 90%` | Stress test under heavy contention |
+
+Where `N` = number of CPU cores on the system.
+
+**Dependency:**
+
+Load profiles require the **stress-ng** system tool:
+
+- **macOS**: `brew install stress-ng`
+- **Linux (Ubuntu/Debian)**: `sudo apt install stress-ng`
+- **Linux (RHEL/Fedora)**: `sudo yum install stress-ng`
+
+**Graceful Fallback:**
+
+If `stress-ng` is not installed:
+- System prints: `[load] stress-ng not found in PATH, running without background load`
+- Automatically falls back to `idle` mode (no artificial load)
+- Benchmark continues normally without errors
+
+**Example Configuration:**
+
+```yaml
+benchmark:
+  parameters:
+    duration_seconds: 120
+    repeats: 5
+    warmup_seconds: 10
+  load_profile: "medium"  # Requires stress-ng installed
+```
+
+**Console Output:**
+
+When `stress-ng` is available:
+```
+[load] started background load: medium (PID 12345, 4 CPUs @ 50% load)
+```
+
+When `stress-ng` is not installed:
+```
+[load] stress-ng not found in PATH, running without background load
+```
+
+**Recommended Usage:**
+
+- **Development/Testing**: Use `idle` for reproducible baseline measurements
+- **Production Validation**: Use `medium` or `heavy` to validate robustness
+- **Continuous Integration**: Use `idle` (stress-ng may not be in CI environment)
+
+**Implementation Details:**
+
+See `src/engine/replayer/replayer.c` (lines 350-455) for the complete background load implementation including:
+- stress-ng process spawning via `fork()`/`execv()`
+- Automatic CPU count detection
+- Process lifecycle management (start/stop)
+- Graceful error handling
 
 ### output  → used by **Telemetry**
 | Key | Type | Notes |
