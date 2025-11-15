@@ -126,98 +126,67 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     try:
-        # Use Popen for filtered output with unbuffered I/O
+        # Launch subprocess and capture output
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=False,  # Binary mode for unbuffered I/O
+            text=True,
             cwd='.',
-            bufsize=0,  # Unbuffered
             env=env
         )
 
-        current_repeat = 0
-        in_warmup = False
+        # Show initial info
+        if total_time and repeats and duration:
+            print(f"  Expected duration: ~{total_time}s (warmup {warmup}s + {repeats} × {duration}s repeats)")
 
-        # Read output line by line and filter
-        while True:
-            # Read from both stdout and stderr (in binary mode)
-            stdout_line_bytes = process.stdout.readline() if process.stdout else None
-            stderr_line_bytes = process.stderr.readline() if process.stderr else None
+        # Record start time for progress tracking
+        start_time = time.time()
 
-            # Check if process is done
-            if process.poll() is not None and not stdout_line_bytes and not stderr_line_bytes:
-                break
+        # Time-based progress loop - updates every 0.5s
+        while process.poll() is None:
+            elapsed = time.time() - start_time
 
-            # Process stdout
-            if stdout_line_bytes:
-                try:
-                    line = stdout_line_bytes.decode('utf-8').rstrip()
-                except UnicodeDecodeError:
-                    continue  # Skip lines that can't be decoded
+            if total_time and total_time > 0:
+                # Calculate progress
+                progress_pct = min(100.0, (elapsed / total_time) * 100)
+                remaining = max(0, total_time - elapsed)
 
-                # Update progress tracking
-                if '[harness] Warmup phase' in line:
-                    in_warmup = True
-                    current_repeat = 0
-                elif '[harness] Repeat' in line and '/' in line:
-                    # Extract repeat number (e.g., "Repeat 3/5")
-                    try:
-                        parts = line.split('Repeat')[1].split('/')[0].strip()
-                        current_repeat = int(parts)
-                        in_warmup = False
-                    except:
-                        pass
-
-                # Filter output based on verbose flag
-                if verbose:
-                    print(line)
+                # Estimate current phase
+                if elapsed < warmup:
+                    status = "Warmup"
                 else:
-                    # Show only critical messages, hide all noise
-                    # Show: [harness] (select), [cortex], errors, status symbols
-                    # Hide: [load], [telemetry], stress-ng, [replayer], [scheduler]
+                    current_repeat = min(repeats, int((elapsed - warmup) / duration) + 1)
+                    status = f"Repeat {current_repeat}/{repeats}"
 
-                    if line.startswith('[harness]'):
-                        # Only show important harness messages
-                        if '[harness] Warmup phase' in line:
-                            print(line)
-                            if total_time:
-                                print(f"  Expected duration: ~{total_time}s (warmup {warmup}s + {repeats} × {duration}s repeats)")
-                        elif '[harness] Repeat' in line:
-                            # Update progress bar in place
-                            if total_time and repeats and duration:
-                                elapsed_pct = ((current_repeat - 1) * duration + warmup) / total_time * 100
-                                progress_bar = _make_progress_bar(elapsed_pct, 30)
-                                print(f"\r{progress_bar} Repeat {current_repeat}/{repeats}", end='', flush=True)
-                            else:
-                                print(f"\rRepeat {current_repeat}/{repeats}", end='', flush=True)
-                        elif '[harness] Completed plugin' in line:
-                            # Final update to 100%
-                            if total_time and repeats:
-                                progress_bar = _make_progress_bar(100, 30)
-                                print(f"\r{progress_bar} Completed", flush=True)
-                            else:
-                                print()  # New line after progress
-                        elif '[harness] Generating' in line or '[harness] Report generated' in line:
-                            # Skip report generation messages
-                            pass
-                        elif '[harness] Running plugin' in line:
-                            # Skip duplicate "Running plugin" messages
-                            pass
-                    elif line.startswith('[cortex]'):
-                        print(line)
-                    elif line.startswith('Error') or line.startswith('✓') or line.startswith('✗'):
-                        print(line)
-                    # Silently drop everything else: [load], [telemetry], stress-ng, [replayer], [scheduler]
+                # Update progress bar in place
+                progress_bar = _make_progress_bar(progress_pct, 30)
+                print(f"\r{progress_bar} {progress_pct:5.1f}% | {remaining:3.0f}s remaining | {status}    ", end='', flush=True)
+            else:
+                # No timing info - just show elapsed time
+                print(f"\rRunning... {elapsed:.0f}s elapsed", end='', flush=True)
 
-            # Silently drop all stderr (stress-ng messages)
+            # Update every 0.5 seconds
+            time.sleep(0.5)
 
-        # Wait for process to complete
+        # Process finished - show 100% completion
+        if total_time:
+            progress_bar = _make_progress_bar(100, 30)
+            print(f"\r{progress_bar} 100.0% | Completed{' ' * 30}")
+        else:
+            print()  # New line
+
+        # Wait for process and get return code
         returncode = process.wait()
+
+        # Capture any output for error reporting
+        stdout, stderr = process.communicate()
 
         if returncode != 0:
             print(f"\nError: Harness execution failed (exit code {returncode})")
+            if stderr:
+                print("Error output:")
+                print(stderr)
             return None
 
         # Return the run directory path
