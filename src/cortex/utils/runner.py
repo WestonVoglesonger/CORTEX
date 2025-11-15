@@ -125,58 +125,59 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Warning: Sleep prevention tool not found")
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
+    # Set up output redirection based on verbose flag
+    log_file_handle = None
     try:
-        # Launch subprocess and capture output
+        if verbose:
+            # Verbose mode: let C harness print directly to terminal
+            stdout_dest = None
+            stderr_dest = None
+            show_spinner = False
+        else:
+            # Clean mode: redirect to log file and show spinner
+            run_dir = get_run_directory(run_name)
+            log_file = run_dir / 'harness.log'
+            log_file_handle = open(log_file, 'w', buffering=1)  # Line buffered
+            stdout_dest = log_file_handle
+            stderr_dest = log_file_handle
+            show_spinner = True
+
+        # Launch subprocess
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stdout=stdout_dest,
+            stderr=stderr_dest,
             cwd='.',
             env=env
         )
 
         # Record start time for progress tracking
         start_time = time.time()
-
-        # Time-based progress loop - updates every 0.5s
         spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
-        while process.poll() is None:
-            elapsed = time.time() - start_time
+        # Wait for process to complete
+        if show_spinner:
+            # Clean mode: show spinner
+            while process.poll() is None:
+                elapsed = time.time() - start_time
+                spinner_idx = int(elapsed * 2) % len(spinner_chars)
+                print(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ", end='', flush=True)
+                time.sleep(0.5)
+            # Clear progress line
+            print(f"\r{' ' * 60}\r", end='')
+        else:
+            # Verbose mode: just wait without spinner
+            process.wait()
 
-            if total_time and total_time > 0:
-                if elapsed >= total_time:
-                    # Benchmark done, now in post-processing (report generation)
-                    spinner_idx = int(elapsed * 2) % len(spinner_chars)
-                    print(f"\r[Processing results {spinner_chars[spinner_idx]}]    ", end='', flush=True)
-                else:
-                    # Normal benchmark progress
-                    progress_pct = (elapsed / total_time) * 100
-                    remaining = total_time - elapsed
-                    progress_bar = _make_progress_bar(progress_pct, 30)
-                    print(f"\r{progress_bar} | {remaining:3.0f}s remaining    ", end='', flush=True)
-            else:
-                # No timing info - just show elapsed time
-                print(f"\rRunning... {elapsed:.0f}s elapsed", end='', flush=True)
-
-            # Update every 0.5 seconds
-            time.sleep(0.5)
-
-        # Process finished - clear progress line
-        print(f"\r{' ' * 60}\r", end='')
-
-        # Wait for process and get return code
-        returncode = process.wait()
-
-        # Capture any output for error reporting
-        stdout, stderr = process.communicate()
+        # Get return code
+        returncode = process.poll()
 
         if returncode != 0:
             print(f"\nError: Harness execution failed (exit code {returncode})")
-            if stderr:
-                print("Error output:")
-                print(stderr)
+            if not verbose and log_file_handle:
+                print(f"Check log file for details: {log_file}")
+            else:
+                print("Check output above for error details")
             return None
 
         # Return the run directory path
@@ -190,6 +191,13 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"Error running harness: {e}")
         # Note: Cleanup is handled by the calling function (run_single_kernel or run_all_kernels)
         return None
+    finally:
+        # Clean up log file handle
+        if log_file_handle:
+            try:
+                log_file_handle.close()
+            except Exception:
+                pass  # Ignore cleanup errors
 
 def _make_progress_bar(percent: float, width: int = 30) -> str:
     """Create a simple text progress bar"""
