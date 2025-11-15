@@ -194,7 +194,7 @@ def _make_progress_bar(percent: float, width: int = 30) -> str:
     """Create a simple text progress bar"""
     filled = int(width * percent / 100)
     bar = '█' * filled + '░' * (width - filled)
-    return f"[{bar}] {percent:5.1f}%"
+    return f"[{bar}]"
 
 def run_single_kernel(
     kernel_name: str,
