@@ -74,8 +74,34 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"Error: {config_path} exists but is not a file")
         return None
 
-    # Run harness
+    # Run harness with sleep prevention wrapper
     cmd = [str(harness_binary), 'run', config_path]
+
+    # Add platform-specific sleep prevention wrapper
+    import platform
+    import shutil
+
+    system = platform.system()
+    sleep_prevention_tool = None
+
+    if system == 'Darwin':
+        # macOS: use caffeinate
+        if shutil.which('caffeinate'):
+            cmd = ['caffeinate', '-dims'] + cmd
+            sleep_prevention_tool = 'caffeinate'
+    elif system == 'Linux':
+        # Linux: use systemd-inhibit if available
+        if shutil.which('systemd-inhibit'):
+            cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
+            sleep_prevention_tool = 'systemd-inhibit'
+
+    # Notify user of sleep prevention status
+    if sleep_prevention_tool:
+        print(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
+        print(f"[cortex] Display will stay on during benchmark")
+    elif system in ['Darwin', 'Linux']:
+        print(f"[cortex] Warning: Sleep prevention tool not found")
+        print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     try:
         result = subprocess.run(
