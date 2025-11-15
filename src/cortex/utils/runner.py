@@ -140,17 +140,22 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         start_time = time.time()
 
         # Time-based progress loop - updates every 0.5s
+        spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
         while process.poll() is None:
             elapsed = time.time() - start_time
 
             if total_time and total_time > 0:
-                # Calculate progress
-                progress_pct = min(100.0, (elapsed / total_time) * 100)
-                remaining = max(0, total_time - elapsed)
-
-                # Update progress bar in place
-                progress_bar = _make_progress_bar(progress_pct, 30)
-                print(f"\r{progress_bar} | {remaining:3.0f}s remaining    ", end='', flush=True)
+                if elapsed >= total_time:
+                    # Benchmark done, now in post-processing (report generation)
+                    spinner_idx = int(elapsed * 2) % len(spinner_chars)
+                    print(f"\r[Processing results {spinner_chars[spinner_idx]}]    ", end='', flush=True)
+                else:
+                    # Normal benchmark progress
+                    progress_pct = (elapsed / total_time) * 100
+                    remaining = total_time - elapsed
+                    progress_bar = _make_progress_bar(progress_pct, 30)
+                    print(f"\r{progress_bar} | {remaining:3.0f}s remaining    ", end='', flush=True)
             else:
                 # No timing info - just show elapsed time
                 print(f"\rRunning... {elapsed:.0f}s elapsed", end='', flush=True)
@@ -158,12 +163,8 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
             # Update every 0.5 seconds
             time.sleep(0.5)
 
-        # Process finished - show 100% completion
-        if total_time:
-            progress_bar = _make_progress_bar(100, 30)
-            print(f"\r{progress_bar} | Completed{' ' * 30}")
-        else:
-            print()  # New line
+        # Process finished - clear progress line
+        print(f"\r{' ' * 60}\r", end='')
 
         # Wait for process and get return code
         returncode = process.wait()
