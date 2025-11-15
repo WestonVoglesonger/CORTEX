@@ -135,9 +135,16 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
 static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     const cortex_plugin_entry_cfg_t *plugin_cfg = &ctx->run_cfg.plugins[plugin_idx];
     const char *plugin_name = plugin_cfg->name;
-    
+
     printf("[harness] Running plugin: %s\n", plugin_name);
-    
+
+    /* Collect system information for telemetry metadata */
+    cortex_system_info_t sysinfo;
+    if (cortex_collect_system_info(&sysinfo) != 0) {
+        fprintf(stderr, "[harness] warning: failed to collect system info\n");
+        memset(&sysinfo, 0, sizeof(sysinfo));
+    }
+
     /* Step 1: Get plugin config pointer */
     /* Step 2: Build per-plugin telemetry path */
     /* Track starting telemetry count for this plugin */
@@ -226,11 +233,13 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     if (cortex_create_directories(ctx->run_cfg.output.directory) == 0) {
         if (strcmp(format, "ndjson") == 0) {
             cortex_telemetry_write_ndjson_filtered(telemetry_output_path, &ctx->telemetry,
-                                                   telemetry_start_count, telemetry_end_count);
+                                                   telemetry_start_count, telemetry_end_count,
+                                                   &sysinfo);
         } else {
             /* Default to CSV for unknown formats or explicit "csv" */
             cortex_telemetry_write_csv_filtered(telemetry_output_path, &ctx->telemetry,
-                                                telemetry_start_count, telemetry_end_count);
+                                                telemetry_start_count, telemetry_end_count,
+                                                &sysinfo);
         }
     }
     
