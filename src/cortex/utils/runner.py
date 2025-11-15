@@ -1,5 +1,6 @@
 """Experiment execution"""
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional, List
@@ -11,6 +12,7 @@ from cortex.utils.paths import (
     get_run_directory
 )
 import shutil
+import yaml
 
 
 def _cleanup_partial_run(run_dir: Path) -> None:
@@ -49,7 +51,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     Args:
         config_path: Path to configuration file
         run_name: Name of the run for organizing results
-        verbose: Kept for backward compatibility (output always shown in real-time)
+        verbose: Show all output including stress-ng and telemetry
 
     Returns:
         Run directory path if successful, None otherwise
@@ -73,6 +75,17 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     if not config_file.is_file():
         print(f"Error: {config_path} exists but is not a file")
         return None
+
+    # Read config to get benchmark parameters for progress tracking
+    try:
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
+        duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
+        repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
+        warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
+        total_time = warmup + (repeats * duration)
+    except:
+        total_time = None  # Fall back to no progress calculation
 
     # Run harness with sleep prevention wrapper
     cmd = [str(harness_binary), 'run', config_path]
@@ -104,15 +117,85 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     try:
-        # Always stream output in real-time for better user feedback
-        result = subprocess.run(
+        # Use Popen for filtered output
+        process = subprocess.Popen(
             cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            cwd='.'
+            cwd='.',
+            bufsize=1  # Line buffered
         )
 
-        if result.returncode != 0:
-            print(f"Error: Harness execution failed (exit code {result.returncode})")
+        current_repeat = 0
+        in_warmup = False
+
+        # Read output line by line and filter
+        while True:
+            # Read from both stdout and stderr
+            stdout_line = process.stdout.readline() if process.stdout else None
+            stderr_line = process.stderr.readline() if process.stderr else None
+
+            # Check if process is done
+            if process.poll() is not None and not stdout_line and not stderr_line:
+                break
+
+            # Process stdout
+            if stdout_line:
+                line = stdout_line.rstrip()
+
+                # Update progress tracking
+                if '[harness] Warmup phase' in line:
+                    in_warmup = True
+                    current_repeat = 0
+                elif '[harness] Repeat' in line and '/' in line:
+                    # Extract repeat number (e.g., "Repeat 3/5")
+                    try:
+                        parts = line.split('Repeat')[1].split('/')[0].strip()
+                        current_repeat = int(parts)
+                        in_warmup = False
+                    except:
+                        pass
+
+                # Filter output based on verbose flag
+                if verbose:
+                    print(line)
+                else:
+                    # Show important messages, hide noise
+                    if (line.startswith('[harness]') or
+                        line.startswith('[load]') or
+                        line.startswith('[cortex]') or
+                        line.startswith('Error') or
+                        line.startswith('✓') or
+                        line.startswith('✗')):
+
+                        # Show progress indicator for repeats
+                        if '[harness] Repeat' in line:
+                            if total_time and repeats:
+                                elapsed_pct = ((current_repeat - 1) * duration + warmup) / total_time * 100
+                                progress_bar = _make_progress_bar(elapsed_pct, 30)
+                                print(f"\r{progress_bar} {line}", end='')
+                                sys.stdout.flush()
+                            else:
+                                print(line)
+                        elif '[harness] Warmup phase' in line:
+                            print(line)
+                            if total_time:
+                                print(f"  Progress: Warmup → {repeats} repeats × {duration}s = ~{total_time}s total")
+                        else:
+                            # For non-repeat messages, print on new line
+                            if current_repeat > 0 and not line.startswith('✓'):
+                                print()  # New line after progress bar
+                            print(line)
+                    # Silently drop: [telemetry], stress-ng, [replayer], [scheduler]
+
+            # Silently drop all stderr (stress-ng messages)
+
+        # Wait for process to complete
+        returncode = process.wait()
+
+        if returncode != 0:
+            print(f"\nError: Harness execution failed (exit code {returncode})")
             return None
 
         # Return the run directory path
@@ -126,6 +209,12 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"Error running harness: {e}")
         # Note: Cleanup is handled by the calling function (run_single_kernel or run_all_kernels)
         return None
+
+def _make_progress_bar(percent: float, width: int = 30) -> str:
+    """Create a simple text progress bar"""
+    filled = int(width * percent / 100)
+    bar = '█' * filled + '░' * (width - filled)
+    return f"[{bar}] {percent:5.1f}%"
 
 def run_single_kernel(
     kernel_name: str,
