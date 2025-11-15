@@ -3,6 +3,9 @@ from cortex.commands import build, validate, run, analyze
 from cortex.utils.runner import run_all_kernels
 from cortex.utils.analyzer import run_full_analysis
 from cortex.utils.paths import generate_run_name, get_analysis_dir
+from cortex.utils.build_helper import smart_build
+from cortex.utils.config import load_base_config
+from cortex.utils.discovery import discover_kernels
 import argparse
 
 def setup_parser(parser):
@@ -69,23 +72,68 @@ def execute(args):
     print(f"  {step+1}. Generate comparison analysis")
     print()
 
-    # Step 1: Build
+    # Step 1: Build (smart incremental)
     if not args.skip_build:
         print("\n" + "=" * 80)
-        print("STEP 1: BUILD")
+        print("STEP 1: BUILD (Smart Incremental)")
         print("=" * 80)
 
-        build_args = argparse.Namespace(
-            clean=True,
-            verbose=args.verbose,
-            kernels_only=False,
-            jobs=None
+        # Determine which kernels we'll run
+        try:
+            base_config = load_base_config()
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            return 1
+
+        # Get list of kernels that will be run
+        if 'plugins' in base_config and base_config['plugins']:
+            # Explicit mode: build only listed kernels
+            kernel_names = [p['name'] for p in base_config['plugins'] if p.get('status') == 'ready']
+            print(f"Building kernels from config: {kernel_names}")
+
+            # Get spec URIs for these kernels
+            all_kernels = discover_kernels()
+            kernel_map = {k['display_name']: k for k in all_kernels}
+            kernel_spec_uris = [kernel_map[name]['spec_uri'] for name in kernel_names if name in kernel_map]
+        else:
+            # Auto-detect mode: build all built kernels (or check if they need rebuilding)
+            print("Auto-detect mode: checking all kernels")
+            kernels = discover_kernels()
+            kernel_spec_uris = [k['spec_uri'] for k in kernels if k.get('spec_uri')]
+
+        print(f"\nChecking {len(kernel_spec_uris)} kernel(s)...")
+        print()
+
+        # Smart incremental build
+        build_result = smart_build(
+            kernel_spec_uris,
+            force_rebuild=False,
+            verbose=args.verbose
         )
 
-        result = build.execute(build_args)
-        if result != 0:
+        if not build_result['success']:
             print("\n✗ Build failed")
+            for error in build_result['errors']:
+                print(f"  - {error}")
             return 1
+
+        # Summary
+        print("\n" + "=" * 80)
+        print("Build Summary")
+        print("=" * 80)
+        if build_result['harness_rebuilt']:
+            print("  ✓ Harness rebuilt")
+        else:
+            print("  ✓ Harness up-to-date")
+
+        if build_result['kernels_rebuilt']:
+            print(f"  ✓ {len(build_result['kernels_rebuilt'])} kernel(s) rebuilt:")
+            for k in build_result['kernels_rebuilt']:
+                print(f"     - {k}")
+        if build_result['kernels_skipped']:
+            print(f"  ⊙ {len(build_result['kernels_skipped'])} kernel(s) up-to-date")
+
+        print("=" * 80)
 
     # Step 2: Validate
     if not args.skip_validate:
