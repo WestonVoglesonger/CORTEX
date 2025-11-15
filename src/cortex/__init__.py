@@ -14,7 +14,7 @@ def main():
     """Main CLI entry point"""
     from cortex.commands import (
         build, run, analyze, pipeline,
-        list_kernels, validate, clean
+        list_kernels, validate, clean, check_system
     )
 
     parser = argparse.ArgumentParser(
@@ -30,6 +30,7 @@ Examples:
   cortex pipeline                   # Full pipeline (build+run+analyze)
   cortex list                       # Show available kernels
   cortex validate                   # Test kernels against oracles
+  cortex check-system               # Check system configuration
 
 For more info: https://github.com/WestonVoglesonger/CORTEX
         '''
@@ -65,6 +66,10 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     clean_parser = subparsers.add_parser('clean', help='Clean build/results')
     clean.setup_parser(clean_parser)
 
+    # Check-system command
+    check_system_parser = subparsers.add_parser('check-system', help='Check system configuration for benchmarking')
+    check_system.setup_parser(check_system_parser)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -87,6 +92,8 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(validate.execute(args))
         elif args.command == 'clean':
             sys.exit(clean.execute(args))
+        elif args.command == 'check-system':
+            sys.exit(check_system.execute(args))
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
         sys.exit(130)
