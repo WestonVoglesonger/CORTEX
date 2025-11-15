@@ -159,7 +159,7 @@ static int test_window_formation(void) {
     plugin_config.channels = channels;
     plugin_config.dtype = 1;
     
-    int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
+    int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
     TEST_ASSERT_EQ(0, rc, "Plugin registration should succeed");
     
     /* Feed second hop - should trigger window dispatch */
@@ -211,9 +211,9 @@ static int test_overlapping_windows(void) {
     plugin_config.hop_samples = hop;
     plugin_config.channels = channels;
     plugin_config.dtype = 1;
-    
-    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
-    
+
+    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
+
     /* Create ramp pattern: 0, 1, 2, 3, 4, ... */
     /* Feed 3 hops to generate 2 windows */
     for (int hop_idx = 0; hop_idx < 3; hop_idx++) {
@@ -312,7 +312,7 @@ static int test_multiple_plugins(void) {
     plugin_config.dtype = 1;
     
     for (int i = 0; i < 3; i++) {
-        int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
+        int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
         TEST_ASSERT_EQ(0, rc, "Plugin registration should succeed");
     }
     
@@ -395,9 +395,9 @@ static int test_flush(void) {
     plugin_config.hop_samples = hop;
     plugin_config.channels = channels;
     plugin_config.dtype = 1;
-    
-    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
-    
+
+    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
+
     /* Feed 2.5 hops worth of data */
     float chunk[8];
     for (int i = 0; i < 8; i++) chunk[i] = (float)i;
@@ -481,7 +481,7 @@ static int test_sequential_execution(void) {
         plugin_config.channels = channels;
         plugin_config.dtype = 1;
 
-        int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
+        int rc = cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
         TEST_ASSERT_EQ(0, rc, "Plugin registration should succeed");
 
         /* Feed some data to trigger processing */
@@ -534,9 +534,9 @@ static int test_data_continuity(void) {
     plugin_config.hop_samples = hop;
     plugin_config.channels = channels;
     plugin_config.dtype = 1;
-    
-    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config);
-    
+
+    cortex_scheduler_register_plugin(scheduler, &api, &plugin_config, "test_plugin");
+
     /* Feed continuous ramp: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ... */
     for (int chunk_idx = 0; chunk_idx < 5; chunk_idx++) {
         float chunk[4];
