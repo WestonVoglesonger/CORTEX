@@ -136,10 +136,6 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
             env=env
         )
 
-        # Show initial info
-        if total_time and repeats and duration:
-            print(f"  Expected duration: ~{total_time}s (warmup {warmup}s + {repeats} × {duration}s repeats)")
-
         # Record start time for progress tracking
         start_time = time.time()
 
