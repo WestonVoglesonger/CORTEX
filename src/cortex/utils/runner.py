@@ -148,16 +148,9 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
                 progress_pct = min(100.0, (elapsed / total_time) * 100)
                 remaining = max(0, total_time - elapsed)
 
-                # Estimate current phase
-                if elapsed < warmup:
-                    status = "Warmup"
-                else:
-                    current_repeat = min(repeats, int((elapsed - warmup) / duration) + 1)
-                    status = f"Repeat {current_repeat}/{repeats}"
-
                 # Update progress bar in place
                 progress_bar = _make_progress_bar(progress_pct, 30)
-                print(f"\r{progress_bar} {progress_pct:5.1f}% | {remaining:3.0f}s remaining | {status}    ", end='', flush=True)
+                print(f"\r{progress_bar} | {remaining:3.0f}s remaining    ", end='', flush=True)
             else:
                 # No timing info - just show elapsed time
                 print(f"\rRunning... {elapsed:.0f}s elapsed", end='', flush=True)
@@ -168,7 +161,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         # Process finished - show 100% completion
         if total_time:
             progress_bar = _make_progress_bar(100, 30)
-            print(f"\r{progress_bar} 100.0% | Completed{' ' * 30}")
+            print(f"\r{progress_bar} | Completed{' ' * 30}")
         else:
             print()  # New line
 
