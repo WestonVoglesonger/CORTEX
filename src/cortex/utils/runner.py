@@ -49,7 +49,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     Args:
         config_path: Path to configuration file
         run_name: Name of the run for organizing results
-        verbose: Show harness output
+        verbose: Kept for backward compatibility (output always shown in real-time)
 
     Returns:
         Run directory path if successful, None otherwise
@@ -104,17 +104,15 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     try:
+        # Always stream output in real-time for better user feedback
         result = subprocess.run(
             cmd,
-            capture_output=not verbose,
             text=True,
             cwd='.'
         )
 
         if result.returncode != 0:
             print(f"Error: Harness execution failed (exit code {result.returncode})")
-            if not verbose and result.stderr:
-                print(result.stderr)
             return None
 
         # Return the run directory path
