@@ -339,8 +339,10 @@ int main(int argc, char **argv) {
                  ctx.run_cfg.output.directory);
 
         printf("[harness] Generating HTML report: %s\n", report_path);
+        fflush(stdout);
         if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
             printf("[harness] Report generated successfully\n");
+            fflush(stdout);
         } else {
             fprintf(stderr, "[harness] Failed to generate report\n");
         }
