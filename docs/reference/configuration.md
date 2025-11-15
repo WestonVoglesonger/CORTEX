@@ -8,7 +8,6 @@ for plugins. Plugins never read YAML.
 
 **Not Yet Implemented** (Parsed but not used by harness):
 - `system.name`, `system.description` - Run identification metadata (no struct fields exist)
-- `power.governor`, `power.turbo` - CPU power management settings (no struct fields exist)
 - `benchmark.metrics` array - Metric selection (currently collects all metrics; no struct field exists)
 - `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters (no struct fields exist)
 - `plugins[].params` - Kernel-specific parameters (parsed to config.h:29 but set to NULL in main.c:82-83)
@@ -16,6 +15,13 @@ for plugins. Plugins never read YAML.
 - `plugins[].tolerances` - Per-plugin numerical tolerance specifications (no struct field; loaded from kernel spec.yaml)
 - `plugins[].oracle` - Per-plugin oracle reference paths (no struct field; referenced via kernel spec.yaml)
 - `output.include_raw_data` - Raw telemetry data export flag (parsed to config.h:60 but never used)
+
+**Temporary Implementations** (FALL 2025 - See docs/architecture/adr-001-temporary-host-power-config.md):
+- `power.governor`, `power.turbo` - ⚠️ TEMPORARY Python wrapper for x86 host only
+  - Linux: Full support via sysfs (requires sudo)
+  - macOS: Warnings only (OS-managed, no manual control)
+  - Implementation: `src/cortex/utils/power_config.py` (isolated module, zero C harness changes)
+  - Removal plan: Spring 2026 redesign when device adapters exist
 
 **Fully Implemented**:
 - `dataset.*` - Used by replayer for streaming EEG data
@@ -129,11 +135,28 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 | deadline.period_us | int | DEADLINE only |
 | deadline.deadline_us | int | DEADLINE only |
 
-### power  → used by **Harness**
+### power  → used by **Python Wrapper** (TEMPORARY - Fall 2025 only)
 | Key | Type | Notes |
 |---|---|---|
-| governor | enum | e.g., `performance` |
-| turbo | bool | Disable turbo for stability |
+| governor | enum | CPU frequency governor (e.g., `performance`, `powersave`)<br/>⚠️ **Linux only** - Requires sudo, controls `/sys/devices/system/cpu/*/cpufreq/scaling_governor`<br/>⚠️ **macOS** - Warning only (OS-managed, no manual control) |
+| turbo | bool | Disable Intel Turbo Boost / AMD Turbo Core for consistency<br/>⚠️ **Linux only** - Requires sudo, controls Intel `no_turbo` or AMD `boost` sysfs files<br/>⚠️ **macOS** - Warning only (OS-managed, no manual control) |
+
+**TEMPORARY IMPLEMENTATION** (Fall 2025): This feature is implemented in Python wrapper layer (`src/cortex/utils/power_config.py`) as a temporary solution for x86 host benchmarking. It will be redesigned or removed in Spring 2026 when device adapters are implemented. See `docs/architecture/adr-001-temporary-host-power-config.md` for full rationale and migration plan.
+
+**Example:**
+```yaml
+power:
+  governor: "performance"  # Lock CPU frequency to maximum
+  turbo: false             # Disable turbo boost for consistency
+```
+
+**Linux Usage (requires sudo):**
+```bash
+sudo PYTHONPATH=src python3 -m cortex run primitives/configs/cortex.yaml --name my_run
+```
+
+**macOS Behavior:**
+Runs without errors but prints warnings that power config is OS-managed and cannot be manually controlled.
 
 ### benchmark  → used by **Telemetry**
 | Key | Type | Notes |

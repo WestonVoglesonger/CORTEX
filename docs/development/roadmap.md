@@ -86,7 +86,6 @@ See `src/engine/include/cortex_plugin/cortex_plugin.h` for dtype definitions and
 These fields are **documented** in `docs/reference/configuration.md` and **parsed** by the config loader but **not yet used** by the harness:
 
 - `system.name`, `system.description` - Run metadata for identification
-- `power.governor`, `power.turbo` - CPU power management settings
 - `benchmark.metrics` array - Metric selection (currently collects all)
 - `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters
 - `plugins[].tolerances` - Per-plugin numerical tolerance specs
@@ -94,6 +93,18 @@ These fields are **documented** in `docs/reference/configuration.md` and **parse
 - `output.include_raw_data` - Raw telemetry data export flag
 
 **Reference**: `docs/reference/configuration.md` "Implementation Status" section
+
+### Temporary Implementations (Fall 2025)
+
+**Host Power Configuration** - `power.governor`, `power.turbo`
+- **Status**: ✅ TEMPORARY Python wrapper implementation (Fall 2025)
+- **Scope**: x86 host machine only (Linux full support, macOS warnings only)
+- **Location**: `src/cortex/utils/power_config.py` (isolated module, zero C harness changes)
+- **Removal Plan**: Spring 2026 - Will be redesigned or removed when device adapters exist
+- **Rationale**: Enables Fall 2025 academic deliverable (comparative benchmark data) without pulling forward device adapter work
+- **Documentation**: See `docs/architecture/adr-001-temporary-host-power-config.md` for full decision rationale and migration plan
+
+This implementation addresses CPU frequency scaling issues that invalidate comparative benchmarks (48% performance anomaly between idle/loaded systems). The temporary solution uses a Python context manager to control CPU governor and turbo boost settings on Linux hosts, with automatic restoration on exit. macOS receives warnings only (OS-managed frequency scaling).
 
 ### Planned Features (From TODOs)
 

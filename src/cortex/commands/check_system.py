@@ -35,7 +35,7 @@ def check_cpu_governor() -> SystemCheck:
                     return SystemCheck(
                         'CPU Governor',
                         'warn',
-                        f'Set to {governor} (recommend performance)',
+                        f'Set to {governor} (will auto-apply performance during runs)',
                         critical=False
                     )
             else:
@@ -87,7 +87,7 @@ def check_turbo_boost() -> SystemCheck:
                     return SystemCheck(
                         'Turbo Boost',
                         'warn',
-                        'Enabled (may cause frequency variance)',
+                        'Enabled (will auto-disable during runs)',
                         critical=False
                     )
 
@@ -105,7 +105,7 @@ def check_turbo_boost() -> SystemCheck:
                     return SystemCheck(
                         'Turbo Boost',
                         'warn',
-                        'Enabled (may cause frequency variance)',
+                        'Enabled (will auto-disable during runs)',
                         critical=False
                     )
 
