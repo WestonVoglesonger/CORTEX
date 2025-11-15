@@ -161,33 +161,42 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
                 if verbose:
                     print(line)
                 else:
-                    # Show important messages, hide noise
-                    if (line.startswith('[harness]') or
-                        line.startswith('[load]') or
-                        line.startswith('[cortex]') or
-                        line.startswith('Error') or
-                        line.startswith('✓') or
-                        line.startswith('✗')):
+                    # Show only critical messages, hide all noise
+                    # Show: [harness] (select), [cortex], errors, status symbols
+                    # Hide: [load], [telemetry], stress-ng, [replayer], [scheduler]
 
-                        # Show progress indicator for repeats
-                        if '[harness] Repeat' in line:
-                            if total_time and repeats:
-                                elapsed_pct = ((current_repeat - 1) * duration + warmup) / total_time * 100
-                                progress_bar = _make_progress_bar(elapsed_pct, 30)
-                                print(f"\r{progress_bar} {line}", end='')
-                                sys.stdout.flush()
-                            else:
-                                print(line)
-                        elif '[harness] Warmup phase' in line:
+                    if line.startswith('[harness]'):
+                        # Only show important harness messages
+                        if '[harness] Warmup phase' in line:
                             print(line)
                             if total_time:
-                                print(f"  Progress: Warmup → {repeats} repeats × {duration}s = ~{total_time}s total")
-                        else:
-                            # For non-repeat messages, print on new line
-                            if current_repeat > 0 and not line.startswith('✓'):
-                                print()  # New line after progress bar
-                            print(line)
-                    # Silently drop: [telemetry], stress-ng, [replayer], [scheduler]
+                                print(f"  Expected duration: ~{total_time}s (warmup {warmup}s + {repeats} × {duration}s repeats)")
+                        elif '[harness] Repeat' in line:
+                            # Update progress bar in place
+                            if total_time and repeats and duration:
+                                elapsed_pct = ((current_repeat - 1) * duration + warmup) / total_time * 100
+                                progress_bar = _make_progress_bar(elapsed_pct, 30)
+                                print(f"\r{progress_bar} Repeat {current_repeat}/{repeats}", end='', flush=True)
+                            else:
+                                print(f"\rRepeat {current_repeat}/{repeats}", end='', flush=True)
+                        elif '[harness] Completed plugin' in line:
+                            # Final update to 100%
+                            if total_time and repeats:
+                                progress_bar = _make_progress_bar(100, 30)
+                                print(f"\r{progress_bar} Completed", flush=True)
+                            else:
+                                print()  # New line after progress
+                        elif '[harness] Generating' in line or '[harness] Report generated' in line:
+                            # Skip report generation messages
+                            pass
+                        elif '[harness] Running plugin' in line:
+                            # Skip duplicate "Running plugin" messages
+                            pass
+                    elif line.startswith('[cortex]'):
+                        print(line)
+                    elif line.startswith('Error') or line.startswith('✓') or line.startswith('✗'):
+                        print(line)
+                    # Silently drop everything else: [load], [telemetry], stress-ng, [replayer], [scheduler]
 
             # Silently drop all stderr (stress-ng messages)
 
