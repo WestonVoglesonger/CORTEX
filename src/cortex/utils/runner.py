@@ -1,4 +1,5 @@
 """Experiment execution"""
+import os
 import subprocess
 import sys
 import time
@@ -108,6 +109,14 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
             cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
             sleep_prevention_tool = 'systemd-inhibit'
 
+    # Force unbuffered output for real-time progress updates
+    # Use stdbuf if available (Linux/macOS with coreutils)
+    if shutil.which('stdbuf'):
+        cmd = ['stdbuf', '-o0', '-e0'] + cmd
+    # Fallback: set environment variable for unbuffered output
+    env = dict(os.environ)
+    env['PYTHONUNBUFFERED'] = '1'
+
     # Notify user of sleep prevention status
     if sleep_prevention_tool:
         print(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
@@ -117,14 +126,15 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     try:
-        # Use Popen for filtered output
+        # Use Popen for filtered output with unbuffered I/O
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,  # Binary mode for unbuffered I/O
             cwd='.',
-            bufsize=1  # Line buffered
+            bufsize=0,  # Unbuffered
+            env=env
         )
 
         current_repeat = 0
@@ -132,17 +142,20 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
 
         # Read output line by line and filter
         while True:
-            # Read from both stdout and stderr
-            stdout_line = process.stdout.readline() if process.stdout else None
-            stderr_line = process.stderr.readline() if process.stderr else None
+            # Read from both stdout and stderr (in binary mode)
+            stdout_line_bytes = process.stdout.readline() if process.stdout else None
+            stderr_line_bytes = process.stderr.readline() if process.stderr else None
 
             # Check if process is done
-            if process.poll() is not None and not stdout_line and not stderr_line:
+            if process.poll() is not None and not stdout_line_bytes and not stderr_line_bytes:
                 break
 
             # Process stdout
-            if stdout_line:
-                line = stdout_line.rstrip()
+            if stdout_line_bytes:
+                try:
+                    line = stdout_line_bytes.decode('utf-8').rstrip()
+                except UnicodeDecodeError:
+                    continue  # Skip lines that can't be decoded
 
                 # Update progress tracking
                 if '[harness] Warmup phase' in line:
