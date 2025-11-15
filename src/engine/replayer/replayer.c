@@ -143,6 +143,7 @@ void cortex_replayer_set_load_profile(const char *profile_name) {
     strncpy(g_current_profile, profile_name, 15);
     g_current_profile[15] = '\0';
     fprintf(stdout, "[load] load profile set to: %s\n", g_current_profile);
+    fflush(stdout);
 }
 
 int cortex_replayer_start_background_load(const char *profile_name) {
@@ -155,6 +156,7 @@ void cortex_replayer_stop_background_load(void) {
     }
 
     fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)g_stress_ng_pid);
+    fflush(stdout);
 
     /* Send SIGTERM for graceful shutdown */
     if (kill(g_stress_ng_pid, SIGTERM) != 0) {
@@ -163,6 +165,7 @@ void cortex_replayer_stop_background_load(void) {
             waitpid(g_stress_ng_pid, NULL, WNOHANG);
             g_stress_ng_pid = 0;
             fprintf(stdout, "[load] background load already exited\n");
+            fflush(stdout);
             return;
         }
         perror("[load] failed to send SIGTERM");
@@ -206,6 +209,7 @@ void cortex_replayer_stop_background_load(void) {
     }
 
     fprintf(stdout, "[load] background load stopped\n");
+    fflush(stdout);
     g_stress_ng_pid = 0;
 }
 
@@ -400,6 +404,7 @@ static int prepare_background_load(const char *profile_name) {
     /* Check if profile needs stress before looking for stress-ng */
     if (!profile_name || strcmp(profile_name, "idle") == 0) {
         fprintf(stdout, "[load] profile 'idle' - no background load\n");
+        fflush(stdout);
         return 0;
     }
 
@@ -436,6 +441,7 @@ static int prepare_background_load(const char *profile_name) {
         g_stress_ng_pid = pid;
         fprintf(stdout, "[load] started background load: %s (PID %d, %s CPUs @ %s%% load)\n",
                 profile_name, (int)pid, args[2], args[4]);
+        fflush(stdout);
 
         /* Free args array */
         for (int i = 0; args[i] != NULL; i++) {
