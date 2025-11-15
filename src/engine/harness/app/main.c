@@ -198,7 +198,8 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     /* Step 7: Loop: call run_once() for each repeat */
     for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
         printf("[harness] Repeat %u/%u for plugin '%s'\n", r, ctx->run_cfg.benchmark.parameters.repeats, plugin_name);
-        
+        fflush(stdout);
+
         /* Update scheduler's current_repeat field */
         cortex_scheduler_set_current_repeat(ctx->scheduler, r);
         
