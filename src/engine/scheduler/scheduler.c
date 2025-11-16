@@ -212,8 +212,36 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
 
     /* Allocate output buffer using dimensions from init() */
     const size_t element_size = sizeof(float); /* TODO: support Q15/Q7 */
-    entry->output_bytes = (size_t)init_result.output_window_length_samples * 
-                          init_result.output_channels * element_size;
+
+    /* Check for overflow in output buffer size calculation (chained multiplication) */
+    size_t temp, output_bytes;
+    if (cortex_mul_size_overflow(init_result.output_window_length_samples,
+                                 init_result.output_channels, &temp)) {
+        fprintf(stderr, "[scheduler] Integer overflow: output dimensions %u * %u exceed SIZE_MAX\n",
+                init_result.output_window_length_samples, init_result.output_channels);
+        entry->api.teardown(entry->handle);
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
+        free(entry->config_blob);
+        entry->config_blob = NULL;
+        entry->handle = NULL;
+        errno = EOVERFLOW;
+        return -EOVERFLOW;
+    }
+    if (cortex_mul_size_overflow(temp, element_size, &output_bytes)) {
+        fprintf(stderr, "[scheduler] Integer overflow: output size %zu * %zu exceeds SIZE_MAX\n",
+                temp, element_size);
+        entry->api.teardown(entry->handle);
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
+        free(entry->config_blob);
+        entry->config_blob = NULL;
+        entry->handle = NULL;
+        errno = EOVERFLOW;
+        return -EOVERFLOW;
+    }
+    entry->output_bytes = output_bytes;
+
     entry->output_buffer = calloc(1, entry->output_bytes);
     if (!entry->output_buffer) {
         entry->api.teardown(entry->handle);

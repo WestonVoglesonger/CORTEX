@@ -129,7 +129,18 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     qsort(latencies, filtered_count, sizeof(uint64_t), compare_uint64);
 
     /* Convert to microseconds once for SVG functions (optimization) */
-    double *latencies_us = (double *)malloc(filtered_count * sizeof(double));
+    /* Check for overflow in double array allocation */
+    size_t double_alloc_size;
+    if (cortex_mul_size_overflow(filtered_count, sizeof(double), &double_alloc_size)) {
+        fprintf(stderr, "[report] Integer overflow: filtered_count=%zu * sizeof(double)=%zu exceeds SIZE_MAX\n",
+                filtered_count, sizeof(double));
+        free(latencies);
+        free(latencies_chrono);
+        errno = EOVERFLOW;
+        return -1;
+    }
+
+    double *latencies_us = (double *)malloc(double_alloc_size);
     if (!latencies_us) {
         free(latencies);
         free(latencies_chrono);

@@ -33,11 +33,12 @@ int cortex_create_directories(const char *path);  /* Create parent directories f
  *   buffer = malloc(window_samples * sizeof(float));  // safe
  */
 static inline int cortex_mul_size_overflow(size_t a, size_t b, size_t *result) {
-#if defined(__GNUC__) || defined(__clang__)
+#if (defined(__GNUC__) && (__GNUC__ > 5 || (__GNUC__ == 5 && __GNUC_MINOR__ >= 1))) || \
+    (defined(__clang__) && defined(__has_builtin) && __has_builtin(__builtin_mul_overflow))
     /* GCC 5.1+ and Clang 3.4+ provide efficient builtin (single instruction) */
     return __builtin_mul_overflow(a, b, result);
 #else
-    /* Portable fallback for other compilers (MSVC, etc.) */
+    /* Portable fallback for older GCC, MSVC, and other compilers */
     if (a > 0 && b > 0 && a > SIZE_MAX / b) {
         return 1;  /* overflow would occur */
     }
