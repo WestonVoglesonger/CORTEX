@@ -7,6 +7,7 @@ from cortex.utils.build_helper import smart_build
 from cortex.utils.config import load_base_config
 from cortex.utils.discovery import discover_kernels
 import argparse
+import sys
 
 def setup_parser(parser):
     """Setup argument parser for pipeline command"""
@@ -82,10 +83,17 @@ def execute(args):
 
         if not all_pass:
             print()
-            response = input("System check found critical issues. Continue anyway? [y/N]: ")
-            if response.lower() not in ['y', 'yes']:
-                print("Pipeline aborted.")
-                return 1
+            # Check if running in interactive terminal
+            if sys.stdin.isatty():
+                # Interactive: prompt user
+                response = input("System check found critical issues. Continue anyway? [y/N]: ")
+                if response.lower() not in ['y', 'yes']:
+                    print("Pipeline aborted.")
+                    return 1
+            else:
+                # Non-interactive (CI/CD, scripts): warn and continue
+                print("⚠️  System check found critical issues.")
+                print("    Continuing in non-interactive mode (use --skip-system-check to suppress)")
             print()
 
     print("\nThis will:")
