@@ -15,7 +15,7 @@ APP_SOURCES = app/main.c
 CFG_SOURCES = config/config.c
 LOD_SOURCES = loader/loader.c
 TEL_SOURCES = telemetry/telemetry.c
-UTL_SOURCES = util/util.c
+UTL_SOURCES = util/util.c util/signal_handler.c
 RPT_SOURCES = report/report.c
 
 SOURCES = $(APP_SOURCES) $(CFG_SOURCES) $(LOD_SOURCES) $(TEL_SOURCES) $(UTL_SOURCES) $(RPT_SOURCES)

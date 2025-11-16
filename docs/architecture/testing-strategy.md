@@ -82,6 +82,33 @@ make -C tests test-clock-resolution
 - Measurement overhead quantification
 - Platform differences (mach_timebase vs hrtimers)
 
+#### test_signal_handler - Graceful Shutdown
+**Location:** `tests/test_signal_handler.c`
+
+Tests the signal handler module's graceful shutdown behavior:
+- Initial state verification (shutdown flag starts at 0)
+- SIGINT handling (Ctrl+C sets shutdown flag)
+- SIGTERM handling (shutdown flag set on termination signal)
+- Multiple signal deliveries (idempotent flag setting)
+- Handler installation success
+- Ignored signals (SIGUSR1 doesn't affect shutdown flag)
+
+**Run:**
+```bash
+make -C tests test-signal-handler
+```
+
+**Coverage:**
+- POSIX signal handling correctness
+- Async-signal-safe flag operations
+- Process isolation via fork() for test independence
+- Signal handler installation without crashes
+
+**Design notes:**
+- Tests use fork() to isolate global shutdown flag between test cases
+- Once set, the shutdown flag cannot be reset (by design)
+- Validates graceful shutdown that prevents orphaned processes and data loss
+
 ### Integration Tests
 
 #### test_kernel_accuracy - Numerical Validation
@@ -203,15 +230,16 @@ cd tests && make test  # Run from tests/ directory
 ```
 Runs core unit tests (replayer, scheduler, kernel registry).
 
-**Note:** This excludes timing and validation tests which must be run separately:
-- `test-clock-resolution`
-- `test-kernel-accuracy`
+**Note:** This includes signal handler tests. The following must be run separately:
+- `test-clock-resolution` - Timing infrastructure validation
+- `test-kernel-accuracy` - Numerical validation against oracles
 
 ### Individual Test Suites
 ```bash
 make -C tests test-replayer
 make -C tests test-scheduler
 make -C tests test-kernel-registry
+make -C tests test-signal-handler
 make -C tests test-kernel-accuracy
 make -C tests test-clock-resolution
 python3 tests/test_cli.py
@@ -284,6 +312,7 @@ Before submitting a pull request:
 ### Core Modules
 - **Replayer:** Unit tests for timing, chunking, EOF handling
 - **Scheduler:** Unit tests for windowing, buffering, dispatch
+- **Signal Handler:** Unit tests for graceful shutdown on SIGINT/SIGTERM
 - **Telemetry:** Structure tests (fields present, types correct)
 - **Plugin Loader:** Integration tests via full harness runs
 
