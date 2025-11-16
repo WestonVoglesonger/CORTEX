@@ -14,13 +14,17 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../src/engine/scheduler/scheduler.h"
+#include "../src/engine/harness/util/util.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \
@@ -504,28 +508,28 @@ static int test_sequential_execution(void) {
 /* Test 9: Data continuity through scheduler */
 static int test_data_continuity(void) {
     printf("TEST: data continuity through scheduler\n");
-    
+
     const uint32_t window_length = 8;
     const uint32_t hop = 4;
     const uint32_t channels = 1;
-    
+
     cortex_scheduler_config_t config = {0};
     config.sample_rate_hz = 160;
     config.window_length_samples = window_length;
     config.hop_samples = hop;
     config.channels = channels;
     config.dtype = 1;
-    
+
     cortex_scheduler_t *scheduler = cortex_scheduler_create(&config);
     TEST_ASSERT(scheduler != NULL, "Scheduler creation failed");
-    
+
     /* Register plugin */
     cortex_scheduler_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
     };
-    
+
     cortex_plugin_config_t plugin_config = {0};
     plugin_config.abi_version = 2;
     plugin_config.struct_size = sizeof(cortex_plugin_config_t);
@@ -545,17 +549,64 @@ static int test_data_continuity(void) {
         }
         cortex_scheduler_feed_samples(scheduler, chunk, 4);
     }
-    
+
     /* Windows should contain:
      * Window 1: [0, 1, 2, 3, 4, 5, 6, 7]
      * Window 2: [4, 5, 6, 7, 8, 9, 10, 11]
      * Window 3: [8, 9, 10, 11, 12, 13, 14, 15]
      * Window 4: [12, 13, 14, 15, 16, 17, 18, 19]
      */
-    
+
     printf("  ✓ Data flows continuously through scheduler\n");
-    
+
     cortex_scheduler_destroy(scheduler);
+    return 0;
+}
+
+/* Test 10: Integer overflow protection (CRIT-002) */
+static int test_integer_overflow_protection(void) {
+    printf("TEST: integer overflow protection (CRIT-002)\n");
+
+    /* Test the cortex_mul_size_overflow utility function directly */
+    printf("  Testing cortex_mul_size_overflow utility function...\n");
+    {
+        size_t result;
+
+        /* Test 1: No overflow case */
+        int rc1 = cortex_mul_size_overflow(1000, 2000, &result);
+        TEST_ASSERT(rc1 == 0 && result == 2000000, "Should not overflow for 1000 * 2000");
+
+        /* Test 2: Overflow case (SIZE_MAX / 2) * 3 > SIZE_MAX */
+        int rc2 = cortex_mul_size_overflow(SIZE_MAX / 2, 3, &result);
+        TEST_ASSERT(rc2 == 1, "Should detect overflow for (SIZE_MAX/2) * 3");
+
+        /* Test 3: Exact SIZE_MAX case */
+        int rc3 = cortex_mul_size_overflow(SIZE_MAX, 1, &result);
+        TEST_ASSERT(rc3 == 0 && result == SIZE_MAX, "SIZE_MAX * 1 should not overflow");
+
+        printf("  ✓ cortex_mul_size_overflow utility function working correctly\n");
+    }
+
+    /* Test that valid large (but safe) configurations are accepted */
+    printf("  Testing valid large configuration...\n");
+    {
+        cortex_scheduler_config_t config = {0};
+        config.sample_rate_hz = 30000;  /* 30 kHz (realistic high-rate EEG) */
+        config.window_length_samples = 4096;  /* 4K samples per window */
+        config.hop_samples = 128;  /* 128 sample hop */
+        config.channels = 256;  /* 256 channels (realistic for high-density arrays) */
+        config.dtype = 1;
+
+        /* window_samples = 4096 * 256 = 1,048,576 samples (safe on all platforms) */
+        /* hop_samples = 128 * 256 = 32,768 samples (safe) */
+        cortex_scheduler_t *scheduler = cortex_scheduler_create(&config);
+        TEST_ASSERT(scheduler != NULL, "Should accept valid large configuration");
+        printf("  ✓ Valid large configuration accepted (W=%u, H=%u, C=%u)\n",
+               config.window_length_samples, config.hop_samples, config.channels);
+        cortex_scheduler_destroy(scheduler);
+    }
+
+    printf("  ✓ Integer overflow protection implemented and tested\n");
     return 0;
 }
 
@@ -586,7 +637,8 @@ int main(void) {
     RUN_TEST(test_flush);
     RUN_TEST(test_sequential_execution);
     RUN_TEST(test_data_continuity);
-    
+    RUN_TEST(test_integer_overflow_protection);
+
     printf("=== Test Results ===\n");
     printf("Passed: %d\n", passed);
     printf("Failed: %d\n", failed);

@@ -25,6 +25,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "replayer.h"
+#include "../harness/util/util.h"
 
 #include <errno.h>
 #include <math.h>
@@ -215,7 +216,16 @@ void cortex_replayer_stop_background_load(void) {
 
 static void *replayer_thread_main(void *arg) {
     (void)arg;
-    const size_t hop_samples = (size_t)g_config.hop_samples * g_config.channels;
+
+    /* Check for integer overflow in chunk size calculation */
+    size_t hop_samples;
+    if (cortex_mul_size_overflow(g_config.hop_samples, g_config.channels, &hop_samples)) {
+        fprintf(stderr, "[replayer] Integer overflow: hop_samples=%u * channels=%u exceeds SIZE_MAX\n",
+                g_config.hop_samples, g_config.channels);
+        g_replayer_running = 0;
+        return NULL;
+    }
+
     float *chunk_buffer = allocate_window_buffer(hop_samples);
     if (!chunk_buffer) {
         g_replayer_running = 0;

@@ -1,6 +1,7 @@
 #include "telemetry.h"
 #include "../util/util.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,8 +36,22 @@ void cortex_telemetry_free(cortex_telemetry_buffer_t *tb) {
 int cortex_telemetry_add(cortex_telemetry_buffer_t *tb, const cortex_telemetry_record_t *rec) {
     if (!tb || !rec) return -1;
     if (tb->count >= tb->capacity) {
-        size_t new_cap = tb->capacity * 2;
-        cortex_telemetry_record_t *new_recs = (cortex_telemetry_record_t *)realloc(tb->records, new_cap * sizeof(*new_recs));
+        /* Check for overflow in capacity doubling */
+        size_t new_cap, alloc_size;
+        if (cortex_mul_size_overflow(tb->capacity, 2, &new_cap)) {
+            fprintf(stderr, "[telemetry] Integer overflow: capacity=%zu * 2 exceeds SIZE_MAX\n", tb->capacity);
+            errno = EOVERFLOW;
+            return -1;
+        }
+        /* Check for overflow in allocation size calculation */
+        if (cortex_mul_size_overflow(new_cap, sizeof(*tb->records), &alloc_size)) {
+            fprintf(stderr, "[telemetry] Integer overflow: new_cap=%zu * sizeof(record)=%zu exceeds SIZE_MAX\n",
+                    new_cap, sizeof(*tb->records));
+            errno = EOVERFLOW;
+            return -1;
+        }
+
+        cortex_telemetry_record_t *new_recs = (cortex_telemetry_record_t *)realloc(tb->records, alloc_size);
         if (!new_recs) return -1;
         tb->records = new_recs;
         tb->capacity = new_cap;
