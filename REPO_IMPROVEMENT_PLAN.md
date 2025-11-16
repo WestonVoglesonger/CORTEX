@@ -2,7 +2,7 @@
 
 > **Last Updated:** 2025-11-16
 > **Document Owner:** Engineering Team
-> **Status:** Active Planning
+> **Status:** Phase 1 In Progress
 
 ---
 
@@ -26,14 +26,14 @@
 ### Overall Progress
 
 ```
-Phase 1 (Critical):     [░░░░░░░░░░░░░░░░░░░░] 0/5   (0%)   - Target: Weeks 1-2
+Phase 1 (Critical):     [████░░░░░░░░░░░░░░░░] 1/5   (20%)  - Target: Weeks 1-2
 Phase 2 (High):         [░░░░░░░░░░░░░░░░░░░░] 0/15  (0%)   - Target: Month 1
 Phase 3 (Testing):      [░░░░░░░░░░░░░░░░░░░░] 0/22  (0%)   - Target: Month 2
 Phase 4 (Docs/Obs):     [░░░░░░░░░░░░░░░░░░░░] 0/20  (0%)   - Target: Month 3
 Phase 5 (Architecture): [░░░░░░░░░░░░░░░░░░░░] 0/25  (0%)   - Target: Month 4+
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Total Progress:         [░░░░░░░░░░░░░░░░░░░░] 0/107 (0%)
+Total Progress:         [█░░░░░░░░░░░░░░░░░░░] 1/107 (0.9%)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -41,16 +41,16 @@ Total Progress:         [░░░░░░░░░░░░░░░░░░�
 
 | Status | Count | Percentage |
 |--------|-------|------------|
-| 🔴 Not Started | 107 | 100% |
+| 🔴 Not Started | 106 | 99.1% |
 | 🟡 In Progress | 0 | 0% |
-| 🟢 Completed | 0 | 0% |
+| 🟢 Completed | 1 | 0.9% |
 | 🚫 Blocked | 0 | 0% |
 
 ### Priority Breakdown
 
 | Priority | Count | Completed | Remaining |
 |----------|-------|-----------|-----------|
-| 🔴 **Critical** | 35 | 0 | 35 |
+| 🔴 **Critical** | 35 | 1 | 34 |
 | 🟠 **High** | 18 | 0 | 18 |
 | 🟡 **Medium** | 22 | 0 | 22 |
 | 🟢 **Low** | 15 | 0 | 15 |
@@ -64,7 +64,7 @@ Total Progress:         [░░░░░░░░░░░░░░░░░░�
 | Separation of Concerns | 12 | 0/12 |
 | Documentation | 8 | 0/8 |
 | Testing | 9 | 0/9 |
-| Error Handling | 11 | 0/11 |
+| Error Handling | 11 | 1/11 |
 | Modularity | 13 | 0/13 |
 | State Management | 8 | 0/8 |
 | SOLID Violations | 8 | 0/8 |
@@ -203,7 +203,7 @@ git checkout -b fix/critical-thread-safety
 
 - [ ] **CRIT-001:** Eliminate Global State in Replayer (3 days)
 - [ ] **CRIT-002:** Add Integer Overflow Checks (2 days)
-- [ ] **CRIT-003:** Install Signal Handlers (1 day)
+- [x] **CRIT-003:** Install Signal Handlers (1 day) ✅ **COMPLETED 2025-11-16**
 - [ ] **CRIT-004:** Implement Dependency Injection - Core Modules (5 days)
 - [ ] **CRIT-005:** Add Telemetry Buffer Limits (1 day)
 
@@ -497,17 +497,20 @@ scheduler->window_samples = (size_t)config->window_length_samples * config->chan
 
 ---
 
-#### CRIT-003: Install Signal Handlers
+#### CRIT-003: Install Signal Handlers ✅
 
-- **Status:** 🔴 Not Started
-- **Owner:** _Unassigned_
+- **Status:** 🟢 **COMPLETED** (2025-11-16)
+- **Owner:** Claude Code
 - **Priority:** 🔴 Critical
 - **Category:** Error Handling
 - **Phase:** 1
-- **Effort:** 1 day
+- **Effort:** 1 day (actual)
+- **PR:** #23 (merged to phase-1)
 
 **Location:**
-- All components (no handlers currently installed)
+- `src/engine/harness/util/signal_handler.{c,h}` (implemented)
+- `src/engine/harness/app/main.c` (integrated)
+- `tests/test_signal_handler.c` (tests)
 
 **Description:**
 No signal handlers for SIGINT/SIGTERM. Process termination leaves orphaned subprocesses and unflushed data.
@@ -518,10 +521,12 @@ No signal handlers for SIGINT/SIGTERM. Process termination leaves orphaned subpr
 - Corrupted output files
 - Resource leaks
 
-**Recommended Fix:**
+**Implementation:**
+
+Created `util/signal_handler.{c,h}` with POSIX-compliant signal handling:
 
 ```c
-// harness/app/signal_handler.c
+// util/signal_handler.c
 static volatile sig_atomic_t g_shutdown_requested = 0;
 
 static void signal_handler(int signum) {
@@ -531,32 +536,48 @@ static void signal_handler(int signum) {
 }
 
 void cortex_install_signal_handlers(void) {
-    struct sigaction sa = {0};
+    struct sigaction sa;
     sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 }
 
-// In main loop
-void cortex_check_shutdown(void) {
-    if (g_shutdown_requested) {
-        cortex_replayer_stop();
-        cortex_replayer_stop_background_load();
-        cortex_telemetry_flush_all();
-        exit(0);
-    }
+int cortex_should_shutdown(void) {
+    return g_shutdown_requested;
 }
 ```
+
+Integrated into main.c with shutdown checks at:
+- Before starting each plugin
+- After plugin execution fails
+- Before report generation
+- After report generation
+
+**Key Features:**
+- Async-signal-safe implementation (only sets atomic flag)
+- Telemetry data preserved on shutdown
+- Graceful cleanup of replayer and scheduler
+- Exit code 1 on interruption
+- Comprehensive test coverage (6 tests, all isolated via fork)
+
+**Documentation:**
+- Enhanced header with C++ guards, error handling docs
+- Added to `docs/architecture/testing-strategy.md`
+- Added "Graceful shutdown with Ctrl+C" to `docs/guides/troubleshooting.md`
 
 **Dependencies:** None
 
 **Acceptance Criteria:**
-- [ ] Handlers installed for SIGINT and SIGTERM
-- [ ] Graceful shutdown flushes telemetry
-- [ ] Background processes terminated cleanly
-- [ ] No zombie processes after signal
-- [ ] Manual test with Ctrl+C verified
+- [x] Handlers installed for SIGINT and SIGTERM
+- [x] Graceful shutdown flushes telemetry
+- [x] Background processes terminated cleanly
+- [x] No zombie processes after signal
+- [x] Manual test with Ctrl+C verified
+- [x] 6 unit tests pass (all properly isolated)
+- [x] Documentation complete
 
 ---
 
@@ -1514,10 +1535,24 @@ kernels = repo.find_all()
 ## 📝 Change Log
 
 ### 2025-11-16
+
+**Initial Planning:**
 - **[Initial]** Document created with comprehensive technical debt analysis
 - **[Planning]** All 107 issues catalogued and prioritized
 - **[Structure]** 5-phase remediation plan established
 - **[Metrics]** Baseline metrics captured
+
+**Phase 1 Execution:**
+- **[Phase 1]** CRIT-003 completed - Signal handlers for graceful shutdown
+  - Created `util/signal_handler.{c,h}` with POSIX-compliant handlers
+  - Integrated shutdown checks into main harness loop
+  - Telemetry data preserved on Ctrl+C
+  - 6 unit tests added (all isolated via fork)
+  - Documentation updated (testing-strategy.md, troubleshooting.md)
+  - PR #23 merged to phase-1 branch
+- **[Progress]** Phase 1: 1/5 complete (20%)
+- **[Progress]** Overall: 1/107 complete (0.9%)
+- **[Metrics]** Error Handling category: 1/11 complete
 
 ### Template for Future Updates
 
