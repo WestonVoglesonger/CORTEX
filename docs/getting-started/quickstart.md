@@ -4,9 +4,20 @@ Get CORTEX up and running in 5 minutes.
 
 ## Prerequisites
 
+### Required
+
 - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
 - **Linux**: GCC/Clang, make, pthread, libdl
 - **Python**: 3.8+ with pip
+
+### Recommended for macOS
+
+- **stress-ng**: Required for reproducible benchmarks on macOS
+  - **macOS**: `brew install stress-ng` ⚠️ **STRONGLY RECOMMENDED**
+  - **Linux**: `sudo apt install stress-ng` (Ubuntu/Debian) or `sudo yum install stress-ng` (RHEL/Fedora)
+  - **Why**: Prevents CPU frequency scaling which causes 49% performance variance on macOS
+  - **Fallback**: System falls back to idle mode if not installed (not recommended for macOS benchmarks)
+  - **See**: [Configuration Guide - Platform-Specific Recommendations](../reference/configuration.md#platform-specific-recommendations)
 
 ## 1. Clone and Install Dependencies
 

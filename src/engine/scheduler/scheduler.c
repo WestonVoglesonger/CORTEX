@@ -148,7 +148,8 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
 
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
                                      const cortex_scheduler_plugin_api_t *api,
-                                     const cortex_plugin_config_t *plugin_config) {
+                                     const cortex_plugin_config_t *plugin_config,
+                                     const char *plugin_name) {
     if (!scheduler || !api || !api->init || !api->process || !api->teardown || !plugin_config) {
         return -EINVAL;
     }
@@ -161,11 +162,18 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     memset(entry, 0, sizeof(*entry));
 
     entry->api = *api;
-    entry->plugin_name = "(unnamed)";  /* Plugin name not available without get_info() */
+    /* Store plugin name (duplicate string to avoid lifetime issues) */
+    entry->plugin_name = plugin_name ? strdup(plugin_name) : strdup("(unnamed)");
+    if (!entry->plugin_name) {
+        /* Both strdup calls failed - out of memory */
+        return -ENOMEM;
+    }
 
     entry->config_size = plugin_config->struct_size;
     entry->config_blob = calloc(1, entry->config_size);
     if (!entry->config_blob) {
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
         return -ENOMEM;
     }
     memcpy(entry->config_blob, plugin_config, entry->config_size);
@@ -173,7 +181,10 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     /* Call init() - it validates dtype and returns handle + output dimensions */
     cortex_init_result_t init_result = entry->api.init((const cortex_plugin_config_t *)entry->config_blob);
     if (!init_result.handle) {
-        fprintf(stderr, "[scheduler] plugin '%s' failed init()\n", entry->plugin_name);
+        fprintf(stderr, "[scheduler] plugin '%s' failed init()\n",
+                entry->plugin_name ? entry->plugin_name : "(unnamed)");
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
         free(entry->config_blob);
         entry->config_blob = NULL;
         return -EINVAL;
@@ -188,6 +199,8 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     entry->output_buffer = calloc(1, entry->output_bytes);
     if (!entry->output_buffer) {
         entry->api.teardown(entry->handle);
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
         free(entry->config_blob);
         entry->config_blob = NULL;
         entry->handle = NULL;
@@ -466,4 +479,9 @@ static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry) {
     free(entry->config_blob);
     entry->config_blob = NULL;
     entry->config_size = 0;
+    /* Free duplicated plugin name */
+    if (entry->plugin_name) {
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
+    }
 }

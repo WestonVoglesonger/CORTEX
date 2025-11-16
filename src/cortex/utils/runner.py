@@ -1,5 +1,8 @@
 """Experiment execution"""
+import os
+import platform
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional, List
@@ -11,6 +14,7 @@ from cortex.utils.paths import (
     get_run_directory
 )
 import shutil
+import yaml
 
 
 def _cleanup_partial_run(run_dir: Path) -> None:
@@ -49,7 +53,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     Args:
         config_path: Path to configuration file
         run_name: Name of the run for organizing results
-        verbose: Show harness output
+        verbose: Show all output including stress-ng and telemetry
 
     Returns:
         Run directory path if successful, None otherwise
@@ -74,25 +78,107 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"Error: {config_path} exists but is not a file")
         return None
 
-    # Run harness
+    # Read config to get benchmark parameters for progress tracking
+    try:
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
+        duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
+        repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
+        warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
+        total_time = warmup + (repeats * duration)
+    except:
+        total_time = None  # Fall back to no progress calculation
+
+    # Run harness with sleep prevention wrapper
     cmd = [str(harness_binary), 'run', config_path]
 
+    # Add platform-specific sleep prevention wrapper
+    system = platform.system()
+    sleep_prevention_tool = None
+
+    if system == 'Darwin':
+        # macOS: use caffeinate
+        if shutil.which('caffeinate'):
+            cmd = ['caffeinate', '-dims'] + cmd
+            sleep_prevention_tool = 'caffeinate'
+    elif system == 'Linux':
+        # Linux: use systemd-inhibit if available
+        if shutil.which('systemd-inhibit'):
+            cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
+            sleep_prevention_tool = 'systemd-inhibit'
+
+    # Force unbuffered output for real-time progress updates
+    # Use stdbuf if available (Linux/macOS with coreutils)
+    if shutil.which('stdbuf'):
+        cmd = ['stdbuf', '-o0', '-e0'] + cmd
+    # Fallback: set environment variable for unbuffered output
+    env = dict(os.environ)
+    env['PYTHONUNBUFFERED'] = '1'
+
+    # Notify user of sleep prevention status
+    if sleep_prevention_tool:
+        print(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
+        print(f"[cortex] Display will stay on during benchmark")
+    elif system in ['Darwin', 'Linux']:
+        print(f"[cortex] Warning: Sleep prevention tool not found")
+        print(f"[cortex] Ensure system won't sleep during benchmarks")
+
+    # Set up output redirection based on verbose flag
+    run_dir = get_run_directory(run_name)
+    log_file_handle = None
     try:
-        result = subprocess.run(
+        if verbose:
+            # Verbose mode: let C harness print directly to terminal
+            stdout_dest = None
+            stderr_dest = None
+            show_spinner = False
+        else:
+            # Clean mode: redirect to log file and show spinner
+            log_file = run_dir / 'harness.log'
+            log_file_handle = open(log_file, 'w', buffering=1)  # Line buffered
+            stdout_dest = log_file_handle
+            stderr_dest = log_file_handle
+            show_spinner = True
+
+        # Launch subprocess
+        process = subprocess.Popen(
             cmd,
-            capture_output=not verbose,
-            text=True,
-            cwd='.'
+            stdout=stdout_dest,
+            stderr=stderr_dest,
+            cwd='.',
+            env=env
         )
 
-        if result.returncode != 0:
-            print(f"Error: Harness execution failed (exit code {result.returncode})")
-            if not verbose and result.stderr:
-                print(result.stderr)
+        # Record start time for progress tracking
+        start_time = time.time()
+        spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+        # Wait for process to complete
+        if show_spinner:
+            # Clean mode: show spinner
+            while process.poll() is None:
+                elapsed = time.time() - start_time
+                spinner_idx = int(elapsed * 2) % len(spinner_chars)
+                print(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ", end='', flush=True)
+                time.sleep(0.5)
+            # Clear progress line
+            print(f"\r{' ' * 60}\r", end='')
+        else:
+            # Verbose mode: just wait without spinner
+            process.wait()
+
+        # Get return code
+        returncode = process.poll()
+
+        if returncode != 0:
+            print(f"\nError: Harness execution failed (exit code {returncode})")
+            if not verbose and log_file_handle:
+                print(f"Check log file for details: {run_dir / 'harness.log'}")
+            else:
+                print("Check output above for error details")
             return None
 
         # Return the run directory path
-        run_dir = get_run_directory(run_name)
         if run_dir.exists():
             return str(run_dir)
 
@@ -102,6 +188,13 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"Error running harness: {e}")
         # Note: Cleanup is handled by the calling function (run_single_kernel or run_all_kernels)
         return None
+    finally:
+        # Clean up log file handle
+        if log_file_handle:
+            try:
+                log_file_handle.close()
+            except Exception:
+                pass  # Ignore cleanup errors
 
 def run_single_kernel(
     kernel_name: str,

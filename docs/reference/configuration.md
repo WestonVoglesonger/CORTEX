@@ -142,7 +142,114 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 | parameters.duration_seconds | int | Total time |
 | parameters.repeats | int | Number of runs |
 | parameters.warmup_seconds | int | Discard at start |
-| load_profile | enum | `idle` \| `medium` \| `heavy` |
+| load_profile | enum | `idle` \| `medium` \| `heavy` (see detailed section below) |
+
+#### Background Load Profiles (`load_profile`)
+
+**Status:** ✅ Fully implemented in `src/engine/replayer/replayer.c`
+
+Background load profiles simulate system stress during benchmarking to test kernel robustness under realistic operating conditions.
+
+**Available Profiles:**
+
+| Profile | Description | stress-ng Parameters | Use Case |
+|---------|-------------|---------------------|----------|
+| `idle` | No artificial load | (none) | Clean baseline measurements, default mode |
+| `medium` | Moderate CPU load | `--cpu N/2 --cpu-load 50%` | Simulate typical system usage |
+| `heavy` | High CPU load | `--cpu N --cpu-load 90%` | Stress test under heavy contention |
+
+Where `N` = number of CPU cores on the system.
+
+**Dependency:**
+
+Load profiles require the **stress-ng** system tool:
+
+- **macOS**: `brew install stress-ng`
+- **Linux (Ubuntu/Debian)**: `sudo apt install stress-ng`
+- **Linux (RHEL/Fedora)**: `sudo yum install stress-ng`
+
+**Graceful Fallback:**
+
+If `stress-ng` is not installed:
+- System prints: `[load] stress-ng not found in PATH, running without background load`
+- Automatically falls back to `idle` mode (no artificial load)
+- Benchmark continues normally without errors
+
+**Example Configuration:**
+
+```yaml
+benchmark:
+  parameters:
+    duration_seconds: 120
+    repeats: 5
+    warmup_seconds: 10
+  load_profile: "medium"  # Requires stress-ng installed
+```
+
+**Console Output:**
+
+When `stress-ng` is available:
+```
+[load] started background load: medium (PID 12345, 4 CPUs @ 50% load)
+```
+
+When `stress-ng` is not installed:
+```
+[load] stress-ng not found in PATH, running without background load
+```
+
+**Platform-Specific Recommendations:**
+
+⚠️ **macOS (Fall 2025 Benchmarks):**
+
+**CRITICAL**: Always use `load_profile: "medium"` for reproducible results.
+
+**Why**: macOS frequency scaling causes 49% performance variance in idle mode
+
+**Empirical Evidence** (from validation runs):
+
+| Kernel | Idle Mean | Medium Mean | Variance |
+|--------|-----------|-------------|----------|
+| bandpass_fir | 4969 µs | 2554 µs | -48.6% |
+| car | 36 µs | 20 µs | -45.5% |
+| goertzel | 417 µs | 196 µs | -53.0% |
+| notch_iir | 115 µs | 61 µs | -47.4% |
+
+**Validation**: Medium vs Heavy comparison (36% delta) proves both lock CPU frequency
+
+**Complete analysis**: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
+**Raw validation data**: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+**Decision rationale**: [ADR-002](../architecture/adr/adr-002-benchmark-reproducibility-macos.md)
+
+**Linux Alternative**:
+
+On Linux, you can achieve the same goal using manual CPU governor control:
+```bash
+# Set all CPUs to performance mode (requires sudo)
+sudo cpupower frequency-set --governor performance
+
+# Then use idle profile in CORTEX
+benchmark:
+  load_profile: "idle"
+```
+
+Or use `medium` load for consistency across platforms.
+
+**General Usage Guidelines:**
+
+- **macOS Benchmarks**: Always use `medium` (required for reproducibility)
+- **Linux Benchmarks**: Use performance governor + `idle`, OR use `medium` for platform consistency
+- **Development/Testing**: Follow platform recommendations above
+- **Stress Testing**: Use `heavy` to validate robustness under contention
+- **CI/CD**: Ensure stress-ng is installed, use `medium` for valid results
+
+**Implementation Details:**
+
+See `src/engine/replayer/replayer.c` (lines 350-455) for the complete background load implementation including:
+- stress-ng process spawning via `fork()`/`execv()`
+- Automatic CPU count detection
+- Process lifecycle management (start/stop)
+- Graceful error handling
 
 ### output  → used by **Telemetry**
 | Key | Type | Notes |

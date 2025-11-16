@@ -72,7 +72,8 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler);
  */
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
                                      const cortex_scheduler_plugin_api_t *api,
-                                     const cortex_plugin_config_t *plugin_config);
+                                     const cortex_plugin_config_t *plugin_config,
+                                     const char *plugin_name);
 
 /*
  * Feed interleaved samples (float32 frames of size C) into the scheduler.

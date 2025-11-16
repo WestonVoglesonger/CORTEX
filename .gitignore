@@ -168,10 +168,20 @@ cython_debug/
 # Mac
 .DS_Store
 
-# Results and output directories
-results/
+# Results and output directories (development runs are gitignored)
+# Use results/* instead of results/ to allow negation of validation subdirectories
+results/*
 output/
 logs/
+
+# EXCEPT: Validation runs for publication (frozen, published results)
+!results/validation-*/
+
+# But still exclude derived files even in validation runs
+results/validation-*/**/*.csv
+results/validation-*/**/*.html
+results/validation-*/**/*.png
+results/validation-*/**/harness.log
 
 # Generated config files (created by CLI at runtime)
 primitives/configs/generated/

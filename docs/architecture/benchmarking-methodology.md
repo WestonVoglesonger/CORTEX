@@ -107,6 +107,57 @@ All reports and publications must clearly state:
 
 These thresholds account for expected embedded overhead.
 
+### CPU Frequency Control
+
+**Challenge**: Modern processors dynamically scale frequency based on workload, introducing performance variance that invalidates comparative benchmarks.
+
+**Industry Standard Approach** (Linux):
+- Set CPU governor to "performance" mode
+- Disable turbo boost for consistency
+- Pin benchmark to specific CPU core
+- **References**: Google Benchmark, SPEC CPU, Phoronix Test Suite
+
+**CORTEX Approach** (macOS):
+
+macOS does not expose manual governor/turbo control. We use sustained background CPU load to prevent frequency scaling:
+
+```yaml
+benchmark:
+  load_profile: "medium"  # 4 CPUs @ 50% load via stress-ng
+```
+
+**Empirical Validation**:
+
+Three-way comparison across 4 kernels with 1200+ samples per configuration:
+
+| Kernel | Idle | Medium | Heavy |
+|--------|------|--------|-------|
+| bandpass_fir | 4969 µs | 2554 µs | 3017 µs |
+| car | 36 µs | 20 µs | 31 µs |
+| goertzel | 417 µs | 196 µs | 297 µs |
+| notch_iir | 115 µs | 61 µs | 71 µs |
+
+**Key Findings:**
+1. **Idle ~49% slower** → CPU frequency scaling active
+2. **Medium baseline** → Frequency locked, minimal contention
+3. **Heavy ~36% slower** → Frequency locked, high contention validates approach
+
+The 36% delta between medium/heavy proves both configurations maintain high CPU frequency (otherwise heavy would be faster like idle→medium transition). The slowdown is due to CPU contention, not frequency reduction.
+
+**Platform Comparison:**
+
+| Aspect | Linux Standard | macOS Approach | Equivalent? |
+|--------|----------------|----------------|-------------|
+| **Goal** | Lock to max frequency | Lock to max frequency | ✅ Yes |
+| **Method** | Performance governor | Background load | ✅ Yes |
+| **Validation** | Trust OS | Empirically validated | ✅ Yes |
+
+**References**:
+- Complete analysis: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
+- Decision rationale: [ADR-002](adr/adr-002-benchmark-reproducibility-macos.md)
+- Validation data: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+- Configuration guide: [`docs/reference/configuration.md`](../reference/configuration.md) (Platform-Specific Recommendations)
+
 ---
 
 ## Spring 2026: Hardware-in-the-Loop (HIL) Testing

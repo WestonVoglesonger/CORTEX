@@ -4,6 +4,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/utsname.h>
+
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
+#ifdef __linux__
+#include <sys/sysinfo.h>
+#endif
 
 int cortex_telemetry_init(cortex_telemetry_buffer_t *tb, size_t initial_capacity) {
     if (!tb) return -1;
@@ -35,7 +45,8 @@ int cortex_telemetry_add(cortex_telemetry_buffer_t *tb, const cortex_telemetry_r
     return 0;
 }
 
-int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t *tb) {
+int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t *tb,
+                                 const cortex_system_info_t *sysinfo) {
     if (!path || !tb) return -1;
 
     /* Create parent directories */
@@ -45,6 +56,23 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
+
+    /* Write system info as comment header */
+    if (sysinfo) {
+        fprintf(f, "# System Information\n");
+        fprintf(f, "# OS: %s\n", sysinfo->os);
+        fprintf(f, "# CPU: %s\n", sysinfo->cpu_model);
+        fprintf(f, "# Hostname: %s\n", sysinfo->hostname);
+        fprintf(f, "# CPU Cores: %u\n", sysinfo->cpu_count);
+        fprintf(f, "# Total RAM: %llu MB\n", (unsigned long long)sysinfo->total_ram_mb);
+        if (sysinfo->thermal_celsius >= 0.0f) {
+            fprintf(f, "# Thermal: %.1f°C\n", sysinfo->thermal_celsius);
+        } else {
+            fprintf(f, "# Thermal: unavailable\n");
+        }
+        fprintf(f, "#\n");
+    }
+
     fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
@@ -66,7 +94,8 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
 }
 
 int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
-                                         size_t start_idx, size_t end_idx) {
+                                         size_t start_idx, size_t end_idx,
+                                         const cortex_system_info_t *sysinfo) {
     if (!path || !tb) return -1;
     if (start_idx > end_idx || end_idx > tb->count) return -1;
 
@@ -77,6 +106,23 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
+
+    /* Write system info as comment header */
+    if (sysinfo) {
+        fprintf(f, "# System Information\n");
+        fprintf(f, "# OS: %s\n", sysinfo->os);
+        fprintf(f, "# CPU: %s\n", sysinfo->cpu_model);
+        fprintf(f, "# Hostname: %s\n", sysinfo->hostname);
+        fprintf(f, "# CPU Cores: %u\n", sysinfo->cpu_count);
+        fprintf(f, "# Total RAM: %llu MB\n", (unsigned long long)sysinfo->total_ram_mb);
+        if (sysinfo->thermal_celsius >= 0.0f) {
+            fprintf(f, "# Thermal: %.1f°C\n", sysinfo->thermal_celsius);
+        } else {
+            fprintf(f, "# Thermal: unavailable\n");
+        }
+        fprintf(f, "#\n");
+    }
+
     fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
@@ -131,7 +177,8 @@ static void json_escape_string(char *dest, size_t dest_size, const char *src) {
     dest[j] = '\0';
 }
 
-int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffer_t *tb) {
+int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffer_t *tb,
+                                    const cortex_system_info_t *sysinfo) {
     if (!path || !tb) return -1;
 
     /* Create parent directories */
@@ -141,6 +188,30 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
+
+    /* Write system info as first NDJSON line (metadata) */
+    if (sysinfo) {
+        char os_esc[128], cpu_esc[256], hostname_esc[128];
+        json_escape_string(os_esc, sizeof(os_esc), sysinfo->os);
+        json_escape_string(cpu_esc, sizeof(cpu_esc), sysinfo->cpu_model);
+        json_escape_string(hostname_esc, sizeof(hostname_esc), sysinfo->hostname);
+
+        fprintf(f, "{\"_type\":\"system_info\","
+                   "\"os\":\"%s\","
+                   "\"cpu\":\"%s\","
+                   "\"hostname\":\"%s\","
+                   "\"cpu_count\":%u,"
+                   "\"total_ram_mb\":%llu",
+                os_esc, cpu_esc, hostname_esc,
+                sysinfo->cpu_count,
+                (unsigned long long)sysinfo->total_ram_mb);
+
+        if (sysinfo->thermal_celsius >= 0.0f) {
+            fprintf(f, ",\"thermal_celsius\":%.1f}\n", sysinfo->thermal_celsius);
+        } else {
+            fprintf(f, ",\"thermal_celsius\":null}\n");
+        }
+    }
 
     char run_id_esc[128], plugin_esc[256];
 
@@ -186,7 +257,8 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
 }
 
 int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_telemetry_buffer_t *tb,
-                                            size_t start_idx, size_t end_idx) {
+                                            size_t start_idx, size_t end_idx,
+                                            const cortex_system_info_t *sysinfo) {
     if (!path || !tb) return -1;
     if (start_idx > end_idx || end_idx > tb->count) return -1;
 
@@ -197,6 +269,30 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
+
+    /* Write system info as first NDJSON line (metadata) */
+    if (sysinfo) {
+        char os_esc[128], cpu_esc[256], hostname_esc[128];
+        json_escape_string(os_esc, sizeof(os_esc), sysinfo->os);
+        json_escape_string(cpu_esc, sizeof(cpu_esc), sysinfo->cpu_model);
+        json_escape_string(hostname_esc, sizeof(hostname_esc), sysinfo->hostname);
+
+        fprintf(f, "{\"_type\":\"system_info\","
+                   "\"os\":\"%s\","
+                   "\"cpu\":\"%s\","
+                   "\"hostname\":\"%s\","
+                   "\"cpu_count\":%u,"
+                   "\"total_ram_mb\":%llu",
+                os_esc, cpu_esc, hostname_esc,
+                sysinfo->cpu_count,
+                (unsigned long long)sysinfo->total_ram_mb);
+
+        if (sysinfo->thermal_celsius >= 0.0f) {
+            fprintf(f, ",\"thermal_celsius\":%.1f}\n", sysinfo->thermal_celsius);
+        } else {
+            fprintf(f, ",\"thermal_celsius\":null}\n");
+        }
+    }
 
     char run_id_esc[128], plugin_esc[256];
 
@@ -238,6 +334,114 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
     }
 
     fclose(f);
+    return 0;
+}
+
+/* Collect system information for telemetry metadata */
+int cortex_collect_system_info(cortex_system_info_t *info) {
+    if (!info) return -1;
+    memset(info, 0, sizeof(*info));
+
+    /* Get OS info using uname */
+    struct utsname uts;
+    if (uname(&uts) == 0) {
+        snprintf(info->os, sizeof(info->os), "%s %s", uts.sysname, uts.release);
+    } else {
+        snprintf(info->os, sizeof(info->os), "Unknown");
+    }
+
+    /* Get hostname */
+    if (gethostname(info->hostname, sizeof(info->hostname)) != 0) {
+        snprintf(info->hostname, sizeof(info->hostname), "unknown");
+    } else {
+        /* Ensure NUL-termination per POSIX (defensive) */
+        info->hostname[sizeof(info->hostname) - 1] = '\0';
+    }
+
+    /* Platform-specific system info */
+#ifdef __APPLE__
+    /* macOS: Get CPU model and count using sysctl */
+    size_t len = sizeof(info->cpu_model);
+    if (sysctlbyname("machdep.cpu.brand_string", info->cpu_model, &len, NULL, 0) != 0) {
+        snprintf(info->cpu_model, sizeof(info->cpu_model), "Unknown");
+    }
+
+    int cpu_count_val = 0;
+    size_t cpu_count_size = sizeof(cpu_count_val);
+    if (sysctlbyname("hw.ncpu", &cpu_count_val, &cpu_count_size, NULL, 0) == 0) {
+        info->cpu_count = (uint32_t)cpu_count_val;
+    }
+
+    uint64_t memsize = 0;
+    size_t memsize_len = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &memsize_len, NULL, 0) == 0) {
+        info->total_ram_mb = (uint64_t)(memsize / (1024 * 1024));
+    }
+
+    /* Thermal reading - not easily available on macOS without IOKit */
+    info->thermal_celsius = -1.0f;
+
+#elif defined(__linux__)
+    /* Linux: Get CPU model from /proc/cpuinfo */
+    FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
+    if (cpuinfo) {
+        char line[256];
+        while (fgets(line, sizeof(line), cpuinfo)) {
+            if (strncmp(line, "model name", 10) == 0) {
+                char *colon = strchr(line, ':');
+                if (colon) {
+                    colon++;
+                    while (*colon == ' ' || *colon == '\t') colon++;
+                    /* Remove trailing newline */
+                    size_t model_len = strlen(colon);
+                    if (model_len > 0 && colon[model_len - 1] == '\n') {
+                        colon[model_len - 1] = '\0';
+                    }
+                    snprintf(info->cpu_model, sizeof(info->cpu_model), "%s", colon);
+                }
+                break;
+            }
+        }
+        fclose(cpuinfo);
+    }
+    if (info->cpu_model[0] == '\0') {
+        snprintf(info->cpu_model, sizeof(info->cpu_model), "Unknown");
+    }
+
+    /* CPU count */
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_count > 0 && cpu_count <= UINT32_MAX) {
+        info->cpu_count = (uint32_t)cpu_count;
+    } else {
+        info->cpu_count = 0;  /* Mark as unknown on error */
+    }
+
+    /* Memory info */
+    struct sysinfo si;
+    if (sysinfo(&si) == 0) {
+        info->total_ram_mb = (uint64_t)((si.totalram * si.mem_unit) / (1024 * 1024));
+    }
+
+    /* Thermal reading from thermal zone */
+    FILE *thermal = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+    if (thermal) {
+        int temp_millicelsius = 0;
+        if (fscanf(thermal, "%d", &temp_millicelsius) == 1) {
+            info->thermal_celsius = (float)temp_millicelsius / 1000.0f;
+        }
+        fclose(thermal);
+    } else {
+        info->thermal_celsius = -1.0f;
+    }
+
+#else
+    /* Unsupported platform */
+    snprintf(info->cpu_model, sizeof(info->cpu_model), "Unknown");
+    info->cpu_count = 0;
+    info->total_ram_mb = 0;
+    info->thermal_celsius = -1.0f;
+#endif
+
     return 0;
 }
 

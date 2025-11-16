@@ -12,8 +12,9 @@
 /* Statistics structure for a single kernel */
 typedef struct {
     char plugin_name[64];
-    uint64_t *latencies_ns;        /* Sorted for percentile calculations */
-    uint64_t *latencies_ns_chrono;  /* Unsorted, chronological order for "Latency Over Time" plot */
+    uint64_t *latencies_ns;        /* Sorted (ns) for percentile calculations */
+    uint64_t *latencies_ns_chrono;  /* Unsorted (ns), chronological order for "Latency Over Time" plot */
+    double *latencies_us;          /* Sorted (µs) - pre-converted for SVG functions */
     size_t count;
     uint32_t deadline_misses;
     double deadline_miss_rate;
@@ -80,10 +81,13 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
 
     uint32_t misses = 0;
     size_t idx = 0;
-    uint64_t sum_latency_ns = 0;
     uint32_t W = 0, H = 0, C = 0, Fs = 0;
 
-    /* Extract latencies and count misses */
+    /* Welford's algorithm for online mean and variance calculation */
+    double mean_ns = 0.0;
+    double M2 = 0.0;  /* Sum of squared differences from mean */
+
+    /* Extract latencies and count misses (Welford's algorithm for mean/variance) */
     for (size_t i = 0; i < telemetry->count; i++) {
         const cortex_telemetry_record_t *r = &telemetry->records[i];
         if (r->warmup) continue;
@@ -91,10 +95,16 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
             uint64_t latency = r->end_ts_ns - r->start_ts_ns;
             latencies[idx] = latency;
             latencies_chrono[idx] = latency;  /* Keep chronological copy */
-            sum_latency_ns += latency;
+
+            /* Welford's online algorithm for mean and variance */
+            double delta = (double)latency - mean_ns;
+            mean_ns += delta / (double)(idx + 1);
+            double delta2 = (double)latency - mean_ns;
+            M2 += delta * delta2;
+
             idx++;
             if (r->deadline_missed) misses++;
-            
+
             /* Get configuration from first record */
             if (idx == 1) {
                 W = r->W;
@@ -108,10 +118,22 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     /* Sort for percentile calculation */
     qsort(latencies, filtered_count, sizeof(uint64_t), compare_uint64);
 
+    /* Convert to microseconds once for SVG functions (optimization) */
+    double *latencies_us = (double *)malloc(filtered_count * sizeof(double));
+    if (!latencies_us) {
+        free(latencies);
+        free(latencies_chrono);
+        return -1;
+    }
+    for (size_t i = 0; i < filtered_count; i++) {
+        latencies_us[i] = (double)latencies[i] / 1000.0;
+    }
+
     /* Calculate statistics */
     strncpy(stats->plugin_name, plugin_filter ? plugin_filter : "all", sizeof(stats->plugin_name) - 1);
     stats->latencies_ns = latencies;
     stats->latencies_ns_chrono = latencies_chrono;
+    stats->latencies_us = latencies_us;
     stats->count = filtered_count;
     stats->deadline_misses = misses;
     stats->deadline_miss_rate = 100.0 * (double)misses / (double)filtered_count;
@@ -126,18 +148,13 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     /* Min/Max */
     stats->min_latency_us = (double)latencies[0] / 1000.0;
     stats->max_latency_us = (double)latencies[filtered_count - 1] / 1000.0;
-    
-    /* Mean */
-    stats->mean_latency_us = (double)sum_latency_ns / (double)filtered_count / 1000.0;
-    
-    /* Standard deviation */
-    double variance_sum = 0.0;
-    double mean_ns = stats->mean_latency_us * 1000.0;
-    for (size_t i = 0; i < filtered_count; i++) {
-        double diff = (double)latencies[i] - mean_ns;
-        variance_sum += diff * diff;
-    }
-    stats->stddev_latency_us = sqrt(variance_sum / (double)filtered_count) / 1000.0;
+
+    /* Mean (from Welford's algorithm) */
+    stats->mean_latency_us = mean_ns / 1000.0;
+
+    /* Standard deviation (from Welford's algorithm) */
+    double variance_ns = M2 / (double)filtered_count;
+    stats->stddev_latency_us = sqrt(variance_ns) / 1000.0;
     
     /* Throughput: windows per second = Fs / H */
     if (H > 0 && Fs > 0) {
@@ -188,6 +205,7 @@ static void free_kernel_stats(kernel_stats_t *stats) {
     if (stats) {
         free(stats->latencies_ns);
         free(stats->latencies_ns_chrono);
+        free(stats->latencies_us);
         memset(stats, 0, sizeof(*stats));
     }
 }
@@ -223,17 +241,10 @@ static int get_unique_plugins(const cortex_telemetry_buffer_t *telemetry,
 }
 
 /* Generate SVG histogram with logarithmic binning for latency data */
-static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
+static void generate_histogram_svg(FILE *f, double *latencies_us, size_t count,
+                                    double p50_us, double p95_us, double p99_us,
                                     int width, int height) {
     if (count == 0) return;
-
-    /* Convert to microseconds for display */
-    double *latencies_us = (double *)malloc(count * sizeof(double));
-    if (!latencies_us) return;
-
-    for (size_t i = 0; i < count; i++) {
-        latencies_us[i] = (double)data[i] / 1000.0;
-    }
 
     /* Find min and max in microseconds */
     double min_us = latencies_us[0];
@@ -246,14 +257,12 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
     if (min_us == max_us) {
         fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\">No variation</text>",
                 width/2, height/2);
-        free(latencies_us);
         return;
     }
 
     /* For latency data, use adaptive binning based on data distribution */
     /* Focus on the main distribution (P99) and use wider bins for outliers */
-    double p99_us = latencies_us[(size_t)(count * 0.99)];  // 99th percentile
-    double p95_us = latencies_us[(size_t)(count * 0.95)];  // 95th percentile
+    /* Note: p99_us and p95_us are passed as parameters (pre-computed) */
 
     int num_main_bins = 15;  // Bins for main distribution (up to P99)
     int num_tail_bins = 5;   // Bins for outliers (P99+)
@@ -261,7 +270,6 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
 
     int *bins = (int *)calloc(num_bins, sizeof(int));
     if (!bins) {
-        free(latencies_us);
         return;
     }
 
@@ -277,7 +285,6 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
         if (full_range <= 0.0) {
             /* All values identical - should have been caught earlier, but handle gracefully */
             free(bins);
-            free(latencies_us);
             return;
         }
         /* Use all bins for linear distribution */
@@ -330,7 +337,7 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
     }
 
     /* Draw percentile markers */
-    double p50_us = latencies_us[count / 2];
+    /* Note: p50_us, p95_us, p99_us are passed as parameters (pre-computed) */
     double p95_x, p99_x, p50_x;
     
     /* Handle percentile marker positions based on binning strategy */
@@ -443,31 +450,15 @@ static void generate_histogram_svg(FILE *f, uint64_t *data, size_t count,
             legend_x + 20, legend_y + 33, p99_us);
 
     free(bins);
-    free(latencies_us);
-}
-
-/* Comparison function for qsort with doubles */
-static int compare_double(const void *a, const void *b) {
-    double da = *(const double *)a;
-    double db = *(const double *)b;
-    return (da > db) - (da < db);
 }
 
 /* Generate Cumulative Distribution Function (CDF) plot - more useful than timeline */
-static void generate_cdf_plot_svg(FILE *f, uint64_t *data, size_t count,
+static void generate_cdf_plot_svg(FILE *f, double *latencies_us, size_t count,
+                                  double p50_us, double p95_us, double p99_us,
                                   int width, int height) {
     if (count < 2) return;
 
-    /* Convert to microseconds and sort for CDF */
-    double *latencies_us = (double *)malloc(count * sizeof(double));
-    if (!latencies_us) return;
-
-    for (size_t i = 0; i < count; i++) {
-        latencies_us[i] = (double)data[i] / 1000.0;
-    }
-
-    /* Sort for CDF calculation */
-    qsort(latencies_us, count, sizeof(double), compare_double);
+    /* Note: latencies_us is already sorted and converted (passed as parameter) */
 
     double min_us = latencies_us[0];
     double max_us = latencies_us[count - 1];
@@ -475,27 +466,46 @@ static void generate_cdf_plot_svg(FILE *f, uint64_t *data, size_t count,
     if (min_us == max_us) {
         fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\">No variation</text>",
                 width/2, height/2);
-        free(latencies_us);
         return;
     }
 
-    /* Calculate percentiles for reference */
-    double p50_us = latencies_us[count / 2];
-    double p95_us = latencies_us[(size_t)(count * 0.95)];
-    double p99_us = latencies_us[(size_t)(count * 0.99)];
+    /* Note: p50_us, p95_us, p99_us are passed as parameters (pre-computed) */
 
     /* Draw CDF curve */
-    fprintf(f, "<polyline points=\"");
     double x_range = max_us - min_us;
     double y_range = height - 60;
-    
-    for (size_t i = 0; i < count; i++) {
-        double x = ((latencies_us[i] - min_us) / x_range) * (width - 40) + 20;
-        double y = height - 40 - ((double)i / (count - 1)) * y_range;
-        if (i > 0) fprintf(f, " ");
-        fprintf(f, "%.1f,%.1f", x, y);
+
+    /* Buffer polyline points for single fprintf (optimization) */
+    size_t buffer_size = count * 32;  /* ~32 bytes per point should be safe */
+    char *polyline_buffer = (char *)malloc(buffer_size);
+    if (!polyline_buffer) {
+        /* Fallback to unbuffered if malloc fails */
+        fprintf(f, "<polyline points=\"");
+        for (size_t i = 0; i < count; i++) {
+            double x = ((latencies_us[i] - min_us) / x_range) * (width - 40) + 20;
+            double y = height - 40 - ((double)i / (count - 1)) * y_range;
+            if (i > 0) fprintf(f, " ");
+            fprintf(f, "%.1f,%.1f", x, y);
+        }
+        fprintf(f, "\" fill=\"none\" stroke=\"#4a90e2\" stroke-width=\"2.5\"/>\n");
+    } else {
+        /* Buffered version */
+        size_t offset = 0;
+        for (size_t i = 0; i < count; i++) {
+            double x = ((latencies_us[i] - min_us) / x_range) * (width - 40) + 20;
+            double y = height - 40 - ((double)i / (count - 1)) * y_range;
+            int written = snprintf(polyline_buffer + offset, buffer_size - offset,
+                                  "%s%.1f,%.1f", (i > 0) ? " " : "", x, y);
+            if (written < 0 || (size_t)written >= buffer_size - offset) {
+                /* Buffer overflow protection */
+                break;
+            }
+            offset += written;
+        }
+        fprintf(f, "<polyline points=\"%s\" fill=\"none\" stroke=\"#4a90e2\" stroke-width=\"2.5\"/>\n",
+                polyline_buffer);
+        free(polyline_buffer);
     }
-    fprintf(f, "\" fill=\"none\" stroke=\"#4a90e2\" stroke-width=\"2.5\"/>\n");
 
     /* Draw percentile reference lines and markers */
     double p50_x = ((p50_us - min_us) / x_range) * (width - 40) + 20;
@@ -583,8 +593,6 @@ static void generate_cdf_plot_svg(FILE *f, uint64_t *data, size_t count,
     fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#666\" font-size=\"10\" font-style=\"italic\">"
             "Shows what percentage of operations complete by each latency threshold</text>\n",
             width / 2, 15);
-
-    free(latencies_us);
 }
 
 /* Generate HTML report */
@@ -681,6 +689,9 @@ int cortex_report_generate(const char *output_path,
     }
 
     /* Calculate statistics for each plugin */
+    fprintf(stdout, "[harness] Computing statistics...\n");
+    fflush(stdout);
+
     kernel_stats_t *stats = (kernel_stats_t *)calloc(plugin_count, sizeof(kernel_stats_t));
     if (!stats) {
         fclose(f);
@@ -720,6 +731,9 @@ int cortex_report_generate(const char *output_path,
     fprintf(f, "</table>\n</div>\n");
 
     /* Per-kernel sections */
+    fprintf(stdout, "[harness] Generating charts...\n");
+    fflush(stdout);
+
     for (size_t p = 0; p < plugin_count; p++) {
         if (stats[p].count == 0) continue;
 
@@ -768,14 +782,18 @@ int cortex_report_generate(const char *output_path,
         fprintf(f, "<h3>Latency Distribution</h3>\n");
         fprintf(f, "<div class=\"plot\">\n");
         fprintf(f, "<svg width=\"700\" height=\"350\">\n");
-        generate_histogram_svg(f, stats[p].latencies_ns, stats[p].count, 700, 350);
+        generate_histogram_svg(f, stats[p].latencies_us, stats[p].count,
+                              stats[p].p50_latency_us, stats[p].p95_latency_us, stats[p].p99_latency_us,
+                              700, 350);
         fprintf(f, "</svg>\n</div>\n");
 
         /* Cumulative Distribution Function - more useful than timeline */
         fprintf(f, "<h3>Cumulative Distribution Function (CDF)</h3>\n");
         fprintf(f, "<div class=\"plot\">\n");
         fprintf(f, "<svg width=\"700\" height=\"350\">\n");
-        generate_cdf_plot_svg(f, stats[p].latencies_ns, stats[p].count, 700, 350);
+        generate_cdf_plot_svg(f, stats[p].latencies_us, stats[p].count,
+                             stats[p].p50_latency_us, stats[p].p95_latency_us, stats[p].p99_latency_us,
+                             700, 350);
         fprintf(f, "</svg>\n</div>\n");
 
         fprintf(f, "</div>\n");

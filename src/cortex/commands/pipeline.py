@@ -7,6 +7,7 @@ from cortex.utils.build_helper import smart_build
 from cortex.utils.config import load_base_config
 from cortex.utils.discovery import discover_kernels
 import argparse
+import sys
 
 def setup_parser(parser):
     """Setup argument parser for pipeline command"""
@@ -44,6 +45,11 @@ def setup_parser(parser):
         action='store_true',
         help='Show verbose output'
     )
+    parser.add_argument(
+        '--skip-system-check',
+        action='store_true',
+        help='Skip pre-flight system configuration check'
+    )
 
 def execute(args):
     """Execute full pipeline"""
@@ -62,14 +68,49 @@ def execute(args):
         run_name = generate_run_name()
 
     print(f"\nRun name: {run_name}")
+
+    # Step 0: System Configuration Check (pre-flight)
+    if not args.skip_system_check:
+        print("\n" + "=" * 80)
+        print("PRE-FLIGHT: SYSTEM CONFIGURATION CHECK")
+        print("=" * 80)
+        print()
+
+        from cortex.commands import check_system
+        check_args = argparse.Namespace(verbose=args.verbose)
+        checks, all_pass = check_system.run_all_checks()
+        check_system.print_results(checks, verbose=args.verbose)
+
+        if not all_pass:
+            print()
+            # Check if running in interactive terminal
+            if sys.stdin.isatty():
+                # Interactive: prompt user
+                response = input("System check found critical issues. Continue anyway? [y/N]: ")
+                if response.lower() not in ['y', 'yes']:
+                    print("Pipeline aborted.")
+                    return 1
+            else:
+                # Non-interactive (CI/CD, scripts): warn and continue
+                print("⚠️  System check found critical issues.")
+                print("    Continuing in non-interactive mode (use --skip-system-check to suppress)")
+            print()
+
     print("\nThis will:")
+    step_num = 0
+    if not args.skip_system_check:
+        step_num += 1
+        print(f"  {step_num}. Check system configuration (pre-flight)")
     if not args.skip_build:
-        print("  1. Build all components")
+        step_num += 1
+        print(f"  {step_num}. Build all components")
     if not args.skip_validate:
-        print(f"  {2 if not args.skip_build else 1}. Validate kernels")
-    step = 3 if not args.skip_build and not args.skip_validate else (2 if not args.skip_build or not args.skip_validate else 1)
-    print(f"  {step}. Run all kernel benchmarks")
-    print(f"  {step+1}. Generate comparison analysis")
+        step_num += 1
+        print(f"  {step_num}. Validate kernels")
+    step_num += 1
+    print(f"  {step_num}. Run all kernel benchmarks")
+    step_num += 1
+    print(f"  {step_num}. Generate comparison analysis")
     print()
 
     # Step 1: Build (smart incremental)

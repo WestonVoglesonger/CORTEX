@@ -85,7 +85,7 @@ static int load_plugin(const char *plugin_name,
     /* Register plugin with scheduler */
     cortex_scheduler_plugin_api_t api = out_loaded->api;
 
-    if (cortex_scheduler_register_plugin(scheduler, &api, &pc) != 0) {
+    if (cortex_scheduler_register_plugin(scheduler, &api, &pc, plugin_name) != 0) {
         fprintf(stderr, "[harness] failed to register plugin '%s' with scheduler\n", plugin_name);
         cortex_plugin_unload(out_loaded);
         return -1;
@@ -135,9 +135,16 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
 static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     const cortex_plugin_entry_cfg_t *plugin_cfg = &ctx->run_cfg.plugins[plugin_idx];
     const char *plugin_name = plugin_cfg->name;
-    
+
     printf("[harness] Running plugin: %s\n", plugin_name);
-    
+
+    /* Collect system information for telemetry metadata */
+    cortex_system_info_t sysinfo;
+    if (cortex_collect_system_info(&sysinfo) != 0) {
+        fprintf(stderr, "[harness] warning: failed to collect system info\n");
+        memset(&sysinfo, 0, sizeof(sysinfo));
+    }
+
     /* Step 1: Get plugin config pointer */
     /* Step 2: Build per-plugin telemetry path */
     /* Track starting telemetry count for this plugin */
@@ -191,7 +198,8 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     /* Step 7: Loop: call run_once() for each repeat */
     for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
         printf("[harness] Repeat %u/%u for plugin '%s'\n", r, ctx->run_cfg.benchmark.parameters.repeats, plugin_name);
-        
+        fflush(stdout);
+
         /* Update scheduler's current_repeat field */
         cortex_scheduler_set_current_repeat(ctx->scheduler, r);
         
@@ -226,11 +234,13 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     if (cortex_create_directories(ctx->run_cfg.output.directory) == 0) {
         if (strcmp(format, "ndjson") == 0) {
             cortex_telemetry_write_ndjson_filtered(telemetry_output_path, &ctx->telemetry,
-                                                   telemetry_start_count, telemetry_end_count);
+                                                   telemetry_start_count, telemetry_end_count,
+                                                   &sysinfo);
         } else {
             /* Default to CSV for unknown formats or explicit "csv" */
             cortex_telemetry_write_csv_filtered(telemetry_output_path, &ctx->telemetry,
-                                                telemetry_start_count, telemetry_end_count);
+                                                telemetry_start_count, telemetry_end_count,
+                                                &sysinfo);
         }
     }
     
@@ -329,8 +339,10 @@ int main(int argc, char **argv) {
                  ctx.run_cfg.output.directory);
 
         printf("[harness] Generating HTML report: %s\n", report_path);
+        fflush(stdout);
         if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
             printf("[harness] Report generated successfully\n");
+            fflush(stdout);
         } else {
             fprintf(stderr, "[harness] Failed to generate report\n");
         }
