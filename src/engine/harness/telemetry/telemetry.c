@@ -353,6 +353,9 @@ int cortex_collect_system_info(cortex_system_info_t *info) {
     /* Get hostname */
     if (gethostname(info->hostname, sizeof(info->hostname)) != 0) {
         snprintf(info->hostname, sizeof(info->hostname), "unknown");
+    } else {
+        /* Ensure NUL-termination per POSIX (defensive) */
+        info->hostname[sizeof(info->hostname) - 1] = '\0';
     }
 
     /* Platform-specific system info */
@@ -406,7 +409,12 @@ int cortex_collect_system_info(cortex_system_info_t *info) {
     }
 
     /* CPU count */
-    info->cpu_count = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_count > 0 && cpu_count <= UINT32_MAX) {
+        info->cpu_count = (uint32_t)cpu_count;
+    } else {
+        info->cpu_count = 0;  /* Mark as unknown on error */
+    }
 
     /* Memory info */
     struct sysinfo si;
