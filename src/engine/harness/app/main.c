@@ -388,6 +388,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[harness] Report generation skipped due to shutdown signal\n");
     }
 
+    /* Check if shutdown was requested during report generation */
+    if (cortex_should_shutdown() && !was_interrupted) {
+        fprintf(stderr, "[harness] Shutdown requested during report generation\n");
+        was_interrupted = 1;
+    }
+
     cortex_telemetry_free(&ctx.telemetry);
 
     /* Return error code if interrupted, success otherwise */
