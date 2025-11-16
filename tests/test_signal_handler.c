@@ -42,44 +42,92 @@
 
 /*
  * Test 1: Initial state - shutdown flag should be unset
+ *
+ * Note: Runs in forked child to ensure clean state independent of other tests.
  */
 static int test_initial_state(void) {
     printf("TEST: initial_state\n");
 
-    /* Before installing handlers, shutdown should be 0 */
-    TEST_ASSERT_EQ(0, cortex_should_shutdown(), "shutdown flag should start as 0");
+    pid_t pid = fork();
 
-    printf("  PASS: shutdown flag starts at 0\n");
-    return 0;
+    if (pid < 0) {
+        fprintf(stderr, "FAIL: fork() failed\n");
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* Child process - clean slate */
+        /* Before installing handlers, shutdown should be 0 */
+        if (cortex_should_shutdown() != 0) {
+            exit(1);
+        }
+
+        exit(0);
+    } else {
+        /* Parent process - wait for child */
+        int status;
+        waitpid(pid, &status, 0);
+
+        TEST_ASSERT(WIFEXITED(status), "child should exit normally");
+        TEST_ASSERT_EQ(0, WEXITSTATUS(status), "shutdown flag should start as 0");
+
+        printf("  PASS: shutdown flag starts at 0\n");
+        return 0;
+    }
 }
 
 /*
  * Test 2: SIGINT handling - flag should be set after SIGINT
+ *
+ * Note: Runs in forked child to ensure clean state independent of other tests.
  */
 static int test_sigint_sets_flag(void) {
     printf("TEST: sigint_sets_flag\n");
 
-    /* Install handlers */
-    cortex_install_signal_handlers();
+    pid_t pid = fork();
 
-    /* Verify initial state */
-    TEST_ASSERT_EQ(0, cortex_should_shutdown(), "shutdown flag should be 0 before signal");
+    if (pid < 0) {
+        fprintf(stderr, "FAIL: fork() failed\n");
+        return -1;
+    }
 
-    /* Raise SIGINT to ourselves */
-    raise(SIGINT);
+    if (pid == 0) {
+        /* Child process - clean slate */
+        /* Install handlers */
+        cortex_install_signal_handlers();
 
-    /* Flag should now be set */
-    TEST_ASSERT_EQ(1, cortex_should_shutdown(), "shutdown flag should be 1 after SIGINT");
+        /* Verify initial state */
+        if (cortex_should_shutdown() != 0) {
+            exit(1);
+        }
 
-    printf("  PASS: SIGINT sets shutdown flag\n");
-    return 0;
+        /* Raise SIGINT to ourselves */
+        raise(SIGINT);
+
+        /* Flag should now be set */
+        if (cortex_should_shutdown() != 1) {
+            exit(1);
+        }
+
+        /* Success */
+        exit(0);
+    } else {
+        /* Parent process - wait for child */
+        int status;
+        waitpid(pid, &status, 0);
+
+        TEST_ASSERT(WIFEXITED(status), "child should exit normally");
+        TEST_ASSERT_EQ(0, WEXITSTATUS(status), "SIGINT should set shutdown flag");
+
+        printf("  PASS: SIGINT sets shutdown flag\n");
+        return 0;
+    }
 }
 
 /*
  * Test 3: SIGTERM handling - flag should be set after SIGTERM
  *
- * Note: We need to fork to test SIGTERM independently since the flag
- * is global and once set, cannot be reset in the current implementation.
+ * Note: Runs in forked child to ensure clean state independent of other tests.
  */
 static int test_sigterm_sets_flag(void) {
     printf("TEST: sigterm_sets_flag\n");
@@ -92,20 +140,23 @@ static int test_sigterm_sets_flag(void) {
     }
 
     if (pid == 0) {
-        /* Child process */
-        /* Note: Child inherits parent's memory including g_shutdown_requested, */
-        /* so we can't test initial state here. We just verify SIGTERM doesn't crash. */
+        /* Child process - clean slate */
         cortex_install_signal_handlers();
+
+        /* Verify initial state */
+        if (cortex_should_shutdown() != 0) {
+            exit(1);
+        }
 
         /* Raise SIGTERM to ourselves */
         raise(SIGTERM);
 
-        /* Flag should now be set (either from parent or from SIGTERM) */
+        /* Flag should now be set */
         if (cortex_should_shutdown() != 1) {
             exit(1);
         }
 
-        /* Success - SIGTERM was handled */
+        /* Success */
         exit(0);
     } else {
         /* Parent process - wait for child */
@@ -209,6 +260,8 @@ static int test_handler_installation(void) {
 
 /*
  * Test 6: Ignored signals - other signals should not set flag
+ *
+ * Note: Runs in forked child to ensure clean state independent of other tests.
  */
 static int test_ignored_signals(void) {
     printf("TEST: ignored_signals\n");
@@ -221,13 +274,13 @@ static int test_ignored_signals(void) {
     }
 
     if (pid == 0) {
-        /* Child process */
-        /* Note: Child inherits g_shutdown_requested from parent (likely 1 at this point). */
-        /* We test that SIGUSR1 doesn't change behavior, not that flag stays at 0. */
+        /* Child process - clean slate */
         cortex_install_signal_handlers();
 
-        /* Capture current flag value */
-        int flag_before = cortex_should_shutdown();
+        /* Verify initial state (should be 0) */
+        if (cortex_should_shutdown() != 0) {
+            exit(1);
+        }
 
         /* Raise a signal we don't handle (SIGUSR1) */
         struct sigaction sa;
@@ -238,9 +291,8 @@ static int test_ignored_signals(void) {
 
         raise(SIGUSR1);
 
-        /* Flag should be unchanged */
-        int flag_after = cortex_should_shutdown();
-        if (flag_before != flag_after) {
+        /* Flag should still be 0 (SIGUSR1 should not trigger shutdown) */
+        if (cortex_should_shutdown() != 0) {
             exit(1);
         }
 
