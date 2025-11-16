@@ -205,15 +205,25 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     }
     
     /* Step 7: Loop: call run_once() for each repeat */
+    int repeat_failed = 0;
     for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
         printf("[harness] Repeat %u/%u for plugin '%s'\n", r, ctx->run_cfg.benchmark.parameters.repeats, plugin_name);
         fflush(stdout);
 
         /* Update scheduler's current_repeat field */
         cortex_scheduler_set_current_repeat(ctx->scheduler, r);
-        
+
         if (run_once(ctx, ctx->run_cfg.benchmark.parameters.duration_seconds, plugin_cfg) != 0) {
             fprintf(stderr, "[harness] repeat %u failed for plugin '%s'\n", r, plugin_name);
+
+            /* If failure was due to shutdown signal, flush telemetry before exiting */
+            if (cortex_should_shutdown()) {
+                fprintf(stderr, "[harness] Shutdown signal received, preserving telemetry data\n");
+                repeat_failed = 1;
+                break;  /* Exit loop but continue to telemetry writing */
+            }
+
+            /* Non-shutdown failure - cleanup and return immediately */
             cortex_plugin_unload(&loaded_plugin);
             cortex_scheduler_destroy(scheduler);
             ctx->scheduler = NULL;
@@ -255,7 +265,12 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     
     /* Step 10: Keep buffer for report generation (don't reset) */
     /* Buffer will accumulate records from all plugins */
-    
+
+    if (repeat_failed) {
+        fprintf(stderr, "[harness] Plugin '%s' interrupted, telemetry preserved\n", plugin_name);
+        return -1;  /* Signal interruption to caller */
+    }
+
     printf("[harness] Completed plugin: %s\n", plugin_name);
     return 0;
 }
