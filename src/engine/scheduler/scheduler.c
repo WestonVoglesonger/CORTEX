@@ -172,8 +172,10 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
         return -EINVAL;
     }
 
-    if (ensure_plugin_capacity(scheduler) != 0) {
-        return -ENOMEM;
+    /* Ensure we have capacity for the new plugin (may return -EOVERFLOW or -ENOMEM) */
+    int capacity_rc = ensure_plugin_capacity(scheduler);
+    if (capacity_rc != 0) {
+        return capacity_rc;  /* Propagate the actual error (-EOVERFLOW or -ENOMEM) */
     }
 
     cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[scheduler->plugin_count];
@@ -340,19 +342,19 @@ static int ensure_plugin_capacity(cortex_scheduler_t *scheduler) {
         fprintf(stderr, "[scheduler] Integer overflow: plugin_capacity=%zu * 2 exceeds SIZE_MAX\n",
                 scheduler->plugin_capacity);
         errno = EOVERFLOW;
-        return -1;
+        return -EOVERFLOW;  /* Return distinct error code for overflow */
     }
     /* Check for overflow in allocation size calculation */
     if (cortex_mul_size_overflow(new_capacity, sizeof(*scheduler->plugins), &alloc_size)) {
         fprintf(stderr, "[scheduler] Integer overflow: new_capacity=%zu * sizeof(entry)=%zu exceeds SIZE_MAX\n",
                 new_capacity, sizeof(*scheduler->plugins));
         errno = EOVERFLOW;
-        return -1;
+        return -EOVERFLOW;  /* Return distinct error code for overflow */
     }
 
     cortex_scheduler_plugin_entry_t *new_entries = realloc(scheduler->plugins, alloc_size);
     if (!new_entries) {
-        return -1;
+        return -ENOMEM;  /* Return distinct error code for allocation failure */
     }
     memset(new_entries + scheduler->plugin_capacity, 0,
            (new_capacity - scheduler->plugin_capacity) * sizeof(*new_entries));

@@ -33,12 +33,39 @@ int cortex_create_directories(const char *path);  /* Create parent directories f
  *   buffer = malloc(window_samples * sizeof(float));  // safe
  */
 static inline int cortex_mul_size_overflow(size_t a, size_t b, size_t *result) {
-#if (defined(__GNUC__) && (__GNUC__ > 5 || (__GNUC__ == 5 && __GNUC_MINOR__ >= 1))) || \
-    (defined(__clang__) && defined(__has_builtin) && __has_builtin(__builtin_mul_overflow))
-    /* GCC 5.1+ and Clang 3.4+ provide efficient builtin (single instruction) */
-    return __builtin_mul_overflow(a, b, result);
+    /* Use compiler builtins when available for optimal performance.
+     * Must carefully guard __has_builtin to avoid breaking GCC preprocessor. */
+#if defined(__GNUC__) && !defined(__clang__)
+    /* GCC 5.1+ has __builtin_mul_overflow */
+    #if __GNUC__ > 5 || (__GNUC__ == 5 && __GNUC_MINOR__ >= 1)
+        return __builtin_mul_overflow(a, b, result);
+    #else
+        /* Older GCC: use portable fallback */
+        if (a > 0 && b > 0 && a > SIZE_MAX / b) {
+            return 1;  /* overflow would occur */
+        }
+        *result = a * b;
+        return 0;  /* safe */
+    #endif
+#elif defined(__clang__)
+    /* Clang: check if builtin is available using __has_builtin */
+    #if defined(__has_builtin)
+        #if __has_builtin(__builtin_mul_overflow)
+            return __builtin_mul_overflow(a, b, result);
+        #else
+            /* Clang without builtin: use portable fallback */
+            if (a > 0 && b > 0 && a > SIZE_MAX / b) {
+                return 1;
+            }
+            *result = a * b;
+            return 0;
+        #endif
+    #else
+        /* Old Clang without __has_builtin: assume builtin exists (Clang 3.4+) */
+        return __builtin_mul_overflow(a, b, result);
+    #endif
 #else
-    /* Portable fallback for older GCC, MSVC, and other compilers */
+    /* Other compilers (MSVC, etc.): portable fallback */
     if (a > 0 && b > 0 && a > SIZE_MAX / b) {
         return 1;  /* overflow would occur */
     }
