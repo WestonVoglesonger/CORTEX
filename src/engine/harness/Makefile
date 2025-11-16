@@ -11,7 +11,7 @@ else
     LDFLAGS = -ldl -lpthread -lm
 endif
 
-APP_SOURCES = app/main.c
+APP_SOURCES = app/main.c app/signal_handler.c
 CFG_SOURCES = config/config.c
 LOD_SOURCES = loader/loader.c
 TEL_SOURCES = telemetry/telemetry.c

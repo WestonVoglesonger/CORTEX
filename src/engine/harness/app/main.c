@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "loader.h"
+#include "signal_handler.h"
 #include "telemetry.h"
 #include "util.h"
 #include "../report/report.h"
@@ -117,19 +118,27 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
         return -1;
     }
 
-    /* Run for the specified duration. */
+    /* Run for the specified duration, or until shutdown signal received */
     const uint64_t start = cortex_now_ns();
     const uint64_t end_target = start + (uint64_t)seconds * 1000000000ULL;
-    while (cortex_now_ns() < end_target) {
+    while (cortex_now_ns() < end_target && !cortex_should_shutdown()) {
         /* simple sleep-loop; nanosleep inside replayer governs cadence */
         struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000L };
         nanosleep(&ts, NULL);
     }
 
+    /* Check if we're exiting due to shutdown signal */
+    int was_interrupted = cortex_should_shutdown();
+    if (was_interrupted) {
+        fprintf(stderr, "\n[harness] Interrupted by signal, cleaning up...\n");
+    }
+
     cortex_replayer_stop();
     cortex_replayer_stop_background_load();
     cortex_scheduler_flush(ctx->scheduler);
-    return 0;
+
+    /* If interrupted, return error to signal early termination */
+    return was_interrupted ? -1 : 0;
 }
 
 static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
@@ -280,6 +289,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "failed to init telemetry buffer\n");
         return 1;
     }
+
+    /* Install signal handlers for graceful shutdown on Ctrl+C */
+    cortex_install_signal_handlers();
 
     /* Auto-detect kernels if not explicitly specified */
     if (ctx.run_cfg.auto_detect_kernels) {
