@@ -361,6 +361,12 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Check for shutdown one final time before report generation */
+    if (cortex_should_shutdown() && !was_interrupted) {
+        fprintf(stderr, "[harness] Shutdown requested before report generation\n");
+        was_interrupted = 1;
+    }
+
     /* Generate HTML report after all plugins complete (skip if interrupted) */
     if (!was_interrupted) {
         /* Ensure output directory exists */
