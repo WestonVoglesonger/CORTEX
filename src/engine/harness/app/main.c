@@ -293,6 +293,9 @@ int main(int argc, char **argv) {
     /* Install signal handlers for graceful shutdown on Ctrl+C */
     cortex_install_signal_handlers();
 
+    /* Track if we were interrupted by a signal */
+    int was_interrupted = 0;
+
     /* Auto-detect kernels if not explicitly specified */
     if (ctx.run_cfg.auto_detect_kernels) {
         printf("[harness] No plugins specified in config, auto-detecting kernels...\n");
@@ -332,36 +335,57 @@ int main(int argc, char **argv) {
 
     /* Sequential plugin execution */
     for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
+        /* Check for shutdown signal before starting next plugin */
+        if (cortex_should_shutdown()) {
+            fprintf(stderr, "[harness] Shutdown requested, skipping remaining plugins\n");
+            was_interrupted = 1;
+            break;
+        }
+
         if (strcmp(ctx.run_cfg.plugins[i].status, "ready") != 0) {
             continue;
         }
         printf("[harness] Running plugin: %s\n", ctx.run_cfg.plugins[i].name);
         if (run_plugin(&ctx, i) != 0) {
             fprintf(stderr, "Plugin %s failed\n", ctx.run_cfg.plugins[i].name);
+
+            /* If failure was due to shutdown signal, stop immediately */
+            if (cortex_should_shutdown()) {
+                fprintf(stderr, "[harness] Shutdown signal detected during plugin execution\n");
+                was_interrupted = 1;
+                break;
+            }
+
             // For now: continue to next plugin (collect partial results)
             // Future: add benchmark.fail_fast config option to abort on first failure
         }
     }
 
-    /* Generate HTML report after all plugins complete */
-    /* Ensure output directory exists */
-    if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
-        char report_path[1024];
-        snprintf(report_path, sizeof(report_path), "%s/report.html",
-                 ctx.run_cfg.output.directory);
+    /* Generate HTML report after all plugins complete (skip if interrupted) */
+    if (!was_interrupted) {
+        /* Ensure output directory exists */
+        if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
+            char report_path[1024];
+            snprintf(report_path, sizeof(report_path), "%s/report.html",
+                     ctx.run_cfg.output.directory);
 
-        printf("[harness] Generating HTML report: %s\n", report_path);
-        fflush(stdout);
-        if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
-            printf("[harness] Report generated successfully\n");
+            printf("[harness] Generating HTML report: %s\n", report_path);
             fflush(stdout);
-        } else {
-            fprintf(stderr, "[harness] Failed to generate report\n");
+            if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
+                printf("[harness] Report generated successfully\n");
+                fflush(stdout);
+            } else {
+                fprintf(stderr, "[harness] Failed to generate report\n");
+            }
         }
+    } else {
+        fprintf(stderr, "[harness] Report generation skipped due to shutdown signal\n");
     }
 
     cortex_telemetry_free(&ctx.telemetry);
-    return 0;
+
+    /* Return error code if interrupted, success otherwise */
+    return was_interrupted ? 1 : 0;
 }
 
 
