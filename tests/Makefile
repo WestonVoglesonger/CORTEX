@@ -10,7 +10,7 @@ SCHEDULER_SRC = ../src/engine/scheduler/scheduler.c
 TELEMETRY_SRC = ../src/engine/harness/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
 LOADER_SRC = ../src/engine/harness/loader/loader.c
-SIGNAL_HANDLER_SRC = ../src/engine/harness/app/signal_handler.c
+SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
 
 # Test binaries
 TEST_REPLAYER = test_replayer

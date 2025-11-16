@@ -18,7 +18,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "../src/engine/harness/app/signal_handler.h"
+#include "../src/engine/harness/util/signal_handler.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \
