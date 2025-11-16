@@ -243,6 +243,68 @@ valgrind --leak-check=full ./src/engine/harness/cortex run primitives/configs/co
 
 ---
 
+### Graceful shutdown with Ctrl+C
+
+**Symptom**: Want to stop benchmark early without losing data
+
+**Behavior**: CORTEX supports graceful shutdown when you press Ctrl+C (SIGINT) or send SIGTERM:
+
+**What happens during graceful shutdown:**
+1. Signal is caught (doesn't terminate immediately)
+2. Current plugin execution completes
+3. Remaining plugins are skipped
+4. Telemetry data is flushed to disk
+5. Report generation is skipped
+6. Exit code 1 is returned (indicating interrupted execution)
+
+**When shutdown is checked:**
+- Before starting each plugin
+- After plugin execution fails
+- Before report generation
+- After report generation
+
+**Expected output:**
+```bash
+$ ./src/engine/harness/cortex run primitives/configs/cortex.yaml
+[harness] Running plugin: notch_iir@f32
+^C[harness] Shutdown requested, skipping remaining plugins
+[harness] Report generation skipped due to shutdown signal
+# Exit code: 1
+```
+
+**Maximum shutdown delay:**
+- During plugin warmup: ~10ms (sleep loop interval)
+- During plugin execution: Completes current window (~deadline time)
+- During report generation: Completes current I/O operation
+
+**Important notes:**
+- Telemetry data is **always** written before exit
+- Replayer and scheduler are **always** cleaned up
+- Can safely Ctrl+C at any point without orphaned processes
+- Once interrupted, harness must be restarted for another run
+
+**Troubleshooting Ctrl+C:**
+
+If Ctrl+C doesn't work:
+```bash
+# Send SIGTERM instead (Unix)
+pkill -TERM cortex
+
+# Force kill (last resort, may lose data)
+pkill -KILL cortex
+```
+
+If orphaned processes remain:
+```bash
+# Check for orphaned stress-ng processes
+ps aux | grep stress-ng
+
+# Clean them up
+pkill stress-ng
+```
+
+---
+
 ## Performance Issues
 
 ### Unexpectedly high latency
