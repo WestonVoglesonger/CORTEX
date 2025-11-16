@@ -1,5 +1,6 @@
 """Experiment execution"""
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -92,9 +93,6 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
     cmd = [str(harness_binary), 'run', config_path]
 
     # Add platform-specific sleep prevention wrapper
-    import platform
-    import shutil
-
     system = platform.system()
     sleep_prevention_tool = None
 
@@ -126,6 +124,7 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         print(f"[cortex] Ensure system won't sleep during benchmarks")
 
     # Set up output redirection based on verbose flag
+    run_dir = get_run_directory(run_name)
     log_file_handle = None
     try:
         if verbose:
@@ -135,7 +134,6 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
             show_spinner = False
         else:
             # Clean mode: redirect to log file and show spinner
-            run_dir = get_run_directory(run_name)
             log_file = run_dir / 'harness.log'
             log_file_handle = open(log_file, 'w', buffering=1)  # Line buffered
             stdout_dest = log_file_handle
@@ -175,13 +173,12 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
         if returncode != 0:
             print(f"\nError: Harness execution failed (exit code {returncode})")
             if not verbose and log_file_handle:
-                print(f"Check log file for details: {log_file}")
+                print(f"Check log file for details: {run_dir / 'harness.log'}")
             else:
                 print("Check output above for error details")
             return None
 
         # Return the run directory path
-        run_dir = get_run_directory(run_name)
         if run_dir.exists():
             return str(run_dir)
 
@@ -198,12 +195,6 @@ def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optio
                 log_file_handle.close()
             except Exception:
                 pass  # Ignore cleanup errors
-
-def _make_progress_bar(percent: float, width: int = 30) -> str:
-    """Create a simple text progress bar"""
-    filled = int(width * percent / 100)
-    bar = '█' * filled + '░' * (width - filled)
-    return f"[{bar}]"
 
 def run_single_kernel(
     kernel_name: str,

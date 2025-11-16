@@ -250,30 +250,23 @@ def check_background_services() -> SystemCheck:
         'vmware', 'vmware-vmx',             # VMware
         'node', 'npm',                      # Node.js (build servers)
         'make', 'gcc', 'clang',             # Compilation
-        'python',                           # Python (may be data processing)
+        # Note: 'python' removed - too broad, would flag CORTEX itself
     ]
 
     try:
-        if system == 'Darwin':
-            result = subprocess.run(
-                ['ps', 'aux'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-        elif system == 'Linux':
-            result = subprocess.run(
-                ['ps', 'aux'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-        else:
+        if system not in ['Darwin', 'Linux']:
             return SystemCheck(
                 'Background Services',
                 'warn',
                 f'Unsupported platform: {system}'
             )
+
+        result = subprocess.run(
+            ['ps', 'aux'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
 
         if result.returncode == 0:
             running_heavy = []
