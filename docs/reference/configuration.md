@@ -198,11 +198,50 @@ When `stress-ng` is not installed:
 [load] stress-ng not found in PATH, running without background load
 ```
 
-**Recommended Usage:**
+**Platform-Specific Recommendations:**
 
-- **Development/Testing**: Use `idle` for reproducible baseline measurements
-- **Production Validation**: Use `medium` or `heavy` to validate robustness
-- **Continuous Integration**: Use `idle` (stress-ng may not be in CI environment)
+⚠️ **macOS (Fall 2025 Benchmarks):**
+
+**CRITICAL**: Always use `load_profile: "medium"` for reproducible results.
+
+**Why**: macOS frequency scaling causes 49% performance variance in idle mode
+
+**Empirical Evidence** (from validation runs):
+
+| Kernel | Idle Mean | Medium Mean | Variance |
+|--------|-----------|-------------|----------|
+| bandpass_fir | 4969 µs | 2554 µs | -48.6% |
+| car | 36 µs | 20 µs | -45.5% |
+| goertzel | 417 µs | 196 µs | -53.0% |
+| notch_iir | 115 µs | 61 µs | -47.4% |
+
+**Validation**: Medium vs Heavy comparison (36% delta) proves both lock CPU frequency
+
+**Complete analysis**: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
+**Raw validation data**: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+**Decision rationale**: [ADR-002](../architecture/adr/adr-002-benchmark-reproducibility-macos.md)
+
+**Linux Alternative**:
+
+On Linux, you can achieve the same goal using manual CPU governor control:
+```bash
+# Set all CPUs to performance mode (requires sudo)
+sudo cpupower frequency-set --governor performance
+
+# Then use idle profile in CORTEX
+benchmark:
+  load_profile: "idle"
+```
+
+Or use `medium` load for consistency across platforms.
+
+**General Usage Guidelines:**
+
+- **macOS Benchmarks**: Always use `medium` (required for reproducibility)
+- **Linux Benchmarks**: Use performance governor + `idle`, OR use `medium` for platform consistency
+- **Development/Testing**: Follow platform recommendations above
+- **Stress Testing**: Use `heavy` to validate robustness under contention
+- **CI/CD**: Ensure stress-ng is installed, use `medium` for valid results
 
 **Implementation Details:**
 

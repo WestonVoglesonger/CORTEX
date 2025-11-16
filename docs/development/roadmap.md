@@ -82,6 +82,42 @@ See `src/engine/include/cortex_plugin/cortex_plugin.h` for dtype definitions and
 
 **Kernel Auto-Detection Multi-Dtype Limitations**: The Fall 2025 auto-detection system (`cortex_discover_kernels()`) has known limitations with multi-dtype support that will be addressed during quantization implementation. See `docs/development/future-enhancements.md` "Current Auto-Detection Limitations" section and `src/engine/harness/config/config.c` TODOs for details.
 
+### Host Power Configuration - DEFERRED to Spring 2026
+
+**Original Implementation** (Commit 02197d8, November 2025):
+- Python wrapper for CPU governor/turbo control
+- Context manager for automatic cleanup
+- Platform-specific implementations (Linux `cpupower`, macOS `pmset`)
+- Full ADR documentation (ADR-001)
+- Comprehensive error handling and fallback
+
+**Why Deferred** (Commit 1a3a868, November 2025):
+- Feature only works on Linux (requires `sysfs`, `cpupower` utilities)
+- macOS `pmset` only provides warnings, no actual power control
+- Fall 2025 benchmarks run exclusively on macOS
+- Alternative solution achieves same goal: `load_profile: "medium"` maintains consistent CPU frequency through sustained background load (empirically validated)
+
+**Current Alternative**:
+Use `load_profile: "medium"` for platform-agnostic CPU frequency control. This approach:
+- Prevents macOS frequency scaling (49% performance variance discovered in validation runs)
+- Works on both macOS and Linux
+- Empirically validated via three-way comparison (n=1200+ samples)
+- Goal-equivalent to Linux performance governor
+
+**Spring 2026 Reinstatement Plan**:
+When embedded device HIL testing begins on Linux hosts:
+1. Restore power config feature from commit 02197d8
+2. Integrate with device adapter framework
+3. Linux host will use performance governor control
+4. macOS host will continue using medium load baseline approach
+5. Update ADR-002 with platform-specific strategy
+
+**Documentation**:
+- Decision rationale: [ADR-002](../architecture/adr/adr-002-benchmark-reproducibility-macos.md)
+- Industry comparison: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
+- Validation data: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+- Configuration guide: [Platform-Specific Recommendations](../reference/configuration.md#platform-specific-recommendations)
+
 ### Unimplemented Configuration Fields
 These fields are **documented** in `docs/reference/configuration.md` and **parsed** by the config loader but **not yet used** by the harness:
 
