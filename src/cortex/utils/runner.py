@@ -5,6 +5,7 @@ All external dependencies (filesystem, subprocess, time, etc.) are now abstracte
 via Protocol interfaces, enabling full unit test coverage without I/O.
 """
 
+import sys
 from pathlib import Path
 from typing import Optional
 from cortex.core.protocols import (
@@ -188,13 +189,17 @@ class HarnessRunner:
             # Wait for process to complete
             if show_spinner:
                 # Clean mode: show spinner
+                # NOTE: Use direct print() for spinner to maintain single-line terminal behavior.
+                # Logger abstraction always adds newlines, which would flood console with thousands
+                # of lines. This is the one place where terminal control trumps DI abstraction.
                 while process_handle.poll() is None:
                     elapsed = self.time.current_time() - start_time
                     spinner_idx = int(elapsed * 2) % len(spinner_chars)
-                    self.log.info(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ")
+                    print(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ",
+                          end='', flush=True, file=sys.stdout)
                     self.time.sleep(0.5)
                 # Clear progress line
-                self.log.info(f"\r{' ' * 60}\r")
+                print(f"\r{' ' * 60}\r", end='', flush=True, file=sys.stdout)
             else:
                 # Verbose mode: just wait without spinner
                 process_handle.wait()
