@@ -144,14 +144,17 @@ static int test_hop_sized_chunks(void) {
     config.window_length_samples = window_samples;
     config.hop_samples = hop_samples;
     
-    int rc = cortex_replayer_run(&config, test_callback, &ctx);
-    TEST_ASSERT(rc == 0, "replayer_run failed");
-    
+    cortex_replayer_t *replayer = cortex_replayer_create(&config);
+    TEST_ASSERT(replayer != NULL, "replayer_create failed");
+
+    int rc = cortex_replayer_start(replayer, test_callback, &ctx);
+    TEST_ASSERT(rc == 0, "replayer_start failed");
+
     /* Let it run for a bit */
     usleep(1500000); /* 1.5 seconds - should get ~3 callbacks @ 500ms intervals... wait, 8/160 = 50ms */
     usleep(200000); /* 200ms - should get ~4 callbacks @ 50ms intervals */
-    
-    cortex_replayer_stop();
+
+    cortex_replayer_destroy(replayer);
     
     /* Verify we got hop-sized chunks, not windows */
     TEST_ASSERT(ctx.callback_count >= 3, "Expected at least 3 callbacks");
@@ -189,12 +192,15 @@ static int test_timing_cadence(void) {
     config.window_length_samples = 160;
     config.hop_samples = hop_samples;
     
-    cortex_replayer_run(&config, test_callback, &ctx);
-    
+    cortex_replayer_t *replayer = cortex_replayer_create(&config);
+    TEST_ASSERT(replayer != NULL, "replayer_create failed");
+
+    cortex_replayer_start(replayer, test_callback, &ctx);
+
     /* Run for ~2 seconds to get 4 callbacks */
     usleep(2100000);
-    
-    cortex_replayer_stop();
+
+    cortex_replayer_destroy(replayer);
     
     /* Verify timing */
     TEST_ASSERT(ctx.callback_count >= 3, "Expected at least 3 callbacks");
@@ -244,12 +250,15 @@ static int test_eof_rewind(void) {
     config.window_length_samples = 32;
     config.hop_samples = hop_samples;
     
-    cortex_replayer_run(&config, test_callback, &ctx);
-    
+    cortex_replayer_t *replayer = cortex_replayer_create(&config);
+    TEST_ASSERT(replayer != NULL, "replayer_create failed");
+
+    cortex_replayer_start(replayer, test_callback, &ctx);
+
     /* File has 3 chunks, run long enough to hit EOF and rewind (should loop) */
     usleep(500000); /* 0.5s - should get multiple loops */
-    
-    cortex_replayer_stop();
+
+    cortex_replayer_destroy(replayer);
     
     /* Should have gotten more callbacks than chunks in file (due to rewind) */
     TEST_ASSERT(ctx.callback_count > chunks_in_file,
@@ -297,12 +306,15 @@ static int test_various_configs(void) {
         config.window_length_samples = configs[i].hop_samples * 2;
         config.hop_samples = configs[i].hop_samples;
         
-        cortex_replayer_run(&config, test_callback, &ctx);
-        
+        cortex_replayer_t *replayer = cortex_replayer_create(&config);
+        TEST_ASSERT(replayer != NULL, "replayer_create failed");
+
+        cortex_replayer_start(replayer, test_callback, &ctx);
+
         /* Run for enough time to get a few callbacks */
         usleep((int)(ctx.expected_period_sec * 3 * 1000000));
-        
-        cortex_replayer_stop();
+
+        cortex_replayer_destroy(replayer);
         
         TEST_ASSERT(ctx.callback_count >= 2, "Should get at least 2 callbacks");
         TEST_ASSERT_EQ(ctx.expected_chunk_size, configs[i].hop_samples * configs[i].channels,
@@ -348,12 +360,15 @@ static int test_data_continuity(void) {
     config.window_length_samples = 16;
     config.hop_samples = hop_samples;
     
-    cortex_replayer_run(&config, test_callback, &ctx);
-    
+    cortex_replayer_t *replayer = cortex_replayer_create(&config);
+    TEST_ASSERT(replayer != NULL, "replayer_create failed");
+
+    cortex_replayer_start(replayer, test_callback, &ctx);
+
     /* Run long enough to get all chunks */
     usleep((int)(ctx.expected_period_sec * num_chunks * 1000000 * 1.5));
-    
-    cortex_replayer_stop();
+
+    cortex_replayer_destroy(replayer);
     
     /* Verify data is continuous ramp: 0, 1, 2, 3, ... */
     for (size_t i = 0; i < ctx.total_samples_received && i < total_samples; i++) {

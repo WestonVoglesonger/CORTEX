@@ -106,15 +106,22 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     rcfg.enable_dropouts = 0;
     rcfg.load_profile = ctx->run_cfg.benchmark.load_profile;
 
+    /* Create replayer instance */
+    cortex_replayer_t *replayer = cortex_replayer_create(&rcfg);
+    if (!replayer) {
+        fprintf(stderr, "failed to create replayer\n");
+        return -1;
+    }
+
     /* Start background load profile before replayer */
-    if (cortex_replayer_start_background_load(rcfg.load_profile) != 0) {
+    if (cortex_replayer_start_background_load(replayer, rcfg.load_profile) != 0) {
         fprintf(stderr, "[harness] warning: failed to start background load\n");
         /* Continue anyway - not a fatal error */
     }
 
-    if (cortex_replayer_run(&rcfg, on_replayer_chunk, ctx) != 0) {
+    if (cortex_replayer_start(replayer, on_replayer_chunk, ctx) != 0) {
         fprintf(stderr, "failed to start replayer\n");
-        cortex_replayer_stop_background_load();
+        cortex_replayer_destroy(replayer);
         return -1;
     }
 
@@ -133,8 +140,8 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
         fprintf(stderr, "\n[harness] Interrupted by signal, cleaning up...\n");
     }
 
-    cortex_replayer_stop();
-    cortex_replayer_stop_background_load();
+    /* Cleanup: stop and destroy replayer (also stops background load) */
+    cortex_replayer_destroy(replayer);
     cortex_scheduler_flush(ctx->scheduler);
 
     /* If interrupted, return error to signal early termination */
