@@ -22,6 +22,12 @@ from cortex.utils.paths import (
     get_run_directory
 )
 
+# Constants
+HARNESS_BINARY_PATH = 'src/engine/harness/cortex'
+KERNEL_DATA_DIR = 'kernel-data'
+HARNESS_LOG_FILE = 'harness.log'
+GENERATED_CONFIG_DIR = 'primitives/configs/generated'
+
 
 class HarnessRunner:
     """Orchestrates harness execution with dependency injection.
@@ -69,7 +75,7 @@ class HarnessRunner:
 
             # Check if directory is empty or only contains empty subdirectories
             has_data = False
-            kernel_data_path = Path(run_dir) / "kernel-data"
+            kernel_data_path = f"{run_dir}/{KERNEL_DATA_DIR}"
 
             if self.fs.exists(kernel_data_path):
                 for kernel_dir in self.fs.iterdir(kernel_data_path):
@@ -98,16 +104,14 @@ class HarnessRunner:
         Returns:
             Run directory path if successful, None otherwise
         """
-        harness_binary = 'src/engine/harness/cortex'
-
         # Validate harness binary
-        if not self.fs.exists(harness_binary):
-            self.log.error(f"Harness binary not found at {harness_binary}")
+        if not self.fs.exists(HARNESS_BINARY_PATH):
+            self.log.error(f"Harness binary not found at {HARNESS_BINARY_PATH}")
             self.log.info("Run 'cortex build' first")
             return None
 
-        if not self.fs.is_file(harness_binary):
-            self.log.error(f"{harness_binary} exists but is not a file")
+        if not self.fs.is_file(HARNESS_BINARY_PATH):
+            self.log.error(f"{HARNESS_BINARY_PATH} exists but is not a file")
             return None
 
         # Validate config file
@@ -130,7 +134,7 @@ class HarnessRunner:
             total_time = None  # Fall back to no progress calculation
 
         # Build command
-        cmd = [harness_binary, 'run', config_path]
+        cmd = [HARNESS_BINARY_PATH, 'run', config_path]
 
         # Add platform-specific sleep prevention wrapper
         system = self.env.get_system_type()
@@ -165,22 +169,9 @@ class HarnessRunner:
 
         # Set up output redirection based on verbose flag
         run_dir = get_run_directory(run_name)
-        log_file_handle = None
 
-        try:
-            if verbose:
-                # Verbose mode: let C harness print directly to terminal
-                stdout_dest = None
-                stderr_dest = None
-                show_spinner = False
-            else:
-                # Clean mode: redirect to log file and show spinner
-                log_file = Path(run_dir) / 'harness.log'
-                log_file_handle = self.fs.open(log_file, 'w', buffering=1)  # Line buffered
-                stdout_dest = log_file_handle
-                stderr_dest = log_file_handle
-                show_spinner = True
-
+        # Helper to execute subprocess and wait for completion
+        def _execute_and_wait(stdout_dest, stderr_dest, show_spinner):
             # Launch subprocess
             process_handle = self.process.popen(
                 cmd,
@@ -209,12 +200,27 @@ class HarnessRunner:
                 process_handle.wait()
 
             # Get return code
-            returncode = process_handle.poll()
+            return process_handle.poll()
+
+        try:
+            if verbose:
+                # Verbose mode: let C harness print directly to terminal
+                returncode = _execute_and_wait(stdout_dest=None, stderr_dest=None, show_spinner=False)
+            else:
+                # Clean mode: redirect to log file and show spinner
+                log_file = f"{run_dir}/{HARNESS_LOG_FILE}"
+                # Use context manager for proper file handle cleanup
+                with self.fs.open(log_file, 'w', buffering=1) as log_file_handle:
+                    returncode = _execute_and_wait(
+                        stdout_dest=log_file_handle,
+                        stderr_dest=log_file_handle,
+                        show_spinner=True
+                    )
 
             if returncode != 0:
                 self.log.error(f"\nHarness execution failed (exit code {returncode})")
-                if not verbose and log_file_handle:
-                    self.log.info(f"Check log file for details: {run_dir / 'harness.log'}")
+                if not verbose:
+                    self.log.info(f"Check log file for details: {run_dir}/{HARNESS_LOG_FILE}")
                 else:
                     self.log.info("Check output above for error details")
                 return None
@@ -228,13 +234,6 @@ class HarnessRunner:
         except Exception as e:
             self.log.error(f"Error running harness: {e}")
             return None
-        finally:
-            # Clean up log file handle
-            if log_file_handle:
-                try:
-                    log_file_handle.close()
-                except Exception:
-                    pass  # Ignore cleanup errors
 
     def run_single_kernel(
         self,
@@ -265,7 +264,7 @@ class HarnessRunner:
         kernel_dir = create_kernel_directory(run_name, kernel_name)
 
         # Generate config
-        config_dir = Path('primitives/configs/generated')
+        config_dir = Path(GENERATED_CONFIG_DIR)
         self.fs.mkdir(config_dir, parents=True, exist_ok=True)
         config_path = config_dir / f"{kernel_name}.yaml"
 
@@ -322,7 +321,7 @@ class HarnessRunner:
         create_run_structure(run_name)
 
         # Generate all configs
-        config_dir = Path('primitives/configs/generated')
+        config_dir = Path(GENERATED_CONFIG_DIR)
         self.fs.mkdir(config_dir, parents=True, exist_ok=True)
 
         self.log.info("Generating configs for all kernels...")

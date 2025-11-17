@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import Mock, MagicMock, call
 from pathlib import Path
 
-from cortex.utils.runner import HarnessRunner
+from cortex.utils.runner import HarnessRunner, HARNESS_BINARY_PATH
 from cortex.core.protocols import (
     FileSystemService,
     ProcessExecutor,
@@ -89,7 +89,7 @@ class TestHarnessRunnerRun:
 
         # Assert
         assert result is None
-        self.fs.exists.assert_called_once_with('src/engine/harness/cortex')
+        self.fs.exists.assert_called_once_with(HARNESS_BINARY_PATH)
         self.logger.error.assert_called_once()
         assert "Harness binary not found" in self.logger.error.call_args[0][0]
 
@@ -97,7 +97,7 @@ class TestHarnessRunnerRun:
         """Test that run() fails when binary exists but is not a file."""
         # Arrange
         self.fs.exists.return_value = True
-        self.fs.is_file.side_effect = lambda p: p != 'src/engine/harness/cortex'
+        self.fs.is_file.side_effect = lambda p: p != HARNESS_BINARY_PATH
 
         # Act
         result = self.runner.run("test.yaml", "test-run")
@@ -110,7 +110,7 @@ class TestHarnessRunnerRun:
     def test_run_config_file_not_found(self):
         """Test that run() fails when config file doesn't exist."""
         # Arrange
-        self.fs.exists.side_effect = lambda p: p == 'src/engine/harness/cortex'
+        self.fs.exists.side_effect = lambda p: p == HARNESS_BINARY_PATH
         self.fs.is_file.return_value = True
 
         # Act
@@ -149,8 +149,9 @@ class TestHarnessRunnerRun:
 
         # Mock process handle
         mock_handle = Mock(spec=ProcessHandle)
-        mock_handle.poll.side_effect = [None, None, 0]  # Running, then exits with 0
+        # In verbose mode, we call wait() then poll() for return code
         mock_handle.wait.return_value = 0
+        mock_handle.poll.return_value = 0  # After wait(), poll() returns exit code
         self.process.popen.return_value = mock_handle
 
         self.time.current_time.side_effect = [100.0, 100.5, 101.0]  # Simulated time progression
@@ -185,8 +186,9 @@ class TestHarnessRunnerRun:
         self.tools.has_tool.side_effect = lambda tool: tool == 'systemd-inhibit'
 
         mock_handle = Mock(spec=ProcessHandle)
-        mock_handle.poll.side_effect = [None, 0]
+        # In verbose mode, we call wait() then poll() for return code
         mock_handle.wait.return_value = 0
+        mock_handle.poll.return_value = 0  # After wait(), poll() returns exit code
         self.process.popen.return_value = mock_handle
 
         self.time.current_time.return_value = 100.0
@@ -316,13 +318,13 @@ class TestHarnessRunnerCleanup:
         """Test cleanup skips when directory has data."""
         # Arrange
         run_dir = Path("/tmp/test-run")
-        kernel_data_dir = run_dir / "kernel-data"
+        kernel_data_dir = f"{run_dir}/kernel-data"
 
-        self.fs.exists.side_effect = lambda p: p in [run_dir, kernel_data_dir]
+        self.fs.exists.side_effect = lambda p: str(p) in [str(run_dir), kernel_data_dir]
         self.fs.is_dir.return_value = True
         self.fs.iterdir.side_effect = [
-            [kernel_data_dir / "kernel1"],  # First iterdir (kernel-data)
-            [kernel_data_dir / "kernel1" / "file.txt"]  # Second iterdir (kernel1 dir has files)
+            [Path(kernel_data_dir) / "kernel1"],  # First iterdir (kernel-data)
+            [Path(kernel_data_dir) / "kernel1" / "file.txt"]  # Second iterdir (kernel1 dir has files)
         ]
 
         # Act
@@ -335,12 +337,12 @@ class TestHarnessRunnerCleanup:
         """Test cleanup removes empty directory."""
         # Arrange
         run_dir = Path("/tmp/test-run")
-        kernel_data_dir = run_dir / "kernel-data"
+        kernel_data_dir = f"{run_dir}/kernel-data"
 
-        self.fs.exists.side_effect = lambda p: p in [run_dir, kernel_data_dir]
+        self.fs.exists.side_effect = lambda p: str(p) in [str(run_dir), kernel_data_dir]
         self.fs.is_dir.return_value = True
         self.fs.iterdir.side_effect = [
-            [kernel_data_dir / "kernel1"],  # First iterdir (kernel-data)
+            [Path(kernel_data_dir) / "kernel1"],  # First iterdir (kernel-data)
             []  # Second iterdir (kernel1 dir is empty)
         ]
 
@@ -392,8 +394,9 @@ class TestHarnessRunnerIntegration:
 
         process = Mock(spec=ProcessExecutor)
         mock_handle = Mock(spec=ProcessHandle)
-        mock_handle.poll.side_effect = [None, None, None, 0]
+        # In verbose mode, we call wait() then poll() for return code
         mock_handle.wait.return_value = 0
+        mock_handle.poll.return_value = 0  # After wait(), poll() returns exit code
         process.popen.return_value = mock_handle
 
         time_provider = Mock(spec=TimeProvider)

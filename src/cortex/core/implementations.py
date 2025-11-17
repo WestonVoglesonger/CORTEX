@@ -165,6 +165,19 @@ class YamlConfigLoader:
         self.fs = filesystem
 
     def load_yaml(self, path: str) -> Dict[str, Any]:
-        """Load YAML file and return parsed dictionary."""
-        content = self.fs.read_file(path)
-        return yaml.safe_load(content)
+        """Load YAML file and return parsed dictionary.
+
+        Args:
+            path: Path to YAML file to load
+
+        Returns:
+            Parsed YAML data as dictionary
+
+        Raises:
+            ValueError: If YAML parsing fails or file is malformed
+        """
+        try:
+            content = self.fs.read_file(path)
+            return yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Failed to parse YAML file '{path}': {e}") from e
