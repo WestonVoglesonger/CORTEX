@@ -52,6 +52,7 @@
 /* Background load tracking (shared across all instances - system-wide resource) */
 static pid_t g_stress_ng_pid = 0;
 static char g_current_profile[16] = {0};
+static cortex_replayer_t *g_background_load_owner = NULL;  /* Tracks which instance started the load */
 
 /* Replayer instance definition - encapsulates replayer-specific state. */
 struct cortex_replayer {
@@ -74,7 +75,7 @@ struct cortex_replayer {
 static void *replayer_thread_main(void *arg);
 static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk);
 static void sleep_until(const struct timespec *target);
-static int prepare_background_load(const char *profile_name);
+static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name);
 static float *allocate_window_buffer(size_t samples_per_window);
 
 /* Background load helpers. */
@@ -221,7 +222,7 @@ int cortex_replayer_start_background_load(cortex_replayer_t *replayer, const cha
     if (!replayer) {
         return -EINVAL;
     }
-    return prepare_background_load(profile_name);
+    return prepare_background_load(replayer, profile_name);
 }
 
 void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
@@ -233,6 +234,11 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
         return;  /* No background load running */
     }
 
+    /* Only stop if this instance owns the background load (prevents cross-instance interference) */
+    if (g_background_load_owner != NULL && g_background_load_owner != replayer) {
+        return;  /* Different instance started the load, don't stop it */
+    }
+
     fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)g_stress_ng_pid);
     fflush(stdout);
 
@@ -242,12 +248,14 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
             /* Process already dead, but still need to reap it */
             waitpid(g_stress_ng_pid, NULL, WNOHANG);
             g_stress_ng_pid = 0;
+            g_background_load_owner = NULL;
             fprintf(stdout, "[load] background load already exited\n");
             fflush(stdout);
             return;
         }
         perror("[load] failed to send SIGTERM");
         g_stress_ng_pid = 0;
+        g_background_load_owner = NULL;
         return;
     }
 
@@ -289,6 +297,7 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
     fprintf(stdout, "[load] background load stopped\n");
     fflush(stdout);
     g_stress_ng_pid = 0;
+    g_background_load_owner = NULL;  /* Clear ownership */
 }
 
 static void *replayer_thread_main(void *arg) {
@@ -476,7 +485,7 @@ static char **build_stress_ng_args(const char *profile_name, int num_cpus) {
     return argv;
 }
 
-static int prepare_background_load(const char *profile_name) {
+static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name) {
     if (g_stress_ng_pid > 0) {
         fprintf(stderr, "[load] background load already running (PID %d)\n", (int)g_stress_ng_pid);
         return -1;
@@ -518,8 +527,9 @@ static int prepare_background_load(const char *profile_name) {
         perror("[load] execv failed");
         exit(1);
     } else if (pid > 0) {
-        /* Parent process: store PID in global */
+        /* Parent process: store PID in global and record ownership */
         g_stress_ng_pid = pid;
+        g_background_load_owner = replayer;  /* Track which instance started the load */
         fprintf(stdout, "[load] started background load: %s (PID %d, %s CPUs @ %s%% load)\n",
                 profile_name, (int)pid, args[2], args[4]);
         fflush(stdout);
