@@ -53,7 +53,7 @@
 struct cortex_replayer {
     /* Thread management */
     pthread_t thread;
-    int running;  /* 1 if thread is active, 0 otherwise */
+    volatile sig_atomic_t running;  /* 1 if thread is active, 0 otherwise (volatile for thread safety) */
 
     /* Configuration */
     cortex_replayer_config_t config;

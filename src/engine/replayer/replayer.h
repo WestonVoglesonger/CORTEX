@@ -61,11 +61,13 @@ typedef void (*cortex_replayer_window_callback)(const float *chunk_data,
 /*
  * Create a new replayer instance with the given configuration.
  *
- * Allocates and initializes a replayer instance. The configuration is copied
- * internally, so the caller may free config after this call returns.
+ * Allocates and initializes a replayer instance. The configuration struct is
+ * copied internally, so the caller may free config after this call returns.
+ * However, string pointers (dataset_path, load_profile) are stored by reference
+ * and must remain valid for the lifetime of the replayer instance.
  *
  * Parameters:
- *  - config: runtime configuration (copied on entry).
+ *  - config: runtime configuration (struct copied, strings stored by reference).
  *
  * Returns:
  *  - Pointer to new replayer instance on success, NULL on failure (sets errno).
