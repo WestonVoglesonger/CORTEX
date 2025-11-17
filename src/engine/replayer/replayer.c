@@ -49,7 +49,11 @@
 
 #define NSEC_PER_SEC 1000000000LL
 
-/* Replayer instance definition - encapsulates all state. */
+/* Background load tracking (shared across all instances - system-wide resource) */
+static pid_t g_stress_ng_pid = 0;
+static char g_current_profile[16] = {0};
+
+/* Replayer instance definition - encapsulates replayer-specific state. */
 struct cortex_replayer {
     /* Thread management */
     pthread_t thread;
@@ -57,7 +61,6 @@ struct cortex_replayer {
 
     /* Configuration */
     cortex_replayer_config_t config;
-    uint32_t dtype;  /* Cached from config for convenience */
 
     /* Callback state */
     cortex_replayer_window_callback callback;
@@ -65,17 +68,13 @@ struct cortex_replayer {
 
     /* Runtime flags */
     int dropouts_enabled;
-
-    /* Background load tracking */
-    pid_t stress_ng_pid;
-    char current_profile[16];
 };
 
 /* Internal helpers. */
 static void *replayer_thread_main(void *arg);
 static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk);
 static void sleep_until(const struct timespec *target);
-static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name);
+static int prepare_background_load(const char *profile_name);
 static float *allocate_window_buffer(size_t samples_per_window);
 
 /* Background load helpers. */
@@ -107,16 +106,12 @@ cortex_replayer_t *cortex_replayer_create(const cortex_replayer_config_t *config
 
     /* Copy configuration */
     replayer->config = *config;
-    replayer->dtype = config->dtype;
 
-    /* Initialize state */
+    /* Initialize state (calloc zeros everything, but explicit init for clarity) */
     replayer->running = 0;
     replayer->callback = NULL;
     replayer->callback_user_data = NULL;
     replayer->dropouts_enabled = 0;
-    replayer->stress_ng_pid = 0;
-    strncpy(replayer->current_profile, "idle", 15);
-    replayer->current_profile[15] = '\0';
 
     return replayer;
 }
@@ -148,6 +143,15 @@ int cortex_replayer_start(cortex_replayer_t *replayer,
         return -EALREADY;
     }
 
+    /* Validate configuration to fail fast (before starting thread) */
+    size_t hop_samples;
+    if (cortex_mul_size_overflow(replayer->config.hop_samples, replayer->config.channels, &hop_samples)) {
+        fprintf(stderr, "[replayer] Integer overflow: hop_samples=%u * channels=%u exceeds SIZE_MAX\n",
+                replayer->config.hop_samples, replayer->config.channels);
+        errno = EOVERFLOW;
+        return -EOVERFLOW;
+    }
+
     replayer->callback = callback;
     replayer->callback_user_data = user_data;
     replayer->running = 1;
@@ -170,7 +174,11 @@ int cortex_replayer_stop(cortex_replayer_t *replayer) {
     }
 
     replayer->running = 0;
-    pthread_join(replayer->thread, NULL);
+    int rc = pthread_join(replayer->thread, NULL);
+    if (rc != 0) {
+        fprintf(stderr, "[replayer] pthread_join failed: %d\n", rc);
+        return -rc;
+    }
     return 0;
 }
 
@@ -188,8 +196,8 @@ void cortex_replayer_set_load_profile(cortex_replayer_t *replayer, const char *p
 
     if (!profile_name) {
         fprintf(stderr, "[load] NULL profile name, defaulting to idle\n");
-        strncpy(replayer->current_profile, "idle", 15);
-        replayer->current_profile[15] = '\0';
+        strncpy(g_current_profile, "idle", 15);
+        g_current_profile[15] = '\0';
         return;
     }
 
@@ -198,14 +206,14 @@ void cortex_replayer_set_load_profile(cortex_replayer_t *replayer, const char *p
         strcmp(profile_name, "medium") != 0 &&
         strcmp(profile_name, "heavy") != 0) {
         fprintf(stderr, "[load] invalid profile '%s', defaulting to idle\n", profile_name);
-        strncpy(replayer->current_profile, "idle", 15);
-        replayer->current_profile[15] = '\0';
+        strncpy(g_current_profile, "idle", 15);
+        g_current_profile[15] = '\0';
         return;
     }
 
-    strncpy(replayer->current_profile, profile_name, 15);
-    replayer->current_profile[15] = '\0';
-    fprintf(stdout, "[load] load profile set to: %s\n", replayer->current_profile);
+    strncpy(g_current_profile, profile_name, 15);
+    g_current_profile[15] = '\0';
+    fprintf(stdout, "[load] load profile set to: %s\n", g_current_profile);
     fflush(stdout);
 }
 
@@ -213,29 +221,33 @@ int cortex_replayer_start_background_load(cortex_replayer_t *replayer, const cha
     if (!replayer) {
         return -EINVAL;
     }
-    return prepare_background_load(replayer, profile_name);
+    return prepare_background_load(profile_name);
 }
 
 void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
-    if (!replayer || replayer->stress_ng_pid <= 0) {
+    if (!replayer) {
+        return;
+    }
+
+    if (g_stress_ng_pid <= 0) {
         return;  /* No background load running */
     }
 
-    fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)replayer->stress_ng_pid);
+    fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)g_stress_ng_pid);
     fflush(stdout);
 
     /* Send SIGTERM for graceful shutdown */
-    if (kill(replayer->stress_ng_pid, SIGTERM) != 0) {
+    if (kill(g_stress_ng_pid, SIGTERM) != 0) {
         if (errno == ESRCH) {
             /* Process already dead, but still need to reap it */
-            waitpid(replayer->stress_ng_pid, NULL, WNOHANG);
-            replayer->stress_ng_pid = 0;
+            waitpid(g_stress_ng_pid, NULL, WNOHANG);
+            g_stress_ng_pid = 0;
             fprintf(stdout, "[load] background load already exited\n");
             fflush(stdout);
             return;
         }
         perror("[load] failed to send SIGTERM");
-        replayer->stress_ng_pid = 0;
+        g_stress_ng_pid = 0;
         return;
     }
 
@@ -245,7 +257,7 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
     int exited = 0;
 
     for (int i = 0; i < 20; i++) {  /* 20 * 100ms = 2 seconds */
-        result = waitpid(replayer->stress_ng_pid, &status, WNOHANG);
+        result = waitpid(g_stress_ng_pid, &status, WNOHANG);
         if (result > 0) {
             /* Log abnormal exit */
             if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
@@ -268,28 +280,22 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
     if (!exited) {
         /* Process didn't exit gracefully, send SIGKILL */
         fprintf(stderr, "[load] stress-ng didn't exit after 2s, sending SIGKILL\n");
-        kill(replayer->stress_ng_pid, SIGKILL);
+        kill(g_stress_ng_pid, SIGKILL);
 
         /* Blocking wait to reap zombie */
-        waitpid(replayer->stress_ng_pid, NULL, 0);
+        waitpid(g_stress_ng_pid, NULL, 0);
     }
 
     fprintf(stdout, "[load] background load stopped\n");
     fflush(stdout);
-    replayer->stress_ng_pid = 0;
+    g_stress_ng_pid = 0;
 }
 
 static void *replayer_thread_main(void *arg) {
     cortex_replayer_t *replayer = (cortex_replayer_t *)arg;
 
-    /* Check for integer overflow in chunk size calculation */
-    size_t hop_samples;
-    if (cortex_mul_size_overflow(replayer->config.hop_samples, replayer->config.channels, &hop_samples)) {
-        fprintf(stderr, "[replayer] Integer overflow: hop_samples=%u * channels=%u exceeds SIZE_MAX\n",
-                replayer->config.hop_samples, replayer->config.channels);
-        replayer->running = 0;
-        return NULL;
-    }
+    /* Calculate chunk size (overflow already checked in start()) */
+    size_t hop_samples = (size_t)replayer->config.hop_samples * replayer->config.channels;
 
     float *chunk_buffer = allocate_window_buffer(hop_samples);
     if (!chunk_buffer) {
@@ -470,9 +476,9 @@ static char **build_stress_ng_args(const char *profile_name, int num_cpus) {
     return argv;
 }
 
-static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name) {
-    if (replayer->stress_ng_pid > 0) {
-        fprintf(stderr, "[load] background load already running (PID %d)\n", (int)replayer->stress_ng_pid);
+static int prepare_background_load(const char *profile_name) {
+    if (g_stress_ng_pid > 0) {
+        fprintf(stderr, "[load] background load already running (PID %d)\n", (int)g_stress_ng_pid);
         return -1;
     }
 
@@ -512,8 +518,8 @@ static int prepare_background_load(cortex_replayer_t *replayer, const char *prof
         perror("[load] execv failed");
         exit(1);
     } else if (pid > 0) {
-        /* Parent process: store PID */
-        replayer->stress_ng_pid = pid;
+        /* Parent process: store PID in global */
+        g_stress_ng_pid = pid;
         fprintf(stdout, "[load] started background load: %s (PID %d, %s CPUs @ %s%% load)\n",
                 profile_name, (int)pid, args[2], args[4]);
         fflush(stdout);
