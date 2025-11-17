@@ -12,6 +12,7 @@
 #include <time.h>
 
 #include "../harness/telemetry/telemetry.h"
+#include "../harness/util/util.h"
 
 #ifdef __linux__
 #include <sched.h>
@@ -84,8 +85,25 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
 
     scheduler->config = *config;
 
-    scheduler->window_samples = (size_t)config->window_length_samples * config->channels;
-    scheduler->hop_samples = (size_t)config->hop_samples * config->channels;
+    /* Check for integer overflow in buffer size calculations */
+    size_t window_samples, hop_samples;
+    if (cortex_mul_size_overflow(config->window_length_samples, config->channels, &window_samples)) {
+        fprintf(stderr, "[scheduler] Integer overflow: window_length=%u * channels=%u exceeds SIZE_MAX\n",
+                config->window_length_samples, config->channels);
+        errno = EOVERFLOW;
+        free(scheduler);
+        return NULL;
+    }
+    if (cortex_mul_size_overflow(config->hop_samples, config->channels, &hop_samples)) {
+        fprintf(stderr, "[scheduler] Integer overflow: hop_samples=%u * channels=%u exceeds SIZE_MAX\n",
+                config->hop_samples, config->channels);
+        errno = EOVERFLOW;
+        free(scheduler);
+        return NULL;
+    }
+
+    scheduler->window_samples = window_samples;
+    scheduler->hop_samples = hop_samples;
     scheduler->buffer_capacity = scheduler->window_samples;
     scheduler->buffer = calloc(scheduler->buffer_capacity, sizeof(float));
     if (!scheduler->buffer) {
@@ -154,8 +172,10 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
         return -EINVAL;
     }
 
-    if (ensure_plugin_capacity(scheduler) != 0) {
-        return -ENOMEM;
+    /* Ensure we have capacity for the new plugin (may return -EOVERFLOW or -ENOMEM) */
+    int capacity_rc = ensure_plugin_capacity(scheduler);
+    if (capacity_rc != 0) {
+        return capacity_rc;  /* Propagate the actual error (-EOVERFLOW or -ENOMEM) */
     }
 
     cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[scheduler->plugin_count];
@@ -194,8 +214,36 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
 
     /* Allocate output buffer using dimensions from init() */
     const size_t element_size = sizeof(float); /* TODO: support Q15/Q7 */
-    entry->output_bytes = (size_t)init_result.output_window_length_samples * 
-                          init_result.output_channels * element_size;
+
+    /* Check for overflow in output buffer size calculation (chained multiplication) */
+    size_t temp, output_bytes;
+    if (cortex_mul_size_overflow(init_result.output_window_length_samples,
+                                 init_result.output_channels, &temp)) {
+        fprintf(stderr, "[scheduler] Integer overflow: output dimensions %u * %u exceed SIZE_MAX\n",
+                init_result.output_window_length_samples, init_result.output_channels);
+        entry->api.teardown(entry->handle);
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
+        free(entry->config_blob);
+        entry->config_blob = NULL;
+        entry->handle = NULL;
+        errno = EOVERFLOW;
+        return -EOVERFLOW;
+    }
+    if (cortex_mul_size_overflow(temp, element_size, &output_bytes)) {
+        fprintf(stderr, "[scheduler] Integer overflow: output size %zu * %zu exceeds SIZE_MAX\n",
+                temp, element_size);
+        entry->api.teardown(entry->handle);
+        free((char*)entry->plugin_name);
+        entry->plugin_name = NULL;
+        free(entry->config_blob);
+        entry->config_blob = NULL;
+        entry->handle = NULL;
+        errno = EOVERFLOW;
+        return -EOVERFLOW;
+    }
+    entry->output_bytes = output_bytes;
+
     entry->output_buffer = calloc(1, entry->output_bytes);
     if (!entry->output_buffer) {
         entry->api.teardown(entry->handle);
@@ -288,10 +336,25 @@ static int ensure_plugin_capacity(cortex_scheduler_t *scheduler) {
         return 0;
     }
 
-    size_t new_capacity = scheduler->plugin_capacity * 2;
-    cortex_scheduler_plugin_entry_t *new_entries = realloc(scheduler->plugins, new_capacity * sizeof(*new_entries));
+    /* Check for overflow in capacity doubling */
+    size_t new_capacity, alloc_size;
+    if (cortex_mul_size_overflow(scheduler->plugin_capacity, 2, &new_capacity)) {
+        fprintf(stderr, "[scheduler] Integer overflow: plugin_capacity=%zu * 2 exceeds SIZE_MAX\n",
+                scheduler->plugin_capacity);
+        errno = EOVERFLOW;
+        return -EOVERFLOW;  /* Return distinct error code for overflow */
+    }
+    /* Check for overflow in allocation size calculation */
+    if (cortex_mul_size_overflow(new_capacity, sizeof(*scheduler->plugins), &alloc_size)) {
+        fprintf(stderr, "[scheduler] Integer overflow: new_capacity=%zu * sizeof(entry)=%zu exceeds SIZE_MAX\n",
+                new_capacity, sizeof(*scheduler->plugins));
+        errno = EOVERFLOW;
+        return -EOVERFLOW;  /* Return distinct error code for overflow */
+    }
+
+    cortex_scheduler_plugin_entry_t *new_entries = realloc(scheduler->plugins, alloc_size);
     if (!new_entries) {
-        return -1;
+        return -ENOMEM;  /* Return distinct error code for allocation failure */
     }
     memset(new_entries + scheduler->plugin_capacity, 0,
            (new_capacity - scheduler->plugin_capacity) * sizeof(*new_entries));

@@ -3,6 +3,7 @@
 #include "report.h"
 #include "../util/util.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,9 +71,18 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
 
     if (filtered_count == 0) return -1;
 
+    /* Check for overflow in latency array allocations */
+    size_t latency_alloc_size;
+    if (cortex_mul_size_overflow(filtered_count, sizeof(uint64_t), &latency_alloc_size)) {
+        fprintf(stderr, "[report] Integer overflow: filtered_count=%zu * sizeof(uint64_t)=%zu exceeds SIZE_MAX\n",
+                filtered_count, sizeof(uint64_t));
+        errno = EOVERFLOW;
+        return -1;
+    }
+
     /* Allocate latency arrays (sorted and chronological) */
-    uint64_t *latencies = (uint64_t *)malloc(filtered_count * sizeof(uint64_t));
-    uint64_t *latencies_chrono = (uint64_t *)malloc(filtered_count * sizeof(uint64_t));
+    uint64_t *latencies = (uint64_t *)malloc(latency_alloc_size);
+    uint64_t *latencies_chrono = (uint64_t *)malloc(latency_alloc_size);
     if (!latencies || !latencies_chrono) {
         free(latencies);
         free(latencies_chrono);
@@ -119,7 +129,18 @@ static int compute_kernel_stats(const cortex_telemetry_buffer_t *telemetry,
     qsort(latencies, filtered_count, sizeof(uint64_t), compare_uint64);
 
     /* Convert to microseconds once for SVG functions (optimization) */
-    double *latencies_us = (double *)malloc(filtered_count * sizeof(double));
+    /* Check for overflow in double array allocation */
+    size_t double_alloc_size;
+    if (cortex_mul_size_overflow(filtered_count, sizeof(double), &double_alloc_size)) {
+        fprintf(stderr, "[report] Integer overflow: filtered_count=%zu * sizeof(double)=%zu exceeds SIZE_MAX\n",
+                filtered_count, sizeof(double));
+        free(latencies);
+        free(latencies_chrono);
+        errno = EOVERFLOW;
+        return -1;
+    }
+
+    double *latencies_us = (double *)malloc(double_alloc_size);
     if (!latencies_us) {
         free(latencies);
         free(latencies_chrono);
@@ -476,8 +497,16 @@ static void generate_cdf_plot_svg(FILE *f, double *latencies_us, size_t count,
     double y_range = height - 60;
 
     /* Buffer polyline points for single fprintf (optimization) */
-    size_t buffer_size = count * 32;  /* ~32 bytes per point should be safe */
-    char *polyline_buffer = (char *)malloc(buffer_size);
+    /* Check for overflow in buffer size calculation (~32 bytes per point) */
+    size_t buffer_size;
+    char *polyline_buffer = NULL;
+    if (cortex_mul_size_overflow(count, 32, &buffer_size)) {
+        fprintf(stderr, "[report] Integer overflow: count=%zu * 32 exceeds SIZE_MAX, using unbuffered mode\n", count);
+        /* Fall through to unbuffered mode */
+    } else {
+        polyline_buffer = (char *)malloc(buffer_size);
+    }
+
     if (!polyline_buffer) {
         /* Fallback to unbuffered if malloc fails */
         fprintf(f, "<polyline points=\"");
