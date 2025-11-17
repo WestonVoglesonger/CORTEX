@@ -61,11 +61,17 @@
  * - Only the owner can stop the load (prevents cross-instance interference)
  * - Example: Instance A starts load, Instance B created/destroyed → B doesn't stop A's load
  *
+ * Thread safety:
+ * - g_background_load_mutex protects all access to global state
+ * - Prevents race conditions if API contract is violated (concurrent access)
+ * - Documented as "main thread only" (replayer.h), but mutex provides defense in depth
+ *
  * This design allows:
  * - Production: Single instance owns load for entire execution
  * - Tests: Sequential instances each get clean ownership (no interference)
  * - Edge cases: Multiple instances won't conflict (only owner can stop)
  */
+static pthread_mutex_t g_background_load_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pid_t g_stress_ng_pid = 0;
 static cortex_replayer_t *g_background_load_owner = NULL;
 
@@ -224,32 +230,45 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
         return;
     }
 
+    /* Critical section: check if we should stop and get PID */
+    pthread_mutex_lock(&g_background_load_mutex);
+
     if (g_stress_ng_pid <= 0) {
+        pthread_mutex_unlock(&g_background_load_mutex);
         return;  /* No background load running */
     }
 
     /* Only stop if this instance owns the background load (prevents cross-instance interference) */
     if (g_background_load_owner != NULL && g_background_load_owner != replayer) {
+        pthread_mutex_unlock(&g_background_load_mutex);
         return;  /* Different instance started the load, don't stop it */
     }
 
-    fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)g_stress_ng_pid);
+    pid_t pid_to_stop = g_stress_ng_pid;
+    pthread_mutex_unlock(&g_background_load_mutex);
+    /* End critical section - don't hold lock during kill/waitpid operations */
+
+    fprintf(stdout, "[load] stopping background load (PID %d)\n", (int)pid_to_stop);
     fflush(stdout);
 
     /* Send SIGTERM for graceful shutdown */
-    if (kill(g_stress_ng_pid, SIGTERM) != 0) {
+    if (kill(pid_to_stop, SIGTERM) != 0) {
         if (errno == ESRCH) {
             /* Process already dead, but still need to reap it */
-            waitpid(g_stress_ng_pid, NULL, WNOHANG);
+            waitpid(pid_to_stop, NULL, WNOHANG);
+            pthread_mutex_lock(&g_background_load_mutex);
             g_stress_ng_pid = 0;
             g_background_load_owner = NULL;
+            pthread_mutex_unlock(&g_background_load_mutex);
             fprintf(stdout, "[load] background load already exited\n");
             fflush(stdout);
             return;
         }
         perror("[load] failed to send SIGTERM");
+        pthread_mutex_lock(&g_background_load_mutex);
         g_stress_ng_pid = 0;
         g_background_load_owner = NULL;
+        pthread_mutex_unlock(&g_background_load_mutex);
         return;
     }
 
@@ -259,7 +278,7 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
     int exited = 0;
 
     for (int i = 0; i < 20; i++) {  /* 20 * 100ms = 2 seconds */
-        result = waitpid(g_stress_ng_pid, &status, WNOHANG);
+        result = waitpid(pid_to_stop, &status, WNOHANG);
         if (result > 0) {
             /* Log abnormal exit */
             if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
@@ -282,16 +301,20 @@ void cortex_replayer_stop_background_load(cortex_replayer_t *replayer) {
     if (!exited) {
         /* Process didn't exit gracefully, send SIGKILL */
         fprintf(stderr, "[load] stress-ng didn't exit after 2s, sending SIGKILL\n");
-        kill(g_stress_ng_pid, SIGKILL);
+        kill(pid_to_stop, SIGKILL);
 
         /* Blocking wait to reap zombie */
-        waitpid(g_stress_ng_pid, NULL, 0);
+        waitpid(pid_to_stop, NULL, 0);
     }
 
     fprintf(stdout, "[load] background load stopped\n");
     fflush(stdout);
+
+    /* Critical section: clear globals now that process is stopped */
+    pthread_mutex_lock(&g_background_load_mutex);
     g_stress_ng_pid = 0;
     g_background_load_owner = NULL;  /* Clear ownership */
+    pthread_mutex_unlock(&g_background_load_mutex);
 }
 
 static void *replayer_thread_main(void *arg) {
@@ -480,10 +503,16 @@ static char **build_stress_ng_args(const char *profile_name, int num_cpus) {
 }
 
 static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name) {
+    /* Critical section: check if already running */
+    pthread_mutex_lock(&g_background_load_mutex);
     if (g_stress_ng_pid > 0) {
-        fprintf(stderr, "[load] background load already running (PID %d)\n", (int)g_stress_ng_pid);
+        pid_t existing_pid = g_stress_ng_pid;
+        pthread_mutex_unlock(&g_background_load_mutex);
+        fprintf(stderr, "[load] background load already running (PID %d)\n", (int)existing_pid);
         return -1;
     }
+    pthread_mutex_unlock(&g_background_load_mutex);
+    /* End critical section */
 
     /* Check if profile needs stress before looking for stress-ng */
     if (!profile_name || strcmp(profile_name, "idle") == 0) {
@@ -522,8 +551,11 @@ static int prepare_background_load(cortex_replayer_t *replayer, const char *prof
         exit(1);
     } else if (pid > 0) {
         /* Parent process: store PID in global and record ownership */
+        pthread_mutex_lock(&g_background_load_mutex);
         g_stress_ng_pid = pid;
         g_background_load_owner = replayer;  /* Track which instance started the load */
+        pthread_mutex_unlock(&g_background_load_mutex);
+
         fprintf(stdout, "[load] started background load: %s (PID %d, %s CPUs @ %s%% load)\n",
                 profile_name, (int)pid, args[2], args[4]);
         fflush(stdout);
