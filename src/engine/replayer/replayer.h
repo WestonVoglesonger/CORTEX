@@ -199,18 +199,6 @@ void cortex_replayer_destroy(cortex_replayer_t *replayer);
 void cortex_replayer_enable_dropouts(cortex_replayer_t *replayer, int enabled);
 
 /*
- * Set the background load profile name for validation and logging.
- * Valid profiles: "idle" (no load), "medium" (50% CPU), "heavy" (90% CPU).
- * Invalid profiles default to "idle". This is informational only;
- * actual load is controlled by start_background_load().
- *
- * Parameters:
- *  - replayer: replayer instance.
- *  - profile_name: profile name ("idle", "medium", or "heavy").
- */
-void cortex_replayer_set_load_profile(cortex_replayer_t *replayer, const char *profile_name);
-
-/*
  * Start background system load using stress-ng.
  *
  * Spawns stress-ng process with CPU workers based on profile:

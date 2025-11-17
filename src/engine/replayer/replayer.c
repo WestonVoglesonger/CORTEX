@@ -67,7 +67,6 @@
  * - Edge cases: Multiple instances won't conflict (only owner can stop)
  */
 static pid_t g_stress_ng_pid = 0;
-static char g_current_profile[16] = {0};
 static cortex_replayer_t *g_background_load_owner = NULL;
 
 /* Replayer instance definition - encapsulates replayer-specific state. */
@@ -116,12 +115,19 @@ cortex_replayer_t *cortex_replayer_create(const cortex_replayer_config_t *config
         return NULL;
     }
 
+    /* Validate required string fields */
+    if (!config->dataset_path) {
+        fprintf(stderr, "[replayer] dataset_path cannot be NULL\n");
+        errno = EINVAL;
+        return NULL;
+    }
+
     cortex_replayer_t *replayer = calloc(1, sizeof(cortex_replayer_t));
     if (!replayer) {
         return NULL;  /* errno set by calloc */
     }
 
-    /* Copy configuration */
+    /* Copy configuration (strings stored by reference - see header docs) */
     replayer->config = *config;
 
     /* Initialize state (calloc zeros everything, but explicit init for clarity) */
@@ -204,34 +210,6 @@ void cortex_replayer_enable_dropouts(cortex_replayer_t *replayer, int enabled) {
         return;
     }
     replayer->dropouts_enabled = enabled ? 1 : 0;
-}
-
-void cortex_replayer_set_load_profile(cortex_replayer_t *replayer, const char *profile_name) {
-    if (!replayer) {
-        return;
-    }
-
-    if (!profile_name) {
-        fprintf(stderr, "[load] NULL profile name, defaulting to idle\n");
-        strncpy(g_current_profile, "idle", 15);
-        g_current_profile[15] = '\0';
-        return;
-    }
-
-    /* Validate profile name */
-    if (strcmp(profile_name, "idle") != 0 &&
-        strcmp(profile_name, "medium") != 0 &&
-        strcmp(profile_name, "heavy") != 0) {
-        fprintf(stderr, "[load] invalid profile '%s', defaulting to idle\n", profile_name);
-        strncpy(g_current_profile, "idle", 15);
-        g_current_profile[15] = '\0';
-        return;
-    }
-
-    strncpy(g_current_profile, profile_name, 15);
-    g_current_profile[15] = '\0';
-    fprintf(stdout, "[load] load profile set to: %s\n", g_current_profile);
-    fflush(stdout);
 }
 
 int cortex_replayer_start_background_load(cortex_replayer_t *replayer, const char *profile_name) {
