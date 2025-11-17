@@ -21,6 +21,12 @@ extern "C" {
 #endif
 
 /*
+ * Opaque replayer instance. Encapsulates all state including configuration,
+ * thread handle, callbacks, and background load tracking.
+ */
+typedef struct cortex_replayer cortex_replayer_t;
+
+/*
  * Runtime parameters sourced from docs/RUN_CONFIG.md.  Callers must
  * zero-initialize this struct before use.  New fields should always be
  * appended to preserve forward compatibility.
@@ -53,6 +59,20 @@ typedef void (*cortex_replayer_window_callback)(const float *chunk_data,
                                                 void *user_data);
 
 /*
+ * Create a new replayer instance with the given configuration.
+ *
+ * Allocates and initializes a replayer instance. The configuration is copied
+ * internally, so the caller may free config after this call returns.
+ *
+ * Parameters:
+ *  - config: runtime configuration (copied on entry).
+ *
+ * Returns:
+ *  - Pointer to new replayer instance on success, NULL on failure (sets errno).
+ */
+cortex_replayer_t *cortex_replayer_create(const cortex_replayer_config_t *config);
+
+/*
  * Start the dataset replayer thread.
  *
  * The replayer streams hop-sized chunks at the configured sample rate,
@@ -60,36 +80,60 @@ typedef void (*cortex_replayer_window_callback)(const float *chunk_data,
  * every H/Fs seconds with H samples.
  *
  * Parameters:
- *  - config: runtime configuration; values are copied on entry.
+ *  - replayer: replayer instance.
  *  - callback: invoked for each chunk produced (typically H samples).
  *  - user_data: forwarded to the callback.
  *
  * Returns:
  *  - 0 on success, negative errno-style value on failure.
  */
-int cortex_replayer_run(const cortex_replayer_config_t *config,
-                        cortex_replayer_window_callback callback,
-                        void *user_data);
+int cortex_replayer_start(cortex_replayer_t *replayer,
+                          cortex_replayer_window_callback callback,
+                          void *user_data);
 
 /*
- * Request the replayer thread to stop and wait for completion.  Safe to call
- * multiple times.
+ * Request the replayer thread to stop and wait for completion.
+ * Safe to call multiple times. Does not free the replayer instance.
+ *
+ * Parameters:
+ *  - replayer: replayer instance.
+ *
+ * Returns:
+ *  - 0 on success, negative errno-style value on failure.
  */
-int cortex_replayer_stop(void);
+int cortex_replayer_stop(cortex_replayer_t *replayer);
 
 /*
- * Enable or disable controlled dropouts/gaps.  The actual dropout behaviour is
- * currently implemented as a TODO stub in harness/src/replayer.c.
+ * Destroy a replayer instance and free all resources.
+ * Automatically stops the replayer thread if still running.
+ * Safe to call with NULL.
+ *
+ * Parameters:
+ *  - replayer: replayer instance to destroy (may be NULL).
  */
-void cortex_replayer_enable_dropouts(int enabled);
+void cortex_replayer_destroy(cortex_replayer_t *replayer);
+
+/*
+ * Enable or disable controlled dropouts/gaps.
+ * The actual dropout behaviour is currently implemented as a TODO stub.
+ *
+ * Parameters:
+ *  - replayer: replayer instance.
+ *  - enabled: 1 to enable dropouts, 0 to disable.
+ */
+void cortex_replayer_enable_dropouts(cortex_replayer_t *replayer, int enabled);
 
 /*
  * Set the background load profile name for validation and logging.
  * Valid profiles: "idle" (no load), "medium" (50% CPU), "heavy" (90% CPU).
  * Invalid profiles default to "idle". This is informational only;
  * actual load is controlled by start_background_load().
+ *
+ * Parameters:
+ *  - replayer: replayer instance.
+ *  - profile_name: profile name ("idle", "medium", or "heavy").
  */
-void cortex_replayer_set_load_profile(const char *profile_name);
+void cortex_replayer_set_load_profile(cortex_replayer_t *replayer, const char *profile_name);
 
 /*
  * Start background system load using stress-ng.
@@ -102,8 +146,15 @@ void cortex_replayer_set_load_profile(const char *profile_name);
  * Returns 0 on success, -1 if already running or fork fails.
  * Gracefully falls back to idle if stress-ng not found in PATH.
  * Thread safety: Must be called from main thread only.
+ *
+ * Parameters:
+ *  - replayer: replayer instance.
+ *  - profile_name: profile name ("idle", "medium", or "heavy").
+ *
+ * Returns:
+ *  - 0 on success, negative value on failure.
  */
-int cortex_replayer_start_background_load(const char *profile_name);
+int cortex_replayer_start_background_load(cortex_replayer_t *replayer, const char *profile_name);
 
 /*
  * Stop background load and terminate stress-ng process.
@@ -113,8 +164,11 @@ int cortex_replayer_start_background_load(const char *profile_name);
  * Safe to call multiple times or when no load is running.
  *
  * Thread safety: Must be called from main thread only.
+ *
+ * Parameters:
+ *  - replayer: replayer instance.
  */
-void cortex_replayer_stop_background_load(void);
+void cortex_replayer_stop_background_load(cortex_replayer_t *replayer);
 
 #ifdef __cplusplus
 } /* extern "C" */
