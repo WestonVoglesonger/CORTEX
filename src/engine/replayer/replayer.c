@@ -49,10 +49,26 @@
 
 #define NSEC_PER_SEC 1000000000LL
 
-/* Background load tracking (shared across all instances - system-wide resource) */
+/* Background load tracking (shared across all instances - system-wide resource)
+ *
+ * Design rationale:
+ * - Background load (stress-ng) is a SYSTEM-WIDE resource, not per-replayer
+ * - Only ONE stress-ng process should run at a time
+ * - Multiple replayer instances must coordinate access to this singleton
+ *
+ * Ownership tracking:
+ * - g_background_load_owner: Points to the instance that started the load
+ * - Only the owner can stop the load (prevents cross-instance interference)
+ * - Example: Instance A starts load, Instance B created/destroyed → B doesn't stop A's load
+ *
+ * This design allows:
+ * - Production: Single instance owns load for entire execution
+ * - Tests: Sequential instances each get clean ownership (no interference)
+ * - Edge cases: Multiple instances won't conflict (only owner can stop)
+ */
 static pid_t g_stress_ng_pid = 0;
 static char g_current_profile[16] = {0};
-static cortex_replayer_t *g_background_load_owner = NULL;  /* Tracks which instance started the load */
+static cortex_replayer_t *g_background_load_owner = NULL;
 
 /* Replayer instance definition - encapsulates replayer-specific state. */
 struct cortex_replayer {

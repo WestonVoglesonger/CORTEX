@@ -9,6 +9,76 @@
  * via its internal sliding buffer. This design adheres to the principles outlined
  * in docs/PLUGIN_INTERFACE.md and docs/RUN_CONFIG.md by maintaining clear
  * separation of concerns: replayer = data source, scheduler = windowing logic.
+ *
+ * INSTANCE-BASED DESIGN:
+ * ----------------------
+ * The replayer uses an instance-based API pattern with explicit lifecycle
+ * management (create/start/stop/destroy). This design:
+ * - Eliminates global state for replayer-specific configuration
+ * - Enables clean test isolation (each test gets a fresh instance)
+ * - Follows standard C idioms (FILE*, pthread_t, malloc/free)
+ * - Allows re-entrancy and clean sequential execution
+ *
+ * TYPICAL USAGE:
+ * --------------
+ *   cortex_replayer_config_t cfg = { ... };
+ *   cortex_replayer_t *replayer = cortex_replayer_create(&cfg);
+ *
+ *   // Optionally start background load (system-wide resource)
+ *   cortex_replayer_start_background_load(replayer, "heavy");
+ *
+ *   // Start streaming
+ *   cortex_replayer_start(replayer, my_callback, user_data);
+ *
+ *   // ... application runs ...
+ *
+ *   // Cleanup (automatically stops thread and background load if owner)
+ *   cortex_replayer_destroy(replayer);
+ *
+ * BACKGROUND LOAD (SYSTEM-WIDE RESOURCE):
+ * ----------------------------------------
+ * Background CPU load (stress-ng) is a GLOBAL system-wide resource shared
+ * across all replayer instances:
+ * - Only ONE stress-ng process can run at a time (singleton)
+ * - Ownership tracking prevents cross-instance interference
+ * - Only the instance that started the load can stop it
+ * - destroy() safely stops load only if the instance owns it
+ *
+ * Example with multiple instances:
+ *   cortex_replayer_t *r1 = cortex_replayer_create(&cfg);
+ *   cortex_replayer_start_background_load(r1, "heavy");  // r1 owns load
+ *
+ *   cortex_replayer_t *r2 = cortex_replayer_create(&cfg);
+ *   cortex_replayer_destroy(r2);  // Does NOT stop r1's background load
+ *
+ *   cortex_replayer_destroy(r1);  // Stops background load (owner)
+ *
+ * STRING LIFETIME REQUIREMENTS:
+ * -----------------------------
+ * Configuration strings (dataset_path, load_profile) are stored BY REFERENCE,
+ * not copied. The caller MUST ensure these strings remain valid for the
+ * lifetime of the replayer instance:
+ *
+ *   // GOOD - static string
+ *   cfg.dataset_path = "/path/to/data.bin";
+ *   replayer = cortex_replayer_create(&cfg);
+ *
+ *   // GOOD - long-lived allocation
+ *   char *path = strdup("/path/to/data.bin");
+ *   cfg.dataset_path = path;
+ *   replayer = cortex_replayer_create(&cfg);
+ *   // ... use replayer ...
+ *   cortex_replayer_destroy(replayer);
+ *   free(path);  // OK - freed after replayer destroyed
+ *
+ *   // BAD - stack-allocated string goes out of scope
+ *   {
+ *       char path[256];
+ *       snprintf(path, sizeof(path), "/tmp/data.bin");
+ *       cfg.dataset_path = path;
+ *       replayer = cortex_replayer_create(&cfg);
+ *   }  // path goes out of scope - UNDEFINED BEHAVIOR
+ *   cortex_replayer_start(replayer, ...);  // Crash!
  */
 #ifndef CORTEX_HARNESS_REPLAYER_H
 #define CORTEX_HARNESS_REPLAYER_H
@@ -21,8 +91,11 @@ extern "C" {
 #endif
 
 /*
- * Opaque replayer instance. Encapsulates all state including configuration,
- * thread handle, callbacks, and background load tracking.
+ * Opaque replayer instance. Encapsulates replayer-specific state including
+ * configuration, thread handle, callbacks, and runtime flags.
+ *
+ * Note: Background load (stress-ng) is a global system-wide resource, not
+ * per-instance. See header comments for ownership tracking details.
  */
 typedef struct cortex_replayer cortex_replayer_t;
 
