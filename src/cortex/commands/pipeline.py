@@ -1,11 +1,20 @@
 """Pipeline command - Full end-to-end benchmarking"""
 from cortex.commands import build, validate, run, analyze
-from cortex.utils.runner import run_all_kernels
+from cortex.utils.runner import HarnessRunner
 from cortex.utils.analyzer import run_full_analysis
 from cortex.utils.paths import generate_run_name, get_analysis_dir
 from cortex.utils.build_helper import smart_build
 from cortex.utils.config import load_base_config
 from cortex.utils.discovery import discover_kernels
+from cortex.core import (
+    ConsoleLogger,
+    RealFileSystemService,
+    SubprocessExecutor,
+    SystemTimeProvider,
+    SystemEnvironmentProvider,
+    SystemToolLocator,
+    YamlConfigLoader,
+)
 import argparse
 import sys
 
@@ -199,7 +208,19 @@ def execute(args):
     print(f"STEP {step_num}: RUN BENCHMARKS")
     print("=" * 80)
 
-    results_dir = run_all_kernels(
+    # Create runner with production dependencies
+    filesystem = RealFileSystemService()
+    runner = HarnessRunner(
+        filesystem=filesystem,
+        process_executor=SubprocessExecutor(),
+        config_loader=YamlConfigLoader(filesystem),
+        time_provider=SystemTimeProvider(),
+        env_provider=SystemEnvironmentProvider(),
+        tool_locator=SystemToolLocator(),
+        logger=ConsoleLogger()
+    )
+
+    results_dir = runner.run_all_kernels(
         run_name=run_name,
         duration=args.duration,
         repeats=args.repeats,
