@@ -1,7 +1,7 @@
 """Pipeline command - Full end-to-end benchmarking"""
 from cortex.commands import build, validate, run, analyze
 from cortex.utils.runner import HarnessRunner
-from cortex.utils.analyzer import run_full_analysis
+from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import generate_run_name, get_analysis_dir
 from cortex.utils.build_helper import smart_build
 from cortex.utils.config import load_base_config
@@ -241,7 +241,13 @@ def execute(args):
     # Get analysis directory for this run
     analysis_dir = str(get_analysis_dir(run_name))
 
-    success = run_full_analysis(
+    # Create analyzer with production dependencies (reuse filesystem from runner)
+    analyzer = TelemetryAnalyzer(
+        filesystem=filesystem,
+        logger=ConsoleLogger()
+    )
+
+    success = analyzer.run_full_analysis(
         results_dir,
         output_dir=analysis_dir,
         plots=['all'],
