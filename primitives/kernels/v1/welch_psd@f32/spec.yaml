@@ -1,7 +1,26 @@
+```yaml
 name: welch_psd
 version: 0.1.0
 dtype: f32
 description: "Welch's method for power spectral density estimation"
+
+# ABI Configuration
+abi:
+  input_shape: [W, C]
+  output_shape: [W/2 + 1, C]
+  stateful: false
+
+# Numerical Validation
+numerical:
+  tolerances:
+    rtol: 1e-5
+    atol: 1e-6
+
+# Oracle Configuration
+oracle:
+  path: oracle.py
+  function: compute
+  dependencies: [scipy, numpy]
 
 # Kernel configuration parameters
 config:

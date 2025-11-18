@@ -1,14 +1,21 @@
 # Welch Power Spectral Density (PSD) Kernel
 
-This kernel implements Welch's method for estimating the power spectral density of a signal. It splits the data into overlapping segments, computes a modified periodogram for each segment, and averages the periodograms.
+This kernel estimates the Power Spectral Density (PSD) of an input signal using Welch's method. It splits the signal into overlapping segments, applies a window function, computes the FFT, and averages the periodograms.
 
-## Algorithm
+## Signal Model
 
-1.  **Segmentation**: The input signal is divided into overlapping segments of length `n_fft`.
-2.  **Windowing**: Each segment is multiplied by a window function (e.g., Hann).
-3.  **FFT**: The Fast Fourier Transform is computed for each windowed segment.
-4.  **Periodogram**: The squared magnitude of the FFT is computed and scaled.
-5.  **Averaging**: The periodograms are averaged to produce the final PSD estimate.
+For a signal $x[n]$, Welch's method computes the PSD estimate $\hat{P}_{xx}(f)$:
+
+$$ \hat{P}_{xx}(f) = \frac{1}{K} \sum_{k=0}^{K-1} P_{k}(f) $$
+
+Where $P_k(f)$ is the modified periodogram of the $k$-th segment:
+
+$$ P_k(f) = \frac{1}{L U} \left| \sum_{n=0}^{L-1} x_k[n] w[n] e^{-j 2\pi f n} \right|^2 $$
+
+- $L$: Segment length (`n_fft`)
+- $w[n]$: Window function (Hann)
+- $U$: Normalization factor ($U = \sum w^2[n]$)
+- $K$: Number of segments
 
 ## Configuration
 
