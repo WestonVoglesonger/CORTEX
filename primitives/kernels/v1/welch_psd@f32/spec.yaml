@@ -1,0 +1,34 @@
+name: welch_psd
+version: 0.1.0
+dtype: f32
+description: "Welch's method for power spectral density estimation"
+
+# Kernel configuration parameters
+config:
+  n_fft:
+    type: int
+    default: 256
+    description: "Length of the FFT used"
+  n_overlap:
+    type: int
+    default: 128
+    description: "Number of points of overlap between segments"
+  window:
+    type: string
+    default: "hann"
+    description: "Window function to use (hann, hamming, blackman)"
+
+# Input/Output tensor shapes
+io:
+  input:
+    shape: ["samples"]
+    dtype: float32
+  output:
+    shape: ["frequencies"]
+    dtype: float32
+
+# Validation tolerances
+tolerances:
+  float32:
+    rtol: 1e-5
+    atol: 1e-5
