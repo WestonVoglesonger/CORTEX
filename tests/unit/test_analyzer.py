@@ -262,7 +262,7 @@ class TestCalculateStatistics:
         # Assert
         assert 'kernel1' in stats.index
         # Mean should be (100+200+300)/3 = 200, not including 999 warmup
-        assert stats.loc['kernel1', ('latency_us', 'mean')] == 200.0
+        assert stats.loc['kernel1', 'latency_us_mean'] == 200.0
 
     def test_calculate_multiple_kernels(self):
         """Test statistics calculation for multiple kernels."""
@@ -278,8 +278,8 @@ class TestCalculateStatistics:
 
         # Assert
         assert len(stats) == 2
-        assert stats.loc['kernel1', ('latency_us', 'mean')] == 150.0
-        assert stats.loc['kernel2', ('latency_us', 'mean')] == 350.0
+        assert stats.loc['kernel1', 'latency_us_mean'] == 150.0
+        assert stats.loc['kernel2', 'latency_us_mean'] == 350.0
 
     def test_calculate_percentiles(self):
         """Test that percentiles are calculated correctly."""
@@ -296,8 +296,8 @@ class TestCalculateStatistics:
         stats = self.analyzer.calculate_statistics(df)
 
         # Assert
-        assert stats.loc['kernel1', ('latency_us', 'p95')] == 95.05  # 95th percentile
-        assert stats.loc['kernel1', ('latency_us', 'p99')] == 99.01  # 99th percentile
+        assert stats.loc['kernel1', 'latency_us_p95'] == 95.05  # 95th percentile
+        assert stats.loc['kernel1', 'latency_us_p99'] == 99.01  # 99th percentile
 
     def test_calculate_min_max(self):
         """Test min and max calculation."""
@@ -312,8 +312,8 @@ class TestCalculateStatistics:
         stats = self.analyzer.calculate_statistics(df)
 
         # Assert
-        assert stats.loc['kernel1', ('latency_us', 'min')] == 100
-        assert stats.loc['kernel1', ('latency_us', 'max')] == 500
+        assert stats.loc['kernel1', 'latency_us_min'] == 100
+        assert stats.loc['kernel1', 'latency_us_max'] == 500
 
     def test_calculate_std(self):
         """Test standard deviation calculation."""
@@ -329,7 +329,7 @@ class TestCalculateStatistics:
 
         # Assert
         # Standard deviation of [10, 20, 30] is 10.0
-        assert abs(stats.loc['kernel1', ('latency_us', 'std')] - 10.0) < 0.01
+        assert abs(stats.loc['kernel1', 'latency_us_std'] - 10.0) < 0.01
 
     def test_calculate_with_missing_data(self):
         """Test that calculation handles missing data gracefully."""
@@ -358,16 +358,17 @@ class TestPlotting:
 
     def test_plot_latency_comparison_creates_file(self, tmp_path):
         """Test that latency plot creates output file."""
-        # Arrange
+        # Arrange - Create telemetry data and calculate statistics
         df = pd.DataFrame({
             'plugin': ['kernel1', 'kernel1', 'kernel2', 'kernel2'],
             'latency_us': [100, 200, 300, 400],
             'warmup': [0, 0, 0, 0]
         })
+        stats = self.analyzer.calculate_statistics(df)
         output_path = str(tmp_path / "latency.png")
 
         # Act
-        result = self.analyzer.plot_latency_comparison(df, output_path)
+        result = self.analyzer.plot_latency_comparison(stats, output_path)
 
         # Assert
         assert result is True
@@ -382,26 +383,31 @@ class TestPlotting:
             'latency_us': [100],
             'warmup': [0]
         })
+        stats = self.analyzer.calculate_statistics(df)
         output_path = "/nonexistent/directory/plot.png"
 
         # Act
-        result = self.analyzer.plot_latency_comparison(df, output_path)
+        result = self.analyzer.plot_latency_comparison(stats, output_path)
 
         # Assert - should handle error gracefully
         assert result is False
 
     def test_plot_deadline_misses_creates_file(self, tmp_path):
         """Test that deadline miss plot creates output file."""
-        # Arrange
+        # Arrange - Create telemetry data with deadline_missed column
         df = pd.DataFrame({
             'plugin': ['kernel1'] * 10,
             'latency_us': [100] * 5 + [15000] * 5,  # 5 within, 5 over 10ms deadline
+            'deadline_missed': [False] * 5 + [True] * 5,
             'warmup': [0] * 10
         })
+
+        # Calculate statistics to get miss_rate column
+        stats = self.analyzer.calculate_statistics(df)
         output_path = str(tmp_path / "deadline.png")
 
         # Act
-        result = self.analyzer.plot_deadline_misses(df, output_path, deadline_us=10000)
+        result = self.analyzer.plot_deadline_misses(stats, output_path)
 
         # Assert
         assert result is True
@@ -426,16 +432,17 @@ class TestPlotting:
 
     def test_plot_throughput_creates_file(self, tmp_path):
         """Test that throughput plot creates output file."""
-        # Arrange
+        # Arrange - Create telemetry data and calculate statistics
         df = pd.DataFrame({
             'plugin': ['kernel1', 'kernel1', 'kernel2', 'kernel2'],
             'latency_us': [100, 200, 300, 400],
             'warmup': [0, 0, 0, 0]
         })
+        stats = self.analyzer.calculate_statistics(df)
         output_path = str(tmp_path / "throughput.png")
 
         # Act
-        result = self.analyzer.plot_throughput_comparison(df, output_path)
+        result = self.analyzer.plot_throughput_comparison(stats, output_path)
 
         # Assert
         assert result is True
@@ -447,7 +454,9 @@ class TestGenerateSummaryTable:
 
     def setup_method(self):
         """Set up test dependencies."""
-        self.fs = Mock(spec=FileSystemService)
+        # Use real filesystem for summary table tests (they write files)
+        from cortex.core import RealFileSystemService
+        self.fs = RealFileSystemService()
         self.logger = Mock(spec=Logger)
         self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
 
@@ -515,7 +524,9 @@ class TestRunFullAnalysis:
 
     def setup_method(self):
         """Set up test dependencies."""
-        self.fs = Mock(spec=FileSystemService)
+        # Use real filesystem for full analysis tests (they write files)
+        from cortex.core import RealFileSystemService
+        self.fs = RealFileSystemService()
         self.logger = Mock(spec=Logger)
         self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
 
@@ -534,12 +545,7 @@ class TestRunFullAnalysis:
         output_dir = tmp_path / "analysis"
         output_dir.mkdir(exist_ok=True)
 
-        # Mock filesystem
-        self.fs.exists.side_effect = lambda p: Path(p).exists()
-        self.fs.glob.return_value = [ndjson_file]
-        self.fs.mkdir.side_effect = lambda p, **kwargs: Path(p).mkdir(**kwargs)
-
-        # Act
+        # Act (using real filesystem)
         result = self.analyzer.run_full_analysis(
             str(results_dir),
             str(output_dir),
@@ -555,13 +561,10 @@ class TestRunFullAnalysis:
 
     def test_full_analysis_with_no_data(self):
         """Test that full analysis handles missing data gracefully."""
-        # Arrange
-        self.fs.exists.return_value = False
-
-        # Act
+        # Act - Try to analyze non-existent directory
         result = self.analyzer.run_full_analysis(
-            "nonexistent_dir",
-            "output_dir"
+            "/nonexistent/directory/that/does/not/exist",
+            "/nonexistent/output"
         )
 
         # Assert
@@ -581,12 +584,7 @@ class TestRunFullAnalysis:
         output_dir = tmp_path / "analysis"
         output_dir.mkdir(exist_ok=True)
 
-        # Mock filesystem
-        self.fs.exists.side_effect = lambda p: Path(p).exists()
-        self.fs.glob.return_value = [ndjson_file]
-        self.fs.mkdir.side_effect = lambda p, **kwargs: Path(p).mkdir(**kwargs)
-
-        # Act - Request only latency plot
+        # Act - Request only latency plot (using real filesystem)
         result = self.analyzer.run_full_analysis(
             str(results_dir),
             str(output_dir),

@@ -165,7 +165,16 @@ class TelemetryAnalyzer:
         # Combine all telemetry (real pandas concat)
         df = pd.concat(dataframes, ignore_index=True)
 
-        # Calculate latency in microseconds if needed
+        # Derive latency from timestamps if not already present
+        if 'latency_ns' not in df.columns:
+            if 'start_ts_ns' in df.columns and 'end_ts_ns' in df.columns:
+                df['latency_ns'] = df['end_ts_ns'] - df['start_ts_ns']
+                self.log.info("Derived latency_ns from start_ts_ns/end_ts_ns")
+            else:
+                self.log.error("Cannot derive latency: missing start_ts_ns/end_ts_ns columns")
+                return None
+
+        # Calculate latency in microseconds
         if 'latency_us' not in df.columns and 'latency_ns' in df.columns:
             df['latency_us'] = df['latency_ns'] / 1000.0
 
@@ -204,7 +213,11 @@ class TelemetryAnalyzer:
                         for col in stats.columns.values]
 
         # Calculate deadline miss rate if deadline info available
-        if 'deadline_met' in df_no_warmup.columns:
+        if 'deadline_missed' in df_no_warmup.columns:
+            # Derive deadline_met from deadline_missed for clarity
+            df_no_warmup = df_no_warmup.copy()
+            df_no_warmup['deadline_met'] = ~df_no_warmup['deadline_missed'].astype(bool)
+
             deadline_stats = df_no_warmup.groupby('plugin')['deadline_met'].agg([
                 ('total_samples', 'count'),
                 ('deadline_misses', lambda x: (x == 0).sum())
@@ -250,13 +263,13 @@ class TelemetryAnalyzer:
 
         try:
             plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
-            plt.close()
             self.log.info(f"Saved latency comparison plot: {output_path}")
             return True
         except Exception as e:
             self.log.error(f"Failed to save latency plot: {e}")
-            plt.close()
             return False
+        finally:
+            plt.close('all')
 
     def plot_deadline_misses(self, df: pd.DataFrame, output_path: str,
                             format: str = 'png') -> bool:
@@ -296,13 +309,13 @@ class TelemetryAnalyzer:
 
         try:
             plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
-            plt.close()
             self.log.info(f"Saved deadline miss plot: {output_path}")
             return True
         except Exception as e:
             self.log.error(f"Failed to save deadline miss plot: {e}")
-            plt.close()
             return False
+        finally:
+            plt.close('all')
 
     def plot_cdf_overlay(self, df: pd.DataFrame, output_path: str,
                         format: str = 'png') -> bool:
@@ -349,13 +362,13 @@ class TelemetryAnalyzer:
 
         try:
             plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
-            plt.close()
             self.log.info(f"Saved CDF plot: {output_path}")
             return True
         except Exception as e:
             self.log.error(f"Failed to save CDF plot: {e}")
-            plt.close()
             return False
+        finally:
+            plt.close('all')
 
     def plot_throughput_comparison(self, df: pd.DataFrame, output_path: str,
                                    format: str = 'png') -> bool:
@@ -382,7 +395,9 @@ class TelemetryAnalyzer:
 
         kernels = df.index
         # Throughput = 1 / (latency_us / 1_000_000) = 1_000_000 / latency_us
-        throughput = 1_000_000 / df['latency_us_mean']
+        # Protect against division by zero
+        latency_mean = df['latency_us_mean'].replace(0, np.nan)
+        throughput = 1_000_000 / latency_mean
 
         ax.bar(kernels, throughput, color='seagreen', alpha=0.8)
         ax.set_xlabel('Kernel')
@@ -394,37 +409,13 @@ class TelemetryAnalyzer:
 
         try:
             plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
-            plt.close()
             self.log.info(f"Saved throughput plot: {output_path}")
             return True
         except Exception as e:
             self.log.error(f"Failed to save throughput plot: {e}")
-            plt.close()
             return False
-
-    @staticmethod
-    def _calculate_deadline_from_config(config_path: str = "primitives/configs/cortex.yaml") -> float:
-        """Calculate deadline from config file.
-
-        Static method - uses real yaml parsing.
-
-        Args:
-            config_path: Path to config file
-
-        Returns:
-            Deadline in microseconds
-        """
-        import yaml
-
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-
-            # Extract deadline from config
-            deadline_ms = config.get('benchmark', {}).get('parameters', {}).get('deadline_ms', 1000)
-            return deadline_ms * 1000  # Convert to microseconds
-        except Exception:
-            return 1000_000  # Default 1000ms = 1,000,000μs
+        finally:
+            plt.close('all')
 
     def generate_summary_table(self, df: pd.DataFrame, output_path: str) -> bool:
         """Generate markdown summary table.
@@ -436,54 +427,65 @@ class TelemetryAnalyzer:
         Returns:
             True if table saved successfully, False otherwise
         """
-        # Ensure output directory exists
-        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
+        try:
+            # Ensure output directory exists
+            self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
 
-        # Calculate summary stats using real pandas
-        stats = self.calculate_statistics(df)
+            # Calculate summary stats using real pandas
+            stats = self.calculate_statistics(df)
 
-        # Round values for readability
-        stats_rounded = stats.round(2)
+            # Round values for readability
+            stats_rounded = stats.round(2)
 
-        # Generate markdown
-        timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            # Generate markdown in memory
+            timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            markdown_lines = []
 
-        with open(output_path, 'w') as f:
-            f.write(f"# Benchmark Summary\n\n")
-            f.write(f"Generated: {timestamp}\n\n")
-            f.write("## Latency Statistics (μs)\n\n")
+            markdown_lines.append("# Latency Comparison Summary\n\n")
+            markdown_lines.append(f"Generated: {timestamp}\n\n")
+            markdown_lines.append("## Latency Statistics (μs)\n\n")
 
             # Write table header
-            f.write("| Kernel | Mean | Median | P95 | P99 | Min | Max | Std Dev |\n")
-            f.write("|--------|------|--------|-----|-----|-----|-----|----------|\n")
+            markdown_lines.append("| Kernel | Mean | Median | P95 | P99 | Min | Max | Std Dev |\n")
+            markdown_lines.append("|--------|------|--------|-----|-----|-----|-----|----------|\n")
 
             # Write table rows
             for kernel_name in stats_rounded.index:
                 row = stats_rounded.loc[kernel_name]
-                f.write(f"| {kernel_name} "
-                       f"| {row.get('latency_us_mean', 'N/A')} "
-                       f"| {row.get('latency_us_median', 'N/A')} "
-                       f"| {row.get('latency_us_p95', 'N/A')} "
-                       f"| {row.get('latency_us_p99', 'N/A')} "
-                       f"| {row.get('latency_us_min', 'N/A')} "
-                       f"| {row.get('latency_us_max', 'N/A')} "
-                       f"| {row.get('latency_us_std', 'N/A')} |\n")
+                markdown_lines.append(
+                    f"| {kernel_name} "
+                    f"| {row.get('latency_us_mean', 'N/A')} "
+                    f"| {row.get('latency_us_median', 'N/A')} "
+                    f"| {row.get('latency_us_p95', 'N/A')} "
+                    f"| {row.get('latency_us_p99', 'N/A')} "
+                    f"| {row.get('latency_us_min', 'N/A')} "
+                    f"| {row.get('latency_us_max', 'N/A')} "
+                    f"| {row.get('latency_us_std', 'N/A')} |\n"
+                )
 
             # Add deadline miss info if available
             if 'miss_rate' in stats_rounded.columns:
-                f.write("\n## Deadline Miss Rates\n\n")
-                f.write("| Kernel | Miss Rate (%) | Total Samples | Misses |\n")
-                f.write("|--------|---------------|---------------|--------|\n")
+                markdown_lines.append("\n## Deadline Miss Rates\n\n")
+                markdown_lines.append("| Kernel | Miss Rate (%) | Total Samples | Misses |\n")
+                markdown_lines.append("|--------|---------------|---------------|--------|\n")
 
                 for kernel_name in stats_rounded.index:
                     row = stats_rounded.loc[kernel_name]
-                    f.write(f"| {kernel_name} "
-                           f"| {row.get('miss_rate', 'N/A')} "
-                           f"| {row.get('total_samples', 'N/A')} "
-                           f"| {row.get('deadline_misses', 'N/A')} |\n")
+                    markdown_lines.append(
+                        f"| {kernel_name} "
+                        f"| {row.get('miss_rate', 'N/A')} "
+                        f"| {row.get('total_samples', 'N/A')} "
+                        f"| {row.get('deadline_misses', 'N/A')} |\n"
+                    )
 
-        self.log.info(f"Saved summary table: {output_path}")
-        return True
+            # Write using DI abstraction
+            markdown_content = ''.join(markdown_lines)
+            self.fs.write_file(output_path, markdown_content)
+            self.log.info(f"Saved summary table: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save summary table: {e}")
+            return False
 
     def run_full_analysis(self, results_dir: str, output_dir: str,
                          plots: List[str] = None, format: str = 'png',
@@ -507,7 +509,11 @@ class TelemetryAnalyzer:
         self.log.info("Starting full analysis pipeline...")
 
         # Create output directory
-        self.fs.mkdir(Path(output_dir), parents=True, exist_ok=True)
+        try:
+            self.fs.mkdir(Path(output_dir), parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            self.log.error(f"Cannot create output directory: {e}")
+            return False
 
         # Load telemetry data
         df = self.load_telemetry(results_dir, prefer_format=telemetry_format)
@@ -530,7 +536,7 @@ class TelemetryAnalyzer:
             plot_results['deadline'] = self.plot_deadline_misses(stats, output_path, format)
 
         if 'cdf' in plots:
-            output_path = f"{output_dir}/latency_cdf.{format}"
+            output_path = f"{output_dir}/cdf_overlay.{format}"
             plot_results['cdf'] = self.plot_cdf_overlay(df, output_path, format)
 
         if 'throughput' in plots:
