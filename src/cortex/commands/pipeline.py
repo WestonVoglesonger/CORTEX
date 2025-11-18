@@ -87,8 +87,8 @@ def execute(args):
 
         from cortex.commands import check_system
         check_args = argparse.Namespace(verbose=args.verbose)
-        checks, all_pass = check_system.run_all_checks()
-        check_system.print_results(checks, verbose=args.verbose)
+        exit_code = check_system.execute(check_args)
+        all_pass = (exit_code == 0)
 
         if not all_pass:
             print()

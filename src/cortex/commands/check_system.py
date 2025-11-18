@@ -1,9 +1,17 @@
-"""System configuration checker for benchmark reproducibility"""
-import platform
-import subprocess
-import shutil
+"""System configuration checker for benchmark reproducibility
+
+CRIT-004 PR #3: Refactored to use dependency injection for full testability.
+"""
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+from cortex.core import (
+    FileSystemService,
+    ProcessExecutor,
+    EnvironmentProvider,
+    ToolLocator,
+    Logger
+)
 
 
 class SystemCheck:
@@ -15,403 +23,431 @@ class SystemCheck:
         self.critical = critical
 
 
-def check_cpu_governor() -> SystemCheck:
-    """Check CPU frequency governor setting"""
-    system = platform.system()
+class SystemChecker:
+    """System configuration checker with dependency injection.
 
-    if system == 'Linux':
-        try:
-            # Check CPU governor on Linux
-            gov_path = Path('/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor')
-            if gov_path.exists():
-                governor = gov_path.read_text().strip()
-                if governor == 'performance':
-                    return SystemCheck(
-                        'CPU Governor',
-                        'pass',
-                        f'Set to performance mode ({governor})'
-                    )
+    Checks system configuration for benchmark reproducibility across
+    Linux, macOS, and Windows platforms. All external dependencies
+    are injected for testability.
+    """
+
+    def __init__(
+        self,
+        filesystem: FileSystemService,
+        process_executor: ProcessExecutor,
+        env_provider: EnvironmentProvider,
+        tool_locator: ToolLocator,
+        logger: Logger
+    ):
+        """Initialize with injected dependencies.
+
+        Args:
+            filesystem: Filesystem operations abstraction
+            process_executor: Subprocess execution abstraction
+            env_provider: Platform/environment detection
+            tool_locator: External tool discovery
+            logger: Logging abstraction
+        """
+        self.fs = filesystem
+        self.process = process_executor
+        self.env = env_provider
+        self.tools = tool_locator
+        self.log = logger
+
+    def check_cpu_governor(self) -> SystemCheck:
+        """Check CPU frequency governor setting"""
+        system = self.env.get_system_type()
+
+        if system == 'Linux':
+            try:
+                # Check CPU governor on Linux
+                gov_path = '/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
+                if self.fs.exists(gov_path):
+                    governor = self.fs.read_file(gov_path).strip()
+                    if governor == 'performance':
+                        return SystemCheck(
+                            'CPU Governor',
+                            'pass',
+                            f'Set to performance mode ({governor})'
+                        )
+                    else:
+                        return SystemCheck(
+                            'CPU Governor',
+                            'warn',
+                            f'Set to {governor} (recommend performance)',
+                            critical=False
+                        )
                 else:
                     return SystemCheck(
                         'CPU Governor',
                         'warn',
-                        f'Set to {governor} (recommend performance)',
-                        critical=False
+                        'Unable to detect governor (cpufreq not available)'
                     )
-            else:
+            except Exception as e:
                 return SystemCheck(
                     'CPU Governor',
                     'warn',
-                    'Unable to detect governor (cpufreq not available)'
+                    f'Unable to check: {e}'
                 )
-        except Exception as e:
+
+        elif system == 'Darwin':
+            # macOS doesn't expose governor interface
+            return SystemCheck(
+                'CPU Governor',
+                'pass',
+                'macOS manages CPU frequency automatically'
+            )
+
+        else:
             return SystemCheck(
                 'CPU Governor',
                 'warn',
-                f'Unable to check: {e}'
+                f'Unsupported platform: {system}'
             )
 
-    elif system == 'Darwin':
-        # macOS doesn't expose governor interface
-        return SystemCheck(
-            'CPU Governor',
-            'pass',
-            'macOS manages CPU frequency automatically'
-        )
+    def check_turbo_boost(self) -> SystemCheck:
+        """Check Intel Turbo Boost / AMD Turbo Core status"""
+        system = self.env.get_system_type()
 
-    else:
-        return SystemCheck(
-            'CPU Governor',
-            'warn',
-            f'Unsupported platform: {system}'
-        )
+        if system == 'Linux':
+            try:
+                # Intel turbo boost
+                intel_turbo = '/sys/devices/system/cpu/intel_pstate/no_turbo'
+                if self.fs.exists(intel_turbo):
+                    no_turbo = self.fs.read_file(intel_turbo).strip()
+                    if no_turbo == '1':
+                        return SystemCheck(
+                            'Turbo Boost',
+                            'pass',
+                            'Disabled (Intel Turbo Boost off for consistency)'
+                        )
+                    else:
+                        return SystemCheck(
+                            'Turbo Boost',
+                            'warn',
+                            'Enabled (may cause frequency variance)',
+                            critical=False
+                        )
 
+                # AMD turbo core
+                amd_turbo = '/sys/devices/system/cpu/cpufreq/boost'
+                if self.fs.exists(amd_turbo):
+                    boost = self.fs.read_file(amd_turbo).strip()
+                    if boost == '0':
+                        return SystemCheck(
+                            'Turbo Boost',
+                            'pass',
+                            'Disabled (AMD Turbo Core off for consistency)'
+                        )
+                    else:
+                        return SystemCheck(
+                            'Turbo Boost',
+                            'warn',
+                            'Enabled (may cause frequency variance)',
+                            critical=False
+                        )
 
-def check_turbo_boost() -> SystemCheck:
-    """Check Intel Turbo Boost / AMD Turbo Core status"""
-    system = platform.system()
+                return SystemCheck(
+                    'Turbo Boost',
+                    'warn',
+                    'Unable to detect turbo state (neither Intel nor AMD interface found)'
+                )
 
-    if system == 'Linux':
-        try:
-            # Intel turbo boost
-            intel_turbo = Path('/sys/devices/system/cpu/intel_pstate/no_turbo')
-            if intel_turbo.exists():
-                no_turbo = intel_turbo.read_text().strip()
-                if no_turbo == '1':
-                    return SystemCheck(
-                        'Turbo Boost',
-                        'pass',
-                        'Disabled (Intel Turbo Boost off for consistency)'
-                    )
-                else:
-                    return SystemCheck(
-                        'Turbo Boost',
-                        'warn',
-                        'Enabled (may cause frequency variance)',
-                        critical=False
-                    )
+            except Exception as e:
+                return SystemCheck(
+                    'Turbo Boost',
+                    'warn',
+                    f'Unable to check: {e}'
+                )
 
-            # AMD turbo core
-            amd_turbo = Path('/sys/devices/system/cpu/cpufreq/boost')
-            if amd_turbo.exists():
-                boost = amd_turbo.read_text().strip()
-                if boost == '0':
-                    return SystemCheck(
-                        'Turbo Boost',
-                        'pass',
-                        'Disabled (AMD Turbo Core off for consistency)'
-                    )
-                else:
-                    return SystemCheck(
-                        'Turbo Boost',
-                        'warn',
-                        'Enabled (may cause frequency variance)',
-                        critical=False
-                    )
+        elif system == 'Darwin':
+            # macOS doesn't expose turbo boost control
+            return SystemCheck(
+                'Turbo Boost',
+                'pass',
+                'macOS manages turbo boost automatically'
+            )
 
+        else:
             return SystemCheck(
                 'Turbo Boost',
                 'warn',
-                'Unable to detect turbo state (neither Intel nor AMD interface found)'
+                f'Unsupported platform: {system}'
             )
 
-        except Exception as e:
+    def check_thermal_state(self) -> SystemCheck:
+        """Check system thermal condition"""
+        system = self.env.get_system_type()
+
+        if system == 'Darwin':
+            try:
+                # Use pmset to check thermal state
+                result = self.process.run(
+                    ['pmset', '-g', 'therm'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    output = result.stdout.lower()
+                    if 'cpu_speed_limit' in output:
+                        # Parse CPU speed limit
+                        for line in output.split('\n'):
+                            if 'cpu_speed_limit' in line:
+                                if '100' in line:
+                                    return SystemCheck(
+                                        'Thermal State',
+                                        'pass',
+                                        'No thermal throttling detected'
+                                    )
+                                else:
+                                    return SystemCheck(
+                                        'Thermal State',
+                                        'warn',
+                                        'Thermal throttling detected (let system cool down)',
+                                        critical=True
+                                    )
+
+                    return SystemCheck(
+                        'Thermal State',
+                        'pass',
+                        'No thermal issues detected'
+                    )
+                else:
+                    return SystemCheck(
+                        'Thermal State',
+                        'warn',
+                        'Unable to check thermal state'
+                    )
+
+            except Exception as e:
+                return SystemCheck(
+                    'Thermal State',
+                    'warn',
+                    f'Unable to check: {e}'
+                )
+
+        elif system == 'Linux':
+            try:
+                # Check thermal zones
+                thermal_dir = '/sys/class/thermal'
+                if self.fs.exists(thermal_dir):
+                    max_temp = 0
+                    for zone_path in self.fs.glob(thermal_dir, 'thermal_zone*'):
+                        temp_file = str(Path(zone_path) / 'temp')
+                        if self.fs.exists(temp_file):
+                            temp_millicelsius = int(self.fs.read_file(temp_file).strip())
+                            temp_celsius = temp_millicelsius / 1000
+                            max_temp = max(max_temp, temp_celsius)
+
+                    if max_temp > 80:
+                        return SystemCheck(
+                            'Thermal State',
+                            'warn',
+                            f'High temperature detected ({max_temp:.1f}°C - let system cool down)',
+                            critical=True
+                        )
+                    elif max_temp > 0:
+                        return SystemCheck(
+                            'Thermal State',
+                            'pass',
+                            f'Temperature normal ({max_temp:.1f}°C)'
+                        )
+
+                return SystemCheck(
+                    'Thermal State',
+                    'warn',
+                    'Unable to detect thermal sensors'
+                )
+
+            except Exception as e:
+                return SystemCheck(
+                    'Thermal State',
+                    'warn',
+                    f'Unable to check: {e}'
+                )
+
+        else:
             return SystemCheck(
-                'Turbo Boost',
+                'Thermal State',
                 'warn',
-                f'Unable to check: {e}'
+                f'Unsupported platform: {system}'
             )
 
-    elif system == 'Darwin':
-        # macOS doesn't expose turbo boost control
-        return SystemCheck(
-            'Turbo Boost',
-            'pass',
-            'macOS manages turbo boost automatically'
-        )
+    def check_background_services(self) -> SystemCheck:
+        """Check for resource-intensive background services"""
+        system = self.env.get_system_type()
 
-    else:
-        return SystemCheck(
-            'Turbo Boost',
-            'warn',
-            f'Unsupported platform: {system}'
-        )
+        # Common resource-heavy processes to check for
+        heavy_processes = [
+            'docker', 'dockerd', 'containerd',  # Docker
+            'VBoxHeadless', 'VirtualBox',       # VirtualBox
+            'vmware', 'vmware-vmx',             # VMware
+            'node', 'npm',                      # Node.js (build servers)
+            'make', 'gcc', 'clang',             # Compilation
+            # Note: 'python' removed - too broad, would flag CORTEX itself
+        ]
 
-
-def check_thermal_state() -> SystemCheck:
-    """Check system thermal condition"""
-    system = platform.system()
-
-    if system == 'Darwin':
         try:
-            # Use pmset to check thermal state
-            result = subprocess.run(
-                ['pmset', '-g', 'therm'],
+            if system not in ['Darwin', 'Linux']:
+                return SystemCheck(
+                    'Background Services',
+                    'warn',
+                    f'Unsupported platform: {system}'
+                )
+
+            result = self.process.run(
+                ['ps', 'aux'],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
 
             if result.returncode == 0:
-                output = result.stdout.lower()
-                if 'cpu_speed_limit' in output:
-                    # Parse CPU speed limit
-                    for line in output.split('\n'):
-                        if 'cpu_speed_limit' in line:
-                            if '100' in line:
-                                return SystemCheck(
-                                    'Thermal State',
-                                    'pass',
-                                    'No thermal throttling detected'
-                                )
-                            else:
-                                return SystemCheck(
-                                    'Thermal State',
-                                    'warn',
-                                    'Thermal throttling detected (let system cool down)',
-                                    critical=True
-                                )
+                running_heavy = []
+                for process in heavy_processes:
+                    if process in result.stdout:
+                        # Count occurrences (rough estimate)
+                        count = result.stdout.count(process)
+                        if count > 2:  # More than a couple instances
+                            running_heavy.append(f'{process} ({count})')
 
+                if running_heavy:
+                    return SystemCheck(
+                        'Background Services',
+                        'warn',
+                        f'Heavy processes detected: {", ".join(running_heavy)}',
+                        critical=False
+                    )
+                else:
+                    return SystemCheck(
+                        'Background Services',
+                        'pass',
+                        'No heavy background processes detected'
+                    )
+
+            return SystemCheck(
+                'Background Services',
+                'warn',
+                'Unable to check running processes'
+            )
+
+        except Exception as e:
+            return SystemCheck(
+                'Background Services',
+                'warn',
+                f'Unable to check: {e}'
+            )
+
+    def check_sleep_prevention(self) -> SystemCheck:
+        """Check if sleep prevention tools are available"""
+        system = self.env.get_system_type()
+
+        if system == 'Darwin':
+            if self.tools.has_tool('caffeinate'):
                 return SystemCheck(
-                    'Thermal State',
+                    'Sleep Prevention',
                     'pass',
-                    'No thermal issues detected'
+                    'caffeinate available (automatic during runs)'
                 )
             else:
                 return SystemCheck(
-                    'Thermal State',
-                    'warn',
-                    'Unable to check thermal state'
+                    'Sleep Prevention',
+                    'fail',
+                    'caffeinate not found (required on macOS)',
+                    critical=True
                 )
 
-        except Exception as e:
+        elif system == 'Linux':
+            if self.tools.has_tool('systemd-inhibit'):
+                return SystemCheck(
+                    'Sleep Prevention',
+                    'pass',
+                    'systemd-inhibit available (automatic during runs)'
+                )
+            else:
+                return SystemCheck(
+                    'Sleep Prevention',
+                    'warn',
+                    'systemd-inhibit not found (ensure system won\'t sleep)',
+                    critical=False
+                )
+
+        else:
             return SystemCheck(
-                'Thermal State',
-                'warn',
-                f'Unable to check: {e}'
-            )
-
-    elif system == 'Linux':
-        try:
-            # Check thermal zones
-            thermal_dir = Path('/sys/class/thermal')
-            if thermal_dir.exists():
-                max_temp = 0
-                for zone in thermal_dir.glob('thermal_zone*'):
-                    temp_file = zone / 'temp'
-                    if temp_file.exists():
-                        temp_millicelsius = int(temp_file.read_text().strip())
-                        temp_celsius = temp_millicelsius / 1000
-                        max_temp = max(max_temp, temp_celsius)
-
-                if max_temp > 80:
-                    return SystemCheck(
-                        'Thermal State',
-                        'warn',
-                        f'High temperature detected ({max_temp:.1f}°C - let system cool down)',
-                        critical=True
-                    )
-                elif max_temp > 0:
-                    return SystemCheck(
-                        'Thermal State',
-                        'pass',
-                        f'Temperature normal ({max_temp:.1f}°C)'
-                    )
-
-            return SystemCheck(
-                'Thermal State',
-                'warn',
-                'Unable to detect thermal sensors'
-            )
-
-        except Exception as e:
-            return SystemCheck(
-                'Thermal State',
-                'warn',
-                f'Unable to check: {e}'
-            )
-
-    else:
-        return SystemCheck(
-            'Thermal State',
-            'warn',
-            f'Unsupported platform: {system}'
-        )
-
-
-def check_background_services() -> SystemCheck:
-    """Check for resource-intensive background services"""
-    system = platform.system()
-
-    # Common resource-heavy processes to check for
-    heavy_processes = [
-        'docker', 'dockerd', 'containerd',  # Docker
-        'VBoxHeadless', 'VirtualBox',       # VirtualBox
-        'vmware', 'vmware-vmx',             # VMware
-        'node', 'npm',                      # Node.js (build servers)
-        'make', 'gcc', 'clang',             # Compilation
-        # Note: 'python' removed - too broad, would flag CORTEX itself
-    ]
-
-    try:
-        if system not in ['Darwin', 'Linux']:
-            return SystemCheck(
-                'Background Services',
+                'Sleep Prevention',
                 'warn',
                 f'Unsupported platform: {system}'
             )
 
-        result = subprocess.run(
-            ['ps', 'aux'],
-            capture_output=True,
-            text=True,
-            timeout=5
+    def run_all_checks(self) -> Tuple[List[SystemCheck], bool]:
+        """Run all system configuration checks.
+
+        Returns:
+            Tuple of (list of checks, all_pass boolean)
+        """
+        checks = [
+            self.check_cpu_governor(),
+            self.check_turbo_boost(),
+            self.check_thermal_state(),
+            self.check_background_services(),
+            self.check_sleep_prevention(),
+        ]
+
+        # Determine if all critical checks passed
+        all_pass = all(
+            check.status != 'fail' and not (check.critical and check.status == 'warn')
+            for check in checks
         )
 
-        if result.returncode == 0:
-            running_heavy = []
-            for process in heavy_processes:
-                if process in result.stdout:
-                    # Count occurrences (rough estimate)
-                    count = result.stdout.count(process)
-                    if count > 2:  # More than a couple instances
-                        running_heavy.append(f'{process} ({count})')
+        return checks, all_pass
 
-            if running_heavy:
-                return SystemCheck(
-                    'Background Services',
-                    'warn',
-                    f'Heavy processes detected: {", ".join(running_heavy)}',
-                    critical=False
-                )
-            else:
-                return SystemCheck(
-                    'Background Services',
-                    'pass',
-                    'No heavy background processes detected'
-                )
+    def print_results(self, checks: List[SystemCheck], verbose: bool = False) -> None:
+        """Print check results in a formatted table using logger.
 
-        return SystemCheck(
-            'Background Services',
-            'warn',
-            'Unable to check running processes'
-        )
+        Args:
+            checks: List of SystemCheck results
+            verbose: Show verbose output (currently unused, for future enhancement)
+        """
+        self.log.info("=" * 80)
+        self.log.info("SYSTEM CONFIGURATION CHECK")
+        self.log.info("=" * 80)
+        self.log.info("")
 
-    except Exception as e:
-        return SystemCheck(
-            'Background Services',
-            'warn',
-            f'Unable to check: {e}'
-        )
+        # Status symbols
+        symbols = {
+            'pass': '✓',
+            'warn': '⚠',
+            'fail': '✗'
+        }
 
+        for check in checks:
+            symbol = symbols.get(check.status, '?')
+            critical_marker = ' [CRITICAL]' if check.critical else ''
+            self.log.info(f"{symbol} {check.name}: {check.message}{critical_marker}")
 
-def check_sleep_prevention() -> SystemCheck:
-    """Check if sleep prevention tools are available"""
-    system = platform.system()
+        self.log.info("")
+        self.log.info("=" * 80)
 
-    if system == 'Darwin':
-        if shutil.which('caffeinate'):
-            return SystemCheck(
-                'Sleep Prevention',
-                'pass',
-                'caffeinate available (automatic during runs)'
-            )
-        else:
-            return SystemCheck(
-                'Sleep Prevention',
-                'fail',
-                'caffeinate not found (required on macOS)',
-                critical=True
-            )
+        # Summary
+        pass_count = sum(1 for c in checks if c.status == 'pass')
+        warn_count = sum(1 for c in checks if c.status == 'warn')
+        fail_count = sum(1 for c in checks if c.status == 'fail')
 
-    elif system == 'Linux':
-        if shutil.which('systemd-inhibit'):
-            return SystemCheck(
-                'Sleep Prevention',
-                'pass',
-                'systemd-inhibit available (automatic during runs)'
-            )
-        else:
-            return SystemCheck(
-                'Sleep Prevention',
-                'warn',
-                'systemd-inhibit not found (ensure system won\'t sleep)',
-                critical=False
-            )
+        self.log.info(f"Summary: {pass_count} passed, {warn_count} warnings, {fail_count} failed")
 
-    else:
-        return SystemCheck(
-            'Sleep Prevention',
-            'warn',
-            f'Unsupported platform: {system}'
-        )
+        # Critical warnings
+        critical_issues = [c for c in checks if c.critical and c.status in ['warn', 'fail']]
+        if critical_issues:
+            self.log.info("")
+            self.log.info("Critical Issues:")
+            for issue in critical_issues:
+                self.log.info(f"  - {issue.name}: {issue.message}")
+            self.log.info("")
+            self.log.info("Recommendation: Address critical issues before running benchmarks")
 
-
-def run_all_checks() -> Tuple[List[SystemCheck], bool]:
-    """
-    Run all system configuration checks
-
-    Returns:
-        Tuple of (list of checks, all_pass boolean)
-    """
-    checks = [
-        check_cpu_governor(),
-        check_turbo_boost(),
-        check_thermal_state(),
-        check_background_services(),
-        check_sleep_prevention(),
-    ]
-
-    # Determine if all critical checks passed
-    all_pass = all(
-        check.status != 'fail' and not (check.critical and check.status == 'warn')
-        for check in checks
-    )
-
-    return checks, all_pass
-
-
-def print_results(checks: List[SystemCheck], verbose: bool = False) -> None:
-    """Print check results in a formatted table"""
-    print("=" * 80)
-    print("SYSTEM CONFIGURATION CHECK")
-    print("=" * 80)
-    print()
-
-    # Status symbols
-    symbols = {
-        'pass': '✓',
-        'warn': '⚠',
-        'fail': '✗'
-    }
-
-    for check in checks:
-        symbol = symbols.get(check.status, '?')
-        critical_marker = ' [CRITICAL]' if check.critical else ''
-
-        print(f"{symbol} {check.name}: {check.message}{critical_marker}")
-
-    print()
-    print("=" * 80)
-
-    # Summary
-    pass_count = sum(1 for c in checks if c.status == 'pass')
-    warn_count = sum(1 for c in checks if c.status == 'warn')
-    fail_count = sum(1 for c in checks if c.status == 'fail')
-
-    print(f"Summary: {pass_count} passed, {warn_count} warnings, {fail_count} failed")
-
-    # Critical warnings
-    critical_issues = [c for c in checks if c.critical and c.status in ['warn', 'fail']]
-    if critical_issues:
-        print()
-        print("Critical Issues:")
-        for issue in critical_issues:
-            print(f"  - {issue.name}: {issue.message}")
-        print()
-        print("Recommendation: Address critical issues before running benchmarks")
-
-    print("=" * 80)
+        self.log.info("=" * 80)
 
 
 def setup_parser(parser):
@@ -424,9 +460,34 @@ def setup_parser(parser):
 
 
 def execute(args):
-    """Execute system configuration check"""
-    checks, all_pass = run_all_checks()
-    print_results(checks, verbose=args.verbose)
+    """Execute system configuration check.
+
+    This is a facade function for backward compatibility. Creates a SystemChecker
+    instance with production dependencies and runs the checks.
+
+    Returns:
+        Exit code: 0 if all checks passed, 1 if critical failures detected
+    """
+    from cortex.core import (
+        RealFileSystemService,
+        SubprocessExecutor,
+        SystemEnvironmentProvider,
+        SystemToolLocator,
+        ConsoleLogger
+    )
+
+    # Create checker with production dependencies
+    checker = SystemChecker(
+        filesystem=RealFileSystemService(),
+        process_executor=SubprocessExecutor(),
+        env_provider=SystemEnvironmentProvider(),
+        tool_locator=SystemToolLocator(),
+        logger=ConsoleLogger()
+    )
+
+    # Run checks
+    checks, all_pass = checker.run_all_checks()
+    checker.print_results(checks, verbose=args.verbose)
 
     # Return exit code
     # 0: All checks passed

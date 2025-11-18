@@ -99,8 +99,31 @@ class SubprocessHandle:
         return self._handle.wait()
 
 
+class CompletedProcessResult:
+    """Wrapper around subprocess.CompletedProcess result."""
+
+    def __init__(self, completed_process):
+        """Initialize with actual subprocess.CompletedProcess object."""
+        self._result = completed_process
+
+    @property
+    def returncode(self) -> int:
+        """Process exit code."""
+        return self._result.returncode
+
+    @property
+    def stdout(self) -> str:
+        """Standard output as string."""
+        return self._result.stdout if self._result.stdout else ""
+
+    @property
+    def stderr(self) -> str:
+        """Standard error as string."""
+        return self._result.stderr if self._result.stderr else ""
+
+
 class SubprocessExecutor:
-    """Production process executor using real subprocess.Popen."""
+    """Production process executor using real subprocess.Popen and subprocess.run."""
 
     def popen(
         self,
@@ -119,6 +142,26 @@ class SubprocessExecutor:
             env=env
         )
         return SubprocessHandle(handle)
+
+    def run(
+        self,
+        cmd: List[str],
+        capture_output: bool = False,
+        text: bool = True,
+        timeout: Optional[float] = None,
+        cwd: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None
+    ) -> CompletedProcessResult:
+        """Execute command and wait for completion (like subprocess.run)."""
+        result = subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            text=text,
+            timeout=timeout,
+            cwd=cwd,
+            env=env
+        )
+        return CompletedProcessResult(result)
 
 
 class SystemTimeProvider:

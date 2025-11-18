@@ -103,10 +103,32 @@ class ProcessHandle(Protocol):
         ...
 
 
+class ProcessResult(Protocol):
+    """Abstraction for completed process result.
+
+    Wraps subprocess.CompletedProcess attributes.
+    """
+
+    @property
+    def returncode(self) -> int:
+        """Process exit code."""
+        ...
+
+    @property
+    def stdout(self) -> str:
+        """Standard output as string."""
+        ...
+
+    @property
+    def stderr(self) -> str:
+        """Standard error as string."""
+        ...
+
+
 class ProcessExecutor(Protocol):
     """Abstraction for process execution.
 
-    Wraps subprocess.Popen to enable testing without spawning real processes.
+    Wraps subprocess.Popen and subprocess.run to enable testing without spawning real processes.
     """
 
     def popen(
@@ -118,6 +140,18 @@ class ProcessExecutor(Protocol):
         env: Optional[Dict[str, str]] = None
     ) -> ProcessHandle:
         """Execute command and return process handle."""
+        ...
+
+    def run(
+        self,
+        cmd: List[str],
+        capture_output: bool = False,
+        text: bool = True,
+        timeout: Optional[float] = None,
+        cwd: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None
+    ) -> ProcessResult:
+        """Execute command and wait for completion (like subprocess.run)."""
         ...
 
 
