@@ -423,7 +423,7 @@ class TelemetryAnalyzer:
         """Generate markdown summary table.
 
         Args:
-            df: Statistics DataFrame
+            df: Telemetry DataFrame (raw data with 'warmup' column)
             output_path: Path to save markdown file
 
         Returns:
