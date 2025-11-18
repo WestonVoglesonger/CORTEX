@@ -142,9 +142,12 @@ class TelemetryAnalyzer:
                 else:  # csv
                     df = pd.read_csv(file_path)
 
-                # Add plugin column if not present
+                # Add or normalize plugin column
                 if 'plugin' not in df.columns:
                     df['plugin'] = kernel_name
+                else:
+                    # Replace "(unnamed)" placeholder with actual kernel name
+                    df.loc[df['plugin'] == '(unnamed)', 'plugin'] = kernel_name
 
                 dataframes.append(df)
 
@@ -154,7 +157,7 @@ class TelemetryAnalyzer:
             except Exception as e:
                 import traceback
                 self.log.error(f"Error loading {file_path}: {e}")
-                traceback.print_exc()
+                self.log.debug(traceback.format_exc())  # Use logger instead of print_exc
                 continue
 
         if not dataframes:
@@ -214,8 +217,7 @@ class TelemetryAnalyzer:
 
         # Calculate deadline miss rate if deadline info available
         if 'deadline_missed' in df_no_warmup.columns:
-            # Derive deadline_met from deadline_missed for clarity
-            df_no_warmup = df_no_warmup.copy()
+            # Derive deadline_met from deadline_missed for clarity (no copy needed - already copied on line 196)
             df_no_warmup['deadline_met'] = ~df_no_warmup['deadline_missed'].astype(bool)
 
             deadline_stats = df_no_warmup.groupby('plugin')['deadline_met'].agg([
