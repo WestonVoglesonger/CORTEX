@@ -208,6 +208,48 @@ class TestPipelineCommand:
             # Should return error code
             assert result == 1
 
+    def test_pipeline_with_system_check_integration(self):
+        """Test that pipeline's system check integration works (P2 regression test)."""
+        args = argparse.Namespace(
+            run_name=None,
+            skip_build=True,
+            skip_validate=True,
+            skip_system_check=False,  # Test the default path
+            duration=None,
+            repeats=None,
+            warmup=None,
+            verbose=False
+        )
+
+        # Mock the components but let check_system import happen
+        with patch('cortex.commands.pipeline.generate_run_name') as mock_gen, \
+             patch('cortex.commands.pipeline.HarnessRunner') as mock_runner, \
+             patch('cortex.commands.pipeline.TelemetryAnalyzer') as mock_analyzer, \
+             patch('cortex.commands.check_system.execute') as mock_check_execute:
+
+            mock_gen.return_value = 'test-run-001'
+
+            # Mock check_system.execute to return success (exit code 0)
+            mock_check_execute.return_value = 0
+
+            mock_runner_instance = mock_runner.return_value
+            mock_runner_instance.run_all_kernels.return_value = '/fake/results/dir'
+
+            mock_analyzer_instance = mock_analyzer.return_value
+            mock_analyzer_instance.run_full_analysis.return_value = True
+
+            # Execute - should call check_system.execute without AttributeError
+            result = pipeline.execute(args)
+
+            # Verify check_system.execute was called (system check ran)
+            mock_check_execute.assert_called_once()
+            call_args = mock_check_execute.call_args[0][0]
+            assert hasattr(call_args, 'verbose')
+            assert call_args.verbose is False
+
+            # Should succeed
+            assert result == 0
+
 
 # Test discovery for pytest
 if __name__ == "__main__":
