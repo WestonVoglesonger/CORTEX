@@ -65,3 +65,8 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cortex*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["venv", "my_venv", "dist", "build", ".git", "src/engine"]
+python_files = ["test_*.py"]
