@@ -1,4 +1,8 @@
-"""Data analysis and visualization"""
+"""Data analysis and visualization with dependency injection.
+
+CRIT-004 PR #2: Refactored to use minimal dependency injection.
+Abstracts I/O and logging, uses real pandas/matplotlib for deterministic operations.
+"""
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
@@ -7,6 +11,8 @@ import seaborn as sns
 import numpy as np
 from pathlib import Path
 from typing import List, Optional
+
+from cortex.core.protocols import FileSystemService, Logger
 
 # Set style
 sns.set_style("whitegrid")
@@ -18,470 +24,536 @@ plt.rcParams['font.size'] = 11
 PANDAS_VERSION = tuple(map(int, pd.__version__.split('.')[:2]))
 SUPPORTS_INCLUDE_GROUPS = PANDAS_VERSION >= (2, 2)
 
-def _extract_kernel_name(file_path: Path) -> Optional[str]:
-    """
-    Extract kernel name from telemetry file path or filename
 
-    Supports new structure:
-    - kernel-data/<kernel>/telemetry.{csv,ndjson}
+class TelemetryAnalyzer:
+    """Analyzes telemetry data with minimal dependency injection.
 
-    Args:
-        file_path: Path to telemetry file
+    Uses minimal DI pattern:
+    - Abstracts I/O operations (FileSystemService)
+    - Abstracts logging (Logger)
+    - Uses real pandas for data transformations (deterministic)
+    - Uses real matplotlib for plotting (deterministic)
 
-    Returns:
-        Kernel name or None if not found
-    """
-    # New structure: kernel name is parent directory
-    # e.g., results/run-2025-11-10-001/kernel-data/bandpass_fir/telemetry.ndjson
-    parent_dir = file_path.parent.name
-
-    # Check if we're in the expected structure
-    if file_path.parent.parent.name == "kernel-data":
-        # Parent directory is the kernel name
-        if parent_dir:
-            return parent_dir
-
-    print(f"Warning: Could not extract kernel name from path {file_path}")
-    print(f"Expected structure: .../kernel-data/<kernel>/telemetry.*")
-    return None
-
-def load_telemetry(results_dir: str, prefer_format: str = 'ndjson') -> Optional[pd.DataFrame]:
-    """
-    Load all telemetry files from a results directory
-
-    Prefers NDJSON over CSV by default for better structured data handling.
+    This approach balances testability with pragmatism:
+    - Easy to test with mocked filesystem and logger
+    - Business logic tested with real pandas/matplotlib
+    - Industry-standard approach for data science code
 
     Args:
-        results_dir: Path to batch results directory
-        prefer_format: Preferred format ('ndjson' or 'csv')
-
-    Returns:
-        DataFrame with all telemetry data, or None if no data found
+        filesystem: Filesystem operations abstraction
+        logger: Logging abstraction
     """
-    results_path = Path(results_dir)
 
-    if not results_path.exists():
-        print(f"Error: Results directory not found: {results_dir}")
+    def __init__(self, filesystem: FileSystemService, logger: Logger):
+        self.fs = filesystem
+        self.log = logger
+
+    @staticmethod
+    def _extract_kernel_name(file_path: Path) -> Optional[str]:
+        """Extract kernel name from telemetry file path.
+
+        Static method - no dependencies needed.
+
+        Supports structure: kernel-data/<kernel>/telemetry.{csv,ndjson}
+
+        Args:
+            file_path: Path to telemetry file
+
+        Returns:
+            Kernel name or None if not found
+        """
+        # New structure: kernel name is parent directory
+        # e.g., results/run-2025-11-10-001/kernel-data/bandpass_fir/telemetry.ndjson
+        parent_dir = file_path.parent.name
+
+        # Check if we're in the expected structure
+        if file_path.parent.parent.name == "kernel-data":
+            return parent_dir if parent_dir else None
+
         return None
 
-    # Find all telemetry files in new structure (kernel-data/<kernel>/telemetry.*)
-    ndjson_files = list(results_path.glob("kernel-data/*/telemetry.ndjson"))
-    csv_files = list(results_path.glob("kernel-data/*/telemetry.csv"))
+    def load_telemetry(self, results_dir: str, prefer_format: str = 'ndjson') -> Optional[pd.DataFrame]:
+        """Load all telemetry files from a results directory.
 
-    # Determine which files to use based on preference
-    if prefer_format == 'ndjson' and ndjson_files:
-        files_to_load = ndjson_files
-        file_format = 'ndjson'
-    elif prefer_format == 'csv' and csv_files:
-        files_to_load = csv_files
-        file_format = 'csv'
-    elif ndjson_files:
-        # Fallback: use NDJSON if available
-        files_to_load = ndjson_files
-        file_format = 'ndjson'
-    elif csv_files:
-        # Fallback: use CSV if available
-        files_to_load = csv_files
-        file_format = 'csv'
-    else:
-        # Check if directory has kernel-data structure
-        kernel_data_dir = results_path / "kernel-data"
-        if not kernel_data_dir.exists():
-            print(f"Error: No kernel-data directory found in {results_dir}")
-            print(f"Expected structure: {results_dir}/kernel-data/<kernel>/telemetry.*")
-            print(f"Run 'cortex run --all' to generate results first")
+        Uses FileSystemService for I/O, real pandas for parsing.
+        Prefers NDJSON over CSV by default for better structured data handling.
+
+        Args:
+            results_dir: Path to batch results directory
+            prefer_format: Preferred format ('ndjson' or 'csv')
+
+        Returns:
+            DataFrame with all telemetry data, or None if no data found
+        """
+        results_path = Path(results_dir)
+
+        if not self.fs.exists(results_path):
+            self.log.error(f"Results directory not found: {results_dir}")
+            return None
+
+        # Find all telemetry files (use FileSystemService for glob)
+        ndjson_files = list(self.fs.glob(results_path, "kernel-data/*/telemetry.ndjson"))
+        csv_files = list(self.fs.glob(results_path, "kernel-data/*/telemetry.csv"))
+
+        # Determine which files to use based on preference
+        if prefer_format == 'ndjson' and ndjson_files:
+            files_to_load = ndjson_files
+            file_format = 'ndjson'
+        elif prefer_format == 'csv' and csv_files:
+            files_to_load = csv_files
+            file_format = 'csv'
+        elif ndjson_files:
+            files_to_load = ndjson_files
+            file_format = 'ndjson'
+        elif csv_files:
+            files_to_load = csv_files
+            file_format = 'csv'
         else:
-            kernel_dirs = list(kernel_data_dir.glob("*"))
-            if not kernel_dirs:
-                print(f"Error: kernel-data directory exists but is empty")
+            # Check if directory has kernel-data structure
+            kernel_data_dir = results_path / "kernel-data"
+            if not self.fs.exists(kernel_data_dir):
+                self.log.error(f"No kernel-data directory found in {results_dir}")
+                self.log.info(f"Expected structure: {results_dir}/kernel-data/<kernel>/telemetry.*")
+                self.log.info("Run 'cortex run --all' to generate results first")
             else:
-                print(f"Error: Found {len(kernel_dirs)} kernel directories but no telemetry files")
-                print(f"Directories found: {[d.name for d in kernel_dirs]}")
-                print(f"This may indicate all kernel runs failed")
-        return None
+                kernel_dirs = list(self.fs.glob(kernel_data_dir, "*"))
+                if not kernel_dirs:
+                    self.log.error("kernel-data directory exists but is empty")
+                else:
+                    self.log.error(f"Found {len(kernel_dirs)} kernel directories but no telemetry files")
+                    self.log.info(f"Directories found: {[d.name for d in kernel_dirs]}")
+                    self.log.info("This may indicate all kernel runs failed")
+            return None
 
-    print(f"Loading {len(files_to_load)} {file_format.upper()} telemetry file(s)...")
+        self.log.info(f"Loading {len(files_to_load)} {file_format.upper()} file(s)...")
 
-    # Load all files
-    dataframes = []
-    failed_count = 0
-    for file_path in files_to_load:
-        try:
-            if file_format == 'ndjson':
-                # NDJSON: one JSON object per line
-                df = pd.read_json(file_path, lines=True)
-            else:
-                # CSV format
-                df = pd.read_csv(file_path)
+        # Load all telemetry files using real pandas
+        dataframes = []
+        for file_path in files_to_load:
+            kernel_name = self._extract_kernel_name(file_path)
+            if not kernel_name:
+                self.log.warning(f"Could not extract kernel name from {file_path}, skipping")
+                continue
 
-            # Extract kernel name
-            kernel_name = _extract_kernel_name(file_path)
+            try:
+                # Use real pandas for deterministic parsing
+                if file_format == 'ndjson':
+                    df = pd.read_json(file_path, lines=True)
+                else:  # csv
+                    df = pd.read_csv(file_path)
 
-            # Set plugin name if not present or if it's "(unnamed)"
-            if kernel_name:
+                # Add or normalize plugin column
                 if 'plugin' not in df.columns:
                     df['plugin'] = kernel_name
-                elif df['plugin'].iloc[0] == '(unnamed)' if len(df) > 0 else False:
-                    df['plugin'] = kernel_name
+                else:
+                    # Replace "(unnamed)" placeholder with actual kernel name
+                    df.loc[df['plugin'] == '(unnamed)', 'plugin'] = kernel_name
 
-            dataframes.append(df)
-        except pd.errors.ParserError as e:
-            failed_count += 1
-            print(f"Warning: Malformed {file_format.upper()} in {file_path.name}: {e}")
-        except FileNotFoundError:
-            failed_count += 1
-            print(f"Warning: File disappeared during loading: {file_path.name}")
-        except ValueError as e:
-            failed_count += 1
-            print(f"Warning: Invalid data format in {file_path.name}: {e}")
+                dataframes.append(df)
+
+            except pd.errors.ParserError as e:
+                self.log.error(f"Failed to parse {file_path}: {e}")
+                continue
+            except Exception as e:
+                import traceback
+                self.log.error(f"Error loading {file_path}: {e}")
+                self.log.debug(traceback.format_exc())  # Use logger instead of print_exc
+                continue
+
+        if not dataframes:
+            self.log.warning("No telemetry data found in any files")
+            self.log.warning(f"Check that kernel runs completed successfully in {results_dir}")
+            return None
+
+        # Combine all telemetry (real pandas concat)
+        df = pd.concat(dataframes, ignore_index=True)
+
+        # Derive latency from timestamps if not already present
+        if 'latency_ns' not in df.columns:
+            if 'start_ts_ns' in df.columns and 'end_ts_ns' in df.columns:
+                df['latency_ns'] = df['end_ts_ns'] - df['start_ts_ns']
+                self.log.info("Derived latency_ns from start_ts_ns/end_ts_ns")
+            else:
+                self.log.error("Cannot derive latency: missing start_ts_ns/end_ts_ns columns")
+                return None
+
+        # Calculate latency in microseconds
+        if 'latency_us' not in df.columns and 'latency_ns' in df.columns:
+            df['latency_us'] = df['latency_ns'] / 1000.0
+
+        self.log.info(f"Loaded {len(df)} telemetry records from {len(dataframes)} kernel(s)")
+        return df
+
+    def calculate_statistics(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate latency statistics per kernel.
+
+        Uses real pandas for deterministic aggregations.
+
+        Args:
+            df: Telemetry DataFrame with 'plugin', 'latency_us', 'warmup' columns
+
+        Returns:
+            DataFrame with statistics per kernel
+        """
+        # Filter out warmup runs (real pandas filtering)
+        df_no_warmup = df[df['warmup'] == 0].copy()
+
+        # Calculate statistics per kernel (real pandas groupby/agg)
+        stats = df_no_warmup.groupby('plugin').agg({
+            'latency_us': [
+                'mean',
+                'median',
+                ('p95', lambda x: x.quantile(0.95)),
+                ('p99', lambda x: x.quantile(0.99)),
+                'min',
+                'max',
+                'std'
+            ]
+        })
+
+        # Flatten column names
+        stats.columns = ['_'.join(col).strip() if col[1] else col[0]
+                        for col in stats.columns.values]
+
+        # Calculate deadline miss rate if deadline info available
+        if 'deadline_missed' in df_no_warmup.columns:
+            # Derive deadline_met from deadline_missed for clarity (no copy needed - already copied on line 196)
+            df_no_warmup['deadline_met'] = ~df_no_warmup['deadline_missed'].astype(bool)
+
+            deadline_stats = df_no_warmup.groupby('plugin')['deadline_met'].agg([
+                ('total_samples', 'count'),
+                ('deadline_misses', lambda x: (x == 0).sum())
+            ])
+            deadline_stats['miss_rate'] = (
+                deadline_stats['deadline_misses'] / deadline_stats['total_samples'] * 100
+            )
+            stats = stats.join(deadline_stats)
+
+        return stats
+
+    def plot_latency_comparison(self, df: pd.DataFrame, output_path: str,
+                                format: str = 'png') -> bool:
+        """Generate latency comparison bar chart.
+
+        Uses real matplotlib with 'Agg' backend for deterministic plotting.
+        Uses FileSystemService for directory creation.
+
+        Args:
+            df: Statistics DataFrame from calculate_statistics()
+            output_path: Path to save plot
+            format: Image format ('png', 'pdf', 'svg')
+
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        # Ensure output directory exists (FileSystemService)
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
+
+        # Real matplotlib plotting
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        kernels = df.index
+        latencies = df['latency_us_mean']
+
+        ax.bar(kernels, latencies, color='steelblue', alpha=0.8)
+        ax.set_xlabel('Kernel')
+        ax.set_ylabel('Mean Latency (μs)')
+        ax.set_title('Kernel Latency Comparison')
+        ax.tick_params(axis='x', rotation=45)
+
+        plt.tight_layout()
+
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved latency comparison plot: {output_path}")
+            return True
         except Exception as e:
-            failed_count += 1
-            print(f"Warning: Unexpected error loading {file_path.name}: {e}")
-            import traceback
-            traceback.print_exc()
+            self.log.error(f"Failed to save latency plot: {e}")
+            return False
+        finally:
+            plt.close('all')
 
-    if failed_count > 0:
-        print(f"\nWarning: {failed_count}/{len(files_to_load)} files failed to load")
+    def plot_deadline_misses(self, df: pd.DataFrame, output_path: str,
+                            format: str = 'png') -> bool:
+        """Generate deadline miss rate bar chart.
 
-    if not dataframes:
-        print("Error: No valid telemetry data found")
-        return None
+        Uses real matplotlib with 'Agg' backend for deterministic plotting.
 
-    # Combine all dataframes
-    combined = pd.concat(dataframes, ignore_index=True)
+        Args:
+            df: Statistics DataFrame with deadline miss info
+            output_path: Path to save plot
+            format: Image format
 
-    # Calculate latency if not present
-    if 'latency_ns' not in combined.columns:
-        combined['latency_ns'] = combined['end_ts_ns'] - combined['start_ts_ns']
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        # Ensure output directory exists
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
 
-    # Convert to microseconds for readability
-    combined['latency_us'] = combined['latency_ns'] / 1000.0
+        # Check if deadline data available
+        if 'miss_rate' not in df.columns:
+            self.log.warning("No deadline miss data available for plotting")
+            return False
 
-    print(f"Loaded {len(combined)} windows from {combined['plugin'].nunique()} kernel(s)")
+        # Real matplotlib plotting
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-    return combined
+        kernels = df.index
+        miss_rates = df['miss_rate']
 
-def calculate_statistics(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate summary statistics per kernel"""
-    # Filter out warmup windows
-    df_filtered = df[df['warmup'] == 0].copy()
+        ax.bar(kernels, miss_rates, color='coral', alpha=0.8)
+        ax.set_xlabel('Kernel')
+        ax.set_ylabel('Deadline Miss Rate (%)')
+        ax.set_title('Deadline Miss Rate by Kernel')
+        ax.tick_params(axis='x', rotation=45)
 
-    stats = df_filtered.groupby('plugin').agg({
-        'window_index': 'count',
-        'latency_us': ['min', 'max', 'mean', 'std',
-                       lambda x: x.quantile(0.50),
-                       lambda x: x.quantile(0.95),
-                       lambda x: x.quantile(0.99)],
-        'deadline_missed': ['sum', 'mean']
-    }).reset_index()
+        plt.tight_layout()
 
-    # Flatten column names
-    stats.columns = ['kernel', 'windows', 'lat_min', 'lat_max', 'lat_mean', 'lat_std',
-                     'lat_p50', 'lat_p95', 'lat_p99', 'deadline_misses', 'miss_rate']
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved deadline miss plot: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save deadline miss plot: {e}")
+            return False
+        finally:
+            plt.close('all')
 
-    # Calculate jitter
-    stats['jitter_p95_p50'] = stats['lat_p95'] - stats['lat_p50']
-    stats['jitter_p99_p50'] = stats['lat_p99'] - stats['lat_p50']
+    def plot_cdf_overlay(self, df: pd.DataFrame, output_path: str,
+                        format: str = 'png') -> bool:
+        """Generate CDF overlay plot for latency distributions.
 
-    # Convert miss rate to percentage
-    stats['miss_rate_pct'] = stats['miss_rate'] * 100
+        Args:
+            df: Telemetry DataFrame (not statistics)
+            output_path: Path to save plot
+            format: Image format
 
-    return stats
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        # Ensure output directory exists
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
 
-def plot_latency_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
-    """Generate latency comparison bar chart
-    
-    Returns:
-        True if plot was saved successfully, False otherwise
-    """
-    stats = calculate_statistics(df)
+        # Filter out warmup runs
+        df_no_warmup = df[df['warmup'] == 0]
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+        # Real matplotlib plotting
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-    x = np.arange(len(stats))
-    width = 0.25
+        # Get unique plugins and colors
+        plugins = df_no_warmup['plugin'].unique()
+        colors = plt.cm.tab10(range(len(plugins)))
 
-    ax.bar(x - width, stats['lat_p50'], width, label='P50', alpha=0.8, color='#3498db')
-    ax.bar(x, stats['lat_p95'], width, label='P95', alpha=0.8, color='#e74c3c')
-    ax.bar(x + width, stats['lat_p99'], width, label='P99', alpha=0.8, color='#f39c12')
+        # Plot CDF for each plugin
+        for plugin, color in zip(plugins, colors):
+            plugin_data = df_no_warmup[df_no_warmup['plugin'] == plugin]['latency_us']
 
-    ax.set_xlabel('Kernel', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Latency (µs)', fontsize=12, fontweight='bold')
-    ax.set_title('Kernel Latency Comparison', fontsize=14, fontweight='bold')
-    ax.set_xticks(x)
-    ax.set_xticklabels(stats['kernel'], rotation=45, ha='right')
-    ax.legend()
-    ax.grid(axis='y', alpha=0.3)
+            # Sort data for CDF
+            sorted_data = np.sort(plugin_data)
+            cdf = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
 
-    plt.tight_layout()
-    try:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Error: Could not save plot to {output_path}: {e}")
-        print("Tip: Try PNG format or install required backend")
-        return False
-    finally:
-        plt.close()
+            ax.plot(sorted_data, cdf, label=plugin, color=color, linewidth=2)
 
-def plot_deadline_misses(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
-    """Generate deadline miss rate comparison
-    
-    Returns:
-        True if plot was saved successfully, False otherwise
-    """
-    stats = calculate_statistics(df)
+        ax.set_xlabel('Latency (μs)')
+        ax.set_ylabel('Cumulative Probability')
+        ax.set_title('Latency CDF Comparison')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+        plt.tight_layout()
 
-    colors = ['#27ae60' if rate == 0 else '#e74c3c' for rate in stats['miss_rate_pct']]
-    ax.bar(stats['kernel'], stats['miss_rate_pct'], alpha=0.8, color=colors)
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved CDF plot: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save CDF plot: {e}")
+            return False
+        finally:
+            plt.close('all')
 
-    ax.set_xlabel('Kernel', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Deadline Miss Rate (%)', fontsize=12, fontweight='bold')
-    ax.set_title('Deadline Miss Rate by Kernel', fontsize=14, fontweight='bold')
-    plt.xticks(rotation=45, ha='right')
-    ax.grid(axis='y', alpha=0.3)
+    def plot_throughput_comparison(self, df: pd.DataFrame, output_path: str,
+                                   format: str = 'png') -> bool:
+        """Generate throughput comparison bar chart.
 
-    # Set y-axis limit
-    max_rate = stats['miss_rate_pct'].max()
-    ax.set_ylim([0, max(max_rate * 1.2, 1)])
+        Args:
+            df: Statistics DataFrame
+            output_path: Path to save plot
+            format: Image format
 
-    plt.tight_layout()
-    try:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Error: Could not save plot to {output_path}: {e}")
-        print("Tip: Try PNG format or install required backend")
-        return False
-    finally:
-        plt.close()
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        # Ensure output directory exists
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
 
-def plot_cdf_overlay(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
-    """Generate CDF overlay plot for all kernels
-    
-    Returns:
-        True if plot was saved successfully, False otherwise
-    """
-    df_filtered = df[df['warmup'] == 0].copy()
+        # Calculate throughput (ops/sec) from mean latency
+        if 'latency_us_mean' not in df.columns:
+            self.log.warning("No latency data available for throughput calculation")
+            return False
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+        # Real matplotlib plotting
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-    kernels = df_filtered['plugin'].unique()
-    colors = plt.cm.tab10(np.linspace(0, 1, len(kernels)))
+        kernels = df.index
+        # Throughput = 1 / (latency_us / 1_000_000) = 1_000_000 / latency_us
+        # Protect against division by zero
+        latency_mean = df['latency_us_mean'].replace(0, np.nan)
+        throughput = 1_000_000 / latency_mean
 
-    for kernel, color in zip(kernels, colors):
-        kernel_data = df_filtered[df_filtered['plugin'] == kernel]['latency_us']
-        sorted_data = np.sort(kernel_data)
-        cumulative = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
-        ax.plot(sorted_data, cumulative, label=kernel, linewidth=2, color=color)
+        ax.bar(kernels, throughput, color='seagreen', alpha=0.8)
+        ax.set_xlabel('Kernel')
+        ax.set_ylabel('Throughput (ops/sec)')
+        ax.set_title('Kernel Throughput Comparison')
+        ax.tick_params(axis='x', rotation=45)
 
-    ax.set_xlabel('Latency (µs)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Cumulative Probability', fontsize=12, fontweight='bold')
-    ax.set_title('Latency CDF - All Kernels', fontsize=14, fontweight='bold')
-    ax.legend()
-    ax.grid(alpha=0.3)
+        plt.tight_layout()
 
-    plt.tight_layout()
-    try:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Error: Could not save plot to {output_path}: {e}")
-        print("Tip: Try PNG format or install required backend")
-        return False
-    finally:
-        plt.close()
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved throughput plot: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save throughput plot: {e}")
+            return False
+        finally:
+            plt.close('all')
 
-def plot_throughput_comparison(df: pd.DataFrame, output_path: str, format: str = 'png') -> bool:
-    """Generate throughput comparison
-    
-    Returns:
-        True if plot was saved successfully, False otherwise
-    """
-    df_filtered = df[df['warmup'] == 0].copy()
+    def generate_summary_table(self, df: pd.DataFrame, output_path: str) -> bool:
+        """Generate markdown summary table.
 
-    # Calculate throughput (windows per second)
-    # Fs/H gives the theoretical throughput
-    if 'Fs' in df_filtered.columns and 'H' in df_filtered.columns:
-        # Pandas 2.2.0+ requires include_groups=False to maintain backward compatibility
-        if SUPPORTS_INCLUDE_GROUPS:
-            throughput = df_filtered.groupby('plugin').apply(
-                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0,
-                include_groups=False
-            ).reset_index(name='throughput')
-        else:
-            # Pandas < 2.2.0: parameter doesn't exist, groups excluded by default
-            throughput = df_filtered.groupby('plugin').apply(
-                lambda x: x['Fs'].iloc[0] / x['H'].iloc[0] if len(x) > 0 else 0
-            ).reset_index(name='throughput')
-    else:
-        print("Warning: Could not calculate throughput (missing Fs/H columns)")
-        return False
+        Args:
+            df: Telemetry DataFrame (raw data with 'warmup' column)
+            output_path: Path to save markdown file
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+        Returns:
+            True if table saved successfully, False otherwise
+        """
+        try:
+            # Ensure output directory exists
+            self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
 
-    ax.bar(throughput['plugin'], throughput['throughput'], alpha=0.8, color='#3498db')
+            # Calculate summary stats using real pandas
+            stats = self.calculate_statistics(df)
 
-    ax.set_xlabel('Kernel', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Throughput (windows/sec)', fontsize=12, fontweight='bold')
-    ax.set_title('Kernel Throughput Comparison', fontsize=14, fontweight='bold')
-    plt.xticks(rotation=45, ha='right')
-    ax.grid(axis='y', alpha=0.3)
+            # Round values for readability
+            stats_rounded = stats.round(2)
 
-    plt.tight_layout()
-    try:
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Error: Could not save plot to {output_path}: {e}")
-        print("Tip: Try PNG format or install required backend")
-        return False
-    finally:
-        plt.close()
+            # Generate markdown in memory
+            timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            markdown_lines = []
 
-def _calculate_deadline_from_config(config_path: str = "primitives/configs/cortex.yaml") -> float:
-    """Extract deadline from config or calculate from data"""
-    try:
-        import yaml
-        with open(config_path, 'r') as f:
-            cfg = yaml.safe_load(f)
+            markdown_lines.append("# Latency Comparison Summary\n\n")
+            markdown_lines.append(f"Generated: {timestamp}\n\n")
+            markdown_lines.append("## Latency Statistics (μs)\n\n")
 
-        # Get sample rate from dataset config
-        sample_rate = cfg.get('dataset', {}).get('sample_rate_hz', 160)
+            # Write table header
+            markdown_lines.append("| Kernel | Mean | Median | P95 | P99 | Min | Max | Std Dev |\n")
+            markdown_lines.append("|--------|------|--------|-----|-----|-----|-----|----------|\n")
 
-        # Hop is derived as window_length / 2 in harness
-        # Window length comes from kernel spec (default 160)
-        # For now, use the documented calculation: hop=80, fs=160 -> 0.5s
-        # TODO: Parse actual values from kernel spec.yaml files
-        hop_samples = 80  # Default from harness
+            # Write table rows
+            for kernel_name in stats_rounded.index:
+                row = stats_rounded.loc[kernel_name]
+                markdown_lines.append(
+                    f"| {kernel_name} "
+                    f"| {row.get('latency_us_mean', 'N/A')} "
+                    f"| {row.get('latency_us_median', 'N/A')} "
+                    f"| {row.get('latency_us_p95', 'N/A')} "
+                    f"| {row.get('latency_us_p99', 'N/A')} "
+                    f"| {row.get('latency_us_min', 'N/A')} "
+                    f"| {row.get('latency_us_max', 'N/A')} "
+                    f"| {row.get('latency_us_std', 'N/A')} |\n"
+                )
 
-        deadline_sec = hop_samples / sample_rate
-        return deadline_sec * 1000  # Convert to milliseconds
-    except Exception:
-        return 500.0  # Fallback to documented default
+            # Add deadline miss info if available
+            if 'miss_rate' in stats_rounded.columns:
+                markdown_lines.append("\n## Deadline Miss Rates\n\n")
+                markdown_lines.append("| Kernel | Miss Rate (%) | Total Samples | Misses |\n")
+                markdown_lines.append("|--------|---------------|---------------|--------|\n")
 
-def generate_summary_table(df: pd.DataFrame, output_path: str):
-    """Generate markdown summary table"""
-    stats = calculate_statistics(df)
+                for kernel_name in stats_rounded.index:
+                    row = stats_rounded.loc[kernel_name]
+                    markdown_lines.append(
+                        f"| {kernel_name} "
+                        f"| {row.get('miss_rate', 'N/A')} "
+                        f"| {row.get('total_samples', 'N/A')} "
+                        f"| {row.get('deadline_misses', 'N/A')} |\n"
+                    )
 
-    # Round for readability
-    stats_rounded = stats.round(2)
+            # Write using DI abstraction
+            markdown_content = ''.join(markdown_lines)
+            self.fs.write_file(output_path, markdown_content)
+            self.log.info(f"Saved summary table: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save summary table: {e}")
+            return False
 
-    with open(output_path, 'w') as f:
-        f.write("# CORTEX Benchmark Results Summary\n\n")
-        f.write(f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+    def run_full_analysis(self, results_dir: str, output_dir: str,
+                         plots: List[str] = None, format: str = 'png',
+                         telemetry_format: str = 'ndjson') -> bool:
+        """Run complete analysis pipeline.
 
-        f.write("## Overall Statistics\n\n")
-        f.write("| Kernel | Windows | P50 (µs) | P95 (µs) | P99 (µs) | Jitter P95-P50 (µs) | Deadline Misses | Miss Rate (%) |\n")
-        f.write("|--------|---------|----------|----------|----------|---------------------|-----------------|---------------|\n")
+        Args:
+            results_dir: Directory containing benchmark results
+            output_dir: Directory to save analysis outputs
+            plots: List of plot types to generate ('all', 'latency', 'deadline', 'cdf', 'throughput')
+            format: Image format for plots
+            telemetry_format: Format preference for telemetry ('ndjson' or 'csv')
 
-        for _, row in stats_rounded.iterrows():
-            f.write(f"| {row['kernel']} | {int(row['windows'])} | "
-                   f"{row['lat_p50']:.2f} | {row['lat_p95']:.2f} | {row['lat_p99']:.2f} | "
-                   f"{row['jitter_p95_p50']:.2f} | {int(row['deadline_misses'])} | "
-                   f"{row['miss_rate_pct']:.2f} |\n")
+        Returns:
+            True if analysis completed successfully, False otherwise
+        """
+        # Default to all plots
+        if plots is None or 'all' in plots:
+            plots = ['latency', 'deadline', 'cdf', 'throughput']
 
-        f.write("\n## Interpretation\n\n")
-        f.write("- **P50/P95/P99**: 50th/95th/99th percentile latencies\n")
-        f.write("- **Jitter**: Difference between P95 and P50 (indicates timing variance)\n")
-        deadline_ms = _calculate_deadline_from_config()
-        f.write(f"- **Deadline Misses**: Number of windows that exceeded the {deadline_ms:.0f}ms deadline\n")
-        f.write("- **Miss Rate**: Percentage of windows that missed the deadline\n")
+        self.log.info("Starting full analysis pipeline...")
 
-    print(f"✓ Saved: {output_path}")
+        # Create output directory
+        try:
+            self.fs.mkdir(Path(output_dir), parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            self.log.error(f"Cannot create output directory: {e}")
+            return False
 
-def run_full_analysis(
-    results_dir: str,
-    output_dir: str = "results/analysis",
-    plots: List[str] = None,
-    format: str = 'png',
-    telemetry_format: str = 'ndjson'
-) -> bool:
-    """
-    Run complete analysis pipeline
+        # Load telemetry data
+        df = self.load_telemetry(results_dir, prefer_format=telemetry_format)
+        if df is None or df.empty:
+            self.log.error("No telemetry data loaded - aborting analysis")
+            return False
 
-    Args:
-        results_dir: Path to batch results directory
-        output_dir: Where to save analysis outputs
-        plots: List of plots to generate (default: all)
-        format: Output format for plots (png, pdf, svg)
-        telemetry_format: Preferred telemetry format ('ndjson' or 'csv')
+        # Calculate statistics
+        stats = self.calculate_statistics(df)
 
-    Returns:
-        True if successful, False otherwise
-    """
-    # Load data
-    df = load_telemetry(results_dir, prefer_format=telemetry_format)
-    if df is None:
-        return False
+        # Generate plots
+        plot_results = {}
 
-    # Create output directory
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+        if 'latency' in plots:
+            output_path = f"{output_dir}/latency_comparison.{format}"
+            plot_results['latency'] = self.plot_latency_comparison(stats, output_path, format)
 
-    # Determine which plots to generate
-    if plots is None or 'all' in plots:
-        plots = ['latency', 'deadline', 'throughput', 'cdf']
+        if 'deadline' in plots:
+            output_path = f"{output_dir}/deadline_misses.{format}"
+            plot_results['deadline'] = self.plot_deadline_misses(stats, output_path, format)
 
-    print(f"\nGenerating analysis plots...")
+        if 'cdf' in plots:
+            output_path = f"{output_dir}/cdf_overlay.{format}"
+            plot_results['cdf'] = self.plot_cdf_overlay(df, output_path, format)
 
-    # Track plot generation failures
-    plot_failures = []
-    plot_successes = []
+        if 'throughput' in plots:
+            output_path = f"{output_dir}/throughput_comparison.{format}"
+            plot_results['throughput'] = self.plot_throughput_comparison(stats, output_path, format)
 
-    # Generate plots
-    if 'latency' in plots:
-        success = plot_latency_comparison(df, str(output_path / f'latency_comparison.{format}'), format)
-        if success:
-            plot_successes.append('latency')
-        else:
-            plot_failures.append('latency')
+        # Generate summary table
+        summary_path = f"{output_dir}/SUMMARY.md"
+        summary_success = self.generate_summary_table(df, summary_path)
 
-    if 'deadline' in plots:
-        success = plot_deadline_misses(df, str(output_path / f'deadline_miss_rate.{format}'), format)
-        if success:
-            plot_successes.append('deadline')
-        else:
-            plot_failures.append('deadline')
+        # Print summary
+        successful_plots = sum(1 for v in plot_results.values() if v)
+        self.log.info(f"\nAnalysis complete!")
+        self.log.info(f"  Generated {successful_plots}/{len(plot_results)} plots")
+        self.log.info(f"  Summary table: {'✓' if summary_success else '✗'}")
+        self.log.info(f"  Output directory: {output_dir}")
 
-    if 'throughput' in plots:
-        success = plot_throughput_comparison(df, str(output_path / f'throughput_comparison.{format}'), format)
-        if success:
-            plot_successes.append('throughput')
-        else:
-            plot_failures.append('throughput')
-
-    if 'cdf' in plots:
-        success = plot_cdf_overlay(df, str(output_path / f'latency_cdf_overlay.{format}'), format)
-        if success:
-            plot_successes.append('cdf')
-        else:
-            plot_failures.append('cdf')
-
-    # Generate summary table
-    try:
-        generate_summary_table(df, str(output_path / 'SUMMARY.md'))
-        summary_success = True
-    except Exception as e:
-        print(f"Error: Could not generate summary table: {e}")
-        summary_success = False
-
-    # Report results
-    if plot_failures:
-        print(f"\n⚠ Analysis completed with {len(plot_failures)} plot failure(s): {', '.join(plot_failures)}")
-    else:
-        print(f"\n✓ Analysis complete!")
-    print(f"Output directory: {output_dir}")
-
-    # Return False if all plots failed or summary failed, True otherwise
-    if plot_failures and len(plot_failures) == len(plots):
-        return False
-    if not summary_success:
-        return False
-    return True
+        return successful_plots > 0 or summary_success

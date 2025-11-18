@@ -1,349 +1,393 @@
-"""Experiment execution"""
-import os
-import platform
-import subprocess
+"""Experiment execution with dependency injection.
+
+CRIT-004: Refactored to use class-based architecture with injected dependencies.
+All external dependencies (filesystem, subprocess, time, etc.) are now abstracted
+via Protocol interfaces, enabling full unit test coverage without I/O.
+"""
+
 import sys
-import time
 from pathlib import Path
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional
+from cortex.core.protocols import (
+    FileSystemService,
+    ProcessExecutor,
+    ConfigLoader,
+    TimeProvider,
+    EnvironmentProvider,
+    ToolLocator,
+    Logger
+)
 from cortex.utils.paths import (
     create_run_structure,
     create_kernel_directory,
-    get_kernel_data_dir,
     get_run_directory
 )
-import shutil
-import yaml
+
+# Constants
+HARNESS_BINARY_PATH = 'src/engine/harness/cortex'
+KERNEL_DATA_DIR = 'kernel-data'
+HARNESS_LOG_FILE = 'harness.log'
+GENERATED_CONFIG_DIR = 'primitives/configs/generated'
 
 
-def _cleanup_partial_run(run_dir: Path) -> None:
-    """
-    Clean up a partial run directory on failure.
-    
+class HarnessRunner:
+    """Orchestrates harness execution with dependency injection.
+
+    This class replaces the function-based API in the original runner.py.
+    All external dependencies are injected, making this fully testable.
+
     Args:
-        run_dir: Path to the run directory to clean up
+        filesystem: Filesystem operations abstraction
+        process_executor: Subprocess execution abstraction
+        config_loader: Configuration file loading abstraction
+        time_provider: Time operations abstraction
+        env_provider: Environment access abstraction
+        tool_locator: External tool discovery abstraction
+        logger: Logging abstraction
     """
-    try:
-        if run_dir.exists():
+
+    def __init__(
+        self,
+        filesystem: FileSystemService,
+        process_executor: ProcessExecutor,
+        config_loader: ConfigLoader,
+        time_provider: TimeProvider,
+        env_provider: EnvironmentProvider,
+        tool_locator: ToolLocator,
+        logger: Logger
+    ):
+        self.fs = filesystem
+        self.process = process_executor
+        self.config = config_loader
+        self.time = time_provider
+        self.env = env_provider
+        self.tools = tool_locator
+        self.log = logger
+
+    def _cleanup_partial_run(self, run_dir: Path) -> None:
+        """Clean up a partial run directory on failure.
+
+        Args:
+            run_dir: Path to the run directory to clean up
+        """
+        try:
+            if not self.fs.exists(run_dir):
+                return
+
             # Check if directory is empty or only contains empty subdirectories
-            # Only remove if it's truly empty or contains no meaningful data
             has_data = False
-            if (run_dir / "kernel-data").exists():
-                kernel_data = run_dir / "kernel-data"
-                for kernel_dir in kernel_data.iterdir():
-                    if kernel_dir.is_dir():
+            kernel_data_path = f"{run_dir}/{KERNEL_DATA_DIR}"
+
+            if self.fs.exists(kernel_data_path):
+                for kernel_dir in self.fs.iterdir(kernel_data_path):
+                    if self.fs.is_dir(kernel_dir):
                         # Check if kernel directory has any files
-                        if any(kernel_dir.iterdir()):
+                        if any(self.fs.iterdir(kernel_dir)):
                             has_data = True
                             break
-            
+
             # Only remove if no data was written
             if not has_data:
-                shutil.rmtree(run_dir)
-                print(f"Cleaned up partial run directory: {run_dir}")
-    except Exception as e:
-        # Don't fail if cleanup fails - just log it
-        print(f"Warning: Could not clean up partial run directory {run_dir}: {e}")
+                self.fs.rmtree(run_dir)
+                self.log.info(f"Cleaned up partial run directory: {run_dir}")
+        except Exception as e:
+            # Don't fail if cleanup fails - just log it
+            self.log.warning(f"Could not clean up partial run directory {run_dir}: {e}")
 
-def run_harness(config_path: str, run_name: str, verbose: bool = False) -> Optional[str]:
-    """
-    Run the CORTEX harness with a given config
+    def run(self, config_path: str, run_name: str, verbose: bool = False) -> Optional[str]:
+        """Run the CORTEX harness with a given config.
 
-    Args:
-        config_path: Path to configuration file
-        run_name: Name of the run for organizing results
-        verbose: Show all output including stress-ng and telemetry
+        Args:
+            config_path: Path to configuration file
+            run_name: Name of the run for organizing results
+            verbose: Show all output including stress-ng and telemetry
 
-    Returns:
-        Run directory path if successful, None otherwise
-    """
-    harness_binary = Path('src/engine/harness/cortex')
-
-    if not harness_binary.exists():
-        print(f"Error: Harness binary not found at {harness_binary}")
-        print("Run 'cortex build' first")
-        return None
-
-    if not harness_binary.is_file():
-        print(f"Error: {harness_binary} exists but is not a file")
-        return None
-
-    config_file = Path(config_path)
-    if not config_file.exists():
-        print(f"Error: Config file not found: {config_path}")
-        return None
-
-    if not config_file.is_file():
-        print(f"Error: {config_path} exists but is not a file")
-        return None
-
-    # Read config to get benchmark parameters for progress tracking
-    try:
-        with open(config_path, 'r') as f:
-            config_data = yaml.safe_load(f)
-        duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
-        repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
-        warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
-        total_time = warmup + (repeats * duration)
-    except:
-        total_time = None  # Fall back to no progress calculation
-
-    # Run harness with sleep prevention wrapper
-    cmd = [str(harness_binary), 'run', config_path]
-
-    # Add platform-specific sleep prevention wrapper
-    system = platform.system()
-    sleep_prevention_tool = None
-
-    if system == 'Darwin':
-        # macOS: use caffeinate
-        if shutil.which('caffeinate'):
-            cmd = ['caffeinate', '-dims'] + cmd
-            sleep_prevention_tool = 'caffeinate'
-    elif system == 'Linux':
-        # Linux: use systemd-inhibit if available
-        if shutil.which('systemd-inhibit'):
-            cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
-            sleep_prevention_tool = 'systemd-inhibit'
-
-    # Force unbuffered output for real-time progress updates
-    # Use stdbuf if available (Linux/macOS with coreutils)
-    if shutil.which('stdbuf'):
-        cmd = ['stdbuf', '-o0', '-e0'] + cmd
-    # Fallback: set environment variable for unbuffered output
-    env = dict(os.environ)
-    env['PYTHONUNBUFFERED'] = '1'
-
-    # Notify user of sleep prevention status
-    if sleep_prevention_tool:
-        print(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
-        print(f"[cortex] Display will stay on during benchmark")
-    elif system in ['Darwin', 'Linux']:
-        print(f"[cortex] Warning: Sleep prevention tool not found")
-        print(f"[cortex] Ensure system won't sleep during benchmarks")
-
-    # Set up output redirection based on verbose flag
-    run_dir = get_run_directory(run_name)
-    log_file_handle = None
-    try:
-        if verbose:
-            # Verbose mode: let C harness print directly to terminal
-            stdout_dest = None
-            stderr_dest = None
-            show_spinner = False
-        else:
-            # Clean mode: redirect to log file and show spinner
-            log_file = run_dir / 'harness.log'
-            log_file_handle = open(log_file, 'w', buffering=1)  # Line buffered
-            stdout_dest = log_file_handle
-            stderr_dest = log_file_handle
-            show_spinner = True
-
-        # Launch subprocess
-        process = subprocess.Popen(
-            cmd,
-            stdout=stdout_dest,
-            stderr=stderr_dest,
-            cwd='.',
-            env=env
-        )
-
-        # Record start time for progress tracking
-        start_time = time.time()
-        spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-        # Wait for process to complete
-        if show_spinner:
-            # Clean mode: show spinner
-            while process.poll() is None:
-                elapsed = time.time() - start_time
-                spinner_idx = int(elapsed * 2) % len(spinner_chars)
-                print(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ", end='', flush=True)
-                time.sleep(0.5)
-            # Clear progress line
-            print(f"\r{' ' * 60}\r", end='')
-        else:
-            # Verbose mode: just wait without spinner
-            process.wait()
-
-        # Get return code
-        returncode = process.poll()
-
-        if returncode != 0:
-            print(f"\nError: Harness execution failed (exit code {returncode})")
-            if not verbose and log_file_handle:
-                print(f"Check log file for details: {run_dir / 'harness.log'}")
-            else:
-                print("Check output above for error details")
+        Returns:
+            Run directory path if successful, None otherwise
+        """
+        # Validate harness binary
+        if not self.fs.exists(HARNESS_BINARY_PATH):
+            self.log.error(f"Harness binary not found at {HARNESS_BINARY_PATH}")
+            self.log.info("Run 'cortex build' first")
             return None
 
-        # Return the run directory path
-        if run_dir.exists():
-            return str(run_dir)
+        if not self.fs.is_file(HARNESS_BINARY_PATH):
+            self.log.error(f"{HARNESS_BINARY_PATH} exists but is not a file")
+            return None
 
-        return None  # Run directory not created
+        # Validate config file
+        if not self.fs.exists(config_path):
+            self.log.error(f"Config file not found: {config_path}")
+            return None
 
-    except Exception as e:
-        print(f"Error running harness: {e}")
-        # Note: Cleanup is handled by the calling function (run_single_kernel or run_all_kernels)
-        return None
-    finally:
-        # Clean up log file handle
-        if log_file_handle:
-            try:
-                log_file_handle.close()
-            except Exception:
-                pass  # Ignore cleanup errors
+        if not self.fs.is_file(config_path):
+            self.log.error(f"{config_path} exists but is not a file")
+            return None
 
-def run_single_kernel(
-    kernel_name: str,
-    run_name: str,
-    duration: Optional[int] = None,
-    repeats: Optional[int] = None,
-    warmup: Optional[int] = None,
-    verbose: bool = False
-) -> Optional[str]:
-    """
-    Run benchmark for a single kernel
+        # Read config to get benchmark parameters for progress tracking
+        try:
+            config_data = self.config.load_yaml(config_path)
+            duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
+            repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
+            warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
+            total_time = warmup + (repeats * duration)
+        except Exception:
+            total_time = None  # Fall back to no progress calculation
 
-    Args:
-        kernel_name: Name of kernel to benchmark
-        run_name: Name of the run for organizing results
-        duration: Override duration (seconds)
-        repeats: Override number of repeats
-        warmup: Override warmup duration (seconds)
-        verbose: Show verbose output
+        # Build command
+        cmd = [HARNESS_BINARY_PATH, 'run', config_path]
 
-    Returns:
-        Run directory path if successful, None otherwise
-    """
-    from cortex.utils.config import generate_config
+        # Add platform-specific sleep prevention wrapper
+        system = self.env.get_system_type()
+        sleep_prevention_tool = None
 
-    # Create run directory structure
-    run_structure = create_run_structure(run_name)
-    kernel_dir = create_kernel_directory(run_name, kernel_name)
+        if system == 'Darwin':
+            # macOS: use caffeinate
+            if self.tools.has_tool('caffeinate'):
+                cmd = ['caffeinate', '-dims'] + cmd
+                sleep_prevention_tool = 'caffeinate'
+        elif system == 'Linux':
+            # Linux: use systemd-inhibit if available
+            if self.tools.has_tool('systemd-inhibit'):
+                cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
+                sleep_prevention_tool = 'systemd-inhibit'
 
-    # Generate config
-    config_dir = Path('primitives/configs/generated')
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / f"{kernel_name}.yaml"
+        # Force unbuffered output for real-time progress updates
+        if self.tools.has_tool('stdbuf'):
+            cmd = ['stdbuf', '-o0', '-e0'] + cmd
 
-    print(f"Generating config for {kernel_name}...")
+        # Set environment variable for unbuffered output
+        env = self.env.get_environ()
+        env['PYTHONUNBUFFERED'] = '1'
 
-    if not generate_config(
-        kernel_name,
-        str(config_path),
-        output_dir=str(kernel_dir),
-        duration=duration,
-        repeats=repeats,
-        warmup=warmup
-    ):
-        # Cleanup: remove partial run directory on config generation failure
-        _cleanup_partial_run(run_structure['run'])
-        return None
+        # Notify user of sleep prevention status
+        if sleep_prevention_tool:
+            self.log.info(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
+            self.log.info(f"[cortex] Display will stay on during benchmark")
+        elif system in ['Darwin', 'Linux']:
+            self.log.info(f"[cortex] Warning: Sleep prevention tool not found")
+            self.log.info(f"[cortex] Ensure system won't sleep during benchmarks")
 
-    print(f"Running benchmark for {kernel_name}...")
+        # Set up output redirection based on verbose flag
+        run_dir = get_run_directory(run_name)
 
-    # Run harness
-    results_dir = run_harness(str(config_path), run_name, verbose=verbose)
+        # Helper to execute subprocess and wait for completion
+        def _execute_and_wait(stdout_dest, stderr_dest, show_spinner):
+            # Launch subprocess
+            process_handle = self.process.popen(
+                cmd,
+                stdout=stdout_dest,
+                stderr=stderr_dest,
+                cwd='.',
+                env=env
+            )
 
-    if results_dir:
-        print(f"✓ Benchmark complete: {results_dir}")
-    else:
-        # Cleanup: remove partial run directory on harness failure
-        _cleanup_partial_run(run_structure['run'])
+            # Record start time for progress tracking
+            start_time = self.time.current_time()
+            spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
-    return results_dir
+            # Wait for process to complete
+            if show_spinner:
+                # Clean mode: show spinner
+                # NOTE: Use direct print() for spinner to maintain single-line terminal behavior.
+                # Logger abstraction always adds newlines, which would flood console with thousands
+                # of lines. This is the one place where terminal control trumps DI abstraction.
+                while process_handle.poll() is None:
+                    elapsed = self.time.current_time() - start_time
+                    spinner_idx = int(elapsed * 2) % len(spinner_chars)
+                    print(f"\r[Running... {spinner_chars[spinner_idx]} {elapsed:.0f}s elapsed]    ",
+                          end='', flush=True, file=sys.stdout)
+                    self.time.sleep(0.5)
+                # Clear progress line
+                print(f"\r{' ' * 60}\r", end='', flush=True, file=sys.stdout)
+            else:
+                # Verbose mode: just wait without spinner
+                process_handle.wait()
 
-def run_all_kernels(
-    run_name: str,
-    duration: Optional[int] = None,
-    repeats: Optional[int] = None,
-    warmup: Optional[int] = None,
-    verbose: bool = False
-) -> Optional[str]:
-    """
-    Run benchmarks for all available kernels
+            # Get return code
+            return process_handle.poll()
 
-    Args:
-        run_name: Name of the run for organizing results
-        duration: Override duration (seconds)
-        repeats: Override number of repeats
-        warmup: Override warmup duration (seconds)
-        verbose: Show verbose output
+        try:
+            if verbose:
+                # Verbose mode: let C harness print directly to terminal
+                returncode = _execute_and_wait(stdout_dest=None, stderr_dest=None, show_spinner=False)
+            else:
+                # Clean mode: redirect to log file and show spinner
+                log_file = f"{run_dir}/{HARNESS_LOG_FILE}"
+                # Use context manager for proper file handle cleanup
+                with self.fs.open(log_file, 'w', buffering=1) as log_file_handle:
+                    returncode = _execute_and_wait(
+                        stdout_dest=log_file_handle,
+                        stderr_dest=log_file_handle,
+                        show_spinner=True
+                    )
 
-    Returns:
-        Run directory path if successful, None otherwise
-    """
-    from cortex.utils.config import generate_batch_configs
+            if returncode != 0:
+                self.log.error(f"\nHarness execution failed (exit code {returncode})")
+                if not verbose:
+                    self.log.info(f"Check log file for details: {run_dir}/{HARNESS_LOG_FILE}")
+                else:
+                    self.log.info("Check output above for error details")
+                return None
 
-    # Create run directory structure
-    create_run_structure(run_name)
+            # Return the run directory path
+            if self.fs.exists(run_dir):
+                return str(run_dir)
 
-    # Generate all configs
-    config_dir = Path('primitives/configs/generated')
-    config_dir.mkdir(parents=True, exist_ok=True)
+            return None  # Run directory not created
 
-    print("Generating configs for all kernels...")
-    configs = generate_batch_configs(
-        str(config_dir),
-        duration=duration,
-        repeats=repeats,
-        warmup=warmup
-    )
+        except Exception as e:
+            self.log.error(f"Error running harness: {e}")
+            return None
 
-    if not configs:
-        print("No kernels available to benchmark")
-        return None
+    def run_single_kernel(
+        self,
+        kernel_name: str,
+        run_name: str,
+        duration: Optional[int] = None,
+        repeats: Optional[int] = None,
+        warmup: Optional[int] = None,
+        verbose: bool = False
+    ) -> Optional[str]:
+        """Run benchmark for a single kernel.
 
-    print(f"Found {len(configs)} kernel(s) to benchmark")
+        Args:
+            kernel_name: Name of kernel to benchmark
+            run_name: Name of the run for organizing results
+            duration: Override duration (seconds)
+            repeats: Override number of repeats
+            warmup: Override warmup duration (seconds)
+            verbose: Show verbose output
 
-    run_dir = get_run_directory(run_name)
-    print(f"Results will be saved to: {run_dir}")
-    print()
+        Returns:
+            Run directory path if successful, None otherwise
+        """
+        from cortex.utils.config import generate_config
 
-    # Run each kernel
-    results = []
-    for i, (kernel_name, config_path) in enumerate(configs, 1):
-        print("=" * 80)
-        print(f"[{i}/{len(configs)}] Running {kernel_name}")
-        print("=" * 80)
-
-        # Create kernel directory
+        # Create run directory structure
+        run_structure = create_run_structure(run_name)
         kernel_dir = create_kernel_directory(run_name, kernel_name)
 
-        # Need to regenerate config with specific output directory
-        from cortex.utils.config import generate_config
+        # Generate config
+        config_dir = Path(GENERATED_CONFIG_DIR)
+        self.fs.mkdir(config_dir, parents=True, exist_ok=True)
+        config_path = config_dir / f"{kernel_name}.yaml"
+
+        self.log.info(f"Generating config for {kernel_name}...")
+
         if not generate_config(
             kernel_name,
-            config_path,
+            str(config_path),
             output_dir=str(kernel_dir),
             duration=duration,
             repeats=repeats,
             warmup=warmup
         ):
-            print(f"✗ {kernel_name} failed (config generation)")
-            print()
-            continue
+            # Cleanup: remove partial run directory on config generation failure
+            self._cleanup_partial_run(run_structure['run'])
+            return None
+
+        self.log.info(f"Running benchmark for {kernel_name}...")
 
         # Run harness
-        result = run_harness(config_path, run_name, verbose=verbose)
+        results_dir = self.run(str(config_path), run_name, verbose=verbose)
 
-        if result:
-            results.append((kernel_name, result))
-            print(f"✓ {kernel_name} complete")
+        if results_dir:
+            self.log.info(f"✓ Benchmark complete: {results_dir}")
         else:
-            print(f"✗ {kernel_name} failed")
+            # Cleanup: remove partial run directory on harness failure
+            self._cleanup_partial_run(run_structure['run'])
 
-        print()
+        return results_dir
 
-    # Summary
-    print("=" * 80)
-    print("Benchmark Summary")
-    print("=" * 80)
-    print(f"Completed: {len(results)}/{len(configs)} kernels")
-    print(f"Results directory: {run_dir}")
-    print("=" * 80)
+    def run_all_kernels(
+        self,
+        run_name: str,
+        duration: Optional[int] = None,
+        repeats: Optional[int] = None,
+        warmup: Optional[int] = None,
+        verbose: bool = False
+    ) -> Optional[str]:
+        """Run benchmarks for all available kernels.
 
-    return str(run_dir) if results else None
+        Args:
+            run_name: Name of the run for organizing results
+            duration: Override duration (seconds)
+            repeats: Override number of repeats
+            warmup: Override warmup duration (seconds)
+            verbose: Show verbose output
+
+        Returns:
+            Run directory path if successful, None otherwise
+        """
+        from cortex.utils.config import generate_batch_configs
+
+        # Create run directory structure
+        create_run_structure(run_name)
+
+        # Generate all configs
+        config_dir = Path(GENERATED_CONFIG_DIR)
+        self.fs.mkdir(config_dir, parents=True, exist_ok=True)
+
+        self.log.info("Generating configs for all kernels...")
+        configs = generate_batch_configs(
+            str(config_dir),
+            duration=duration,
+            repeats=repeats,
+            warmup=warmup
+        )
+
+        if not configs:
+            self.log.info("No kernels available to benchmark")
+            return None
+
+        self.log.info(f"Found {len(configs)} kernel(s) to benchmark")
+
+        run_dir = get_run_directory(run_name)
+        self.log.info(f"Results will be saved to: {run_dir}")
+        self.log.info("")
+
+        # Run each kernel
+        results = []
+        for i, (kernel_name, config_path) in enumerate(configs, 1):
+            self.log.info("=" * 80)
+            self.log.info(f"[{i}/{len(configs)}] Running {kernel_name}")
+            self.log.info("=" * 80)
+
+            # Create kernel directory
+            kernel_dir = create_kernel_directory(run_name, kernel_name)
+
+            # Need to regenerate config with specific output directory
+            from cortex.utils.config import generate_config
+            if not generate_config(
+                kernel_name,
+                config_path,
+                output_dir=str(kernel_dir),
+                duration=duration,
+                repeats=repeats,
+                warmup=warmup
+            ):
+                self.log.info(f"✗ {kernel_name} failed (config generation)")
+                self.log.info("")
+                continue
+
+            # Run harness
+            result = self.run(config_path, run_name, verbose=verbose)
+
+            if result:
+                results.append((kernel_name, result))
+                self.log.info(f"✓ {kernel_name} complete")
+            else:
+                self.log.info(f"✗ {kernel_name} failed")
+
+            self.log.info("")
+
+        # Summary
+        self.log.info("=" * 80)
+        self.log.info("Benchmark Summary")
+        self.log.info("=" * 80)
+        self.log.info(f"Completed: {len(results)}/{len(configs)} kernels")
+        self.log.info(f"Results directory: {run_dir}")
+        self.log.info("=" * 80)
+
+        return str(run_dir) if results else None

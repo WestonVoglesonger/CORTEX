@@ -1,6 +1,7 @@
 """Analyze results command"""
-from cortex.utils.analyzer import run_full_analysis
+from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import get_most_recent_run, get_run_directory, get_analysis_dir
+from cortex.core import ConsoleLogger, RealFileSystemService
 
 def setup_parser(parser):
     """Setup argument parser for analyze command"""
@@ -69,7 +70,14 @@ def execute(args):
     print(f"Telemetry format: {args.telemetry_format}")
     print()
 
-    success = run_full_analysis(
+    # Create analyzer with production dependencies
+    filesystem = RealFileSystemService()
+    analyzer = TelemetryAnalyzer(
+        filesystem=filesystem,
+        logger=ConsoleLogger()
+    )
+
+    success = analyzer.run_full_analysis(
         str(run_dir),
         output_dir=output_dir,
         plots=args.plots,

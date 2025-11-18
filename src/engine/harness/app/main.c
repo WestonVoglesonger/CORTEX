@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "loader.h"
+#include "signal_handler.h"
 #include "telemetry.h"
 #include "util.h"
 #include "../report/report.h"
@@ -105,31 +106,46 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     rcfg.enable_dropouts = 0;
     rcfg.load_profile = ctx->run_cfg.benchmark.load_profile;
 
+    /* Create replayer instance */
+    cortex_replayer_t *replayer = cortex_replayer_create(&rcfg);
+    if (!replayer) {
+        fprintf(stderr, "failed to create replayer\n");
+        return -1;
+    }
+
     /* Start background load profile before replayer */
-    if (cortex_replayer_start_background_load(rcfg.load_profile) != 0) {
+    if (cortex_replayer_start_background_load(replayer, rcfg.load_profile) != 0) {
         fprintf(stderr, "[harness] warning: failed to start background load\n");
         /* Continue anyway - not a fatal error */
     }
 
-    if (cortex_replayer_run(&rcfg, on_replayer_chunk, ctx) != 0) {
+    if (cortex_replayer_start(replayer, on_replayer_chunk, ctx) != 0) {
         fprintf(stderr, "failed to start replayer\n");
-        cortex_replayer_stop_background_load();
+        cortex_replayer_destroy(replayer);
         return -1;
     }
 
-    /* Run for the specified duration. */
+    /* Run for the specified duration, or until shutdown signal received */
     const uint64_t start = cortex_now_ns();
     const uint64_t end_target = start + (uint64_t)seconds * 1000000000ULL;
-    while (cortex_now_ns() < end_target) {
+    while (cortex_now_ns() < end_target && !cortex_should_shutdown()) {
         /* simple sleep-loop; nanosleep inside replayer governs cadence */
         struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000L };
         nanosleep(&ts, NULL);
     }
 
-    cortex_replayer_stop();
-    cortex_replayer_stop_background_load();
+    /* Check if we're exiting due to shutdown signal */
+    int was_interrupted = cortex_should_shutdown();
+    if (was_interrupted) {
+        fprintf(stderr, "\n[harness] Interrupted by signal, cleaning up...\n");
+    }
+
+    /* Cleanup: stop and destroy replayer (also stops background load) */
+    cortex_replayer_destroy(replayer);
     cortex_scheduler_flush(ctx->scheduler);
-    return 0;
+
+    /* If interrupted, return error to signal early termination */
+    return was_interrupted ? -1 : 0;
 }
 
 static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
@@ -196,15 +212,25 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     }
     
     /* Step 7: Loop: call run_once() for each repeat */
+    int repeat_failed = 0;
     for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
         printf("[harness] Repeat %u/%u for plugin '%s'\n", r, ctx->run_cfg.benchmark.parameters.repeats, plugin_name);
         fflush(stdout);
 
         /* Update scheduler's current_repeat field */
         cortex_scheduler_set_current_repeat(ctx->scheduler, r);
-        
+
         if (run_once(ctx, ctx->run_cfg.benchmark.parameters.duration_seconds, plugin_cfg) != 0) {
             fprintf(stderr, "[harness] repeat %u failed for plugin '%s'\n", r, plugin_name);
+
+            /* If failure was due to shutdown signal, flush telemetry before exiting */
+            if (cortex_should_shutdown()) {
+                fprintf(stderr, "[harness] Shutdown signal received, preserving telemetry data\n");
+                repeat_failed = 1;
+                break;  /* Exit loop but continue to telemetry writing */
+            }
+
+            /* Non-shutdown failure - cleanup and return immediately */
             cortex_plugin_unload(&loaded_plugin);
             cortex_scheduler_destroy(scheduler);
             ctx->scheduler = NULL;
@@ -246,7 +272,12 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     
     /* Step 10: Keep buffer for report generation (don't reset) */
     /* Buffer will accumulate records from all plugins */
-    
+
+    if (repeat_failed) {
+        fprintf(stderr, "[harness] Plugin '%s' interrupted, telemetry preserved\n", plugin_name);
+        return -1;  /* Signal interruption to caller */
+    }
+
     printf("[harness] Completed plugin: %s\n", plugin_name);
     return 0;
 }
@@ -280,6 +311,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "failed to init telemetry buffer\n");
         return 1;
     }
+
+    /* Install signal handlers for graceful shutdown on Ctrl+C */
+    cortex_install_signal_handlers();
+
+    /* Track if we were interrupted by a signal */
+    int was_interrupted = 0;
 
     /* Auto-detect kernels if not explicitly specified */
     if (ctx.run_cfg.auto_detect_kernels) {
@@ -320,36 +357,69 @@ int main(int argc, char **argv) {
 
     /* Sequential plugin execution */
     for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
+        /* Check for shutdown signal before starting next plugin */
+        if (cortex_should_shutdown()) {
+            fprintf(stderr, "[harness] Shutdown requested, skipping remaining plugins\n");
+            was_interrupted = 1;
+            break;
+        }
+
         if (strcmp(ctx.run_cfg.plugins[i].status, "ready") != 0) {
             continue;
         }
         printf("[harness] Running plugin: %s\n", ctx.run_cfg.plugins[i].name);
         if (run_plugin(&ctx, i) != 0) {
             fprintf(stderr, "Plugin %s failed\n", ctx.run_cfg.plugins[i].name);
+
+            /* If failure was due to shutdown signal, stop immediately */
+            if (cortex_should_shutdown()) {
+                fprintf(stderr, "[harness] Shutdown signal detected during plugin execution\n");
+                was_interrupted = 1;
+                break;
+            }
+
             // For now: continue to next plugin (collect partial results)
             // Future: add benchmark.fail_fast config option to abort on first failure
         }
     }
 
-    /* Generate HTML report after all plugins complete */
-    /* Ensure output directory exists */
-    if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
-        char report_path[1024];
-        snprintf(report_path, sizeof(report_path), "%s/report.html",
-                 ctx.run_cfg.output.directory);
+    /* Check for shutdown one final time before report generation */
+    if (cortex_should_shutdown() && !was_interrupted) {
+        fprintf(stderr, "[harness] Shutdown requested before report generation\n");
+        was_interrupted = 1;
+    }
 
-        printf("[harness] Generating HTML report: %s\n", report_path);
-        fflush(stdout);
-        if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
-            printf("[harness] Report generated successfully\n");
+    /* Generate HTML report after all plugins complete (skip if interrupted) */
+    if (!was_interrupted) {
+        /* Ensure output directory exists */
+        if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
+            char report_path[1024];
+            snprintf(report_path, sizeof(report_path), "%s/report.html",
+                     ctx.run_cfg.output.directory);
+
+            printf("[harness] Generating HTML report: %s\n", report_path);
             fflush(stdout);
-        } else {
-            fprintf(stderr, "[harness] Failed to generate report\n");
+            if (cortex_report_generate(report_path, &ctx.telemetry, ctx.run_id) == 0) {
+                printf("[harness] Report generated successfully\n");
+                fflush(stdout);
+            } else {
+                fprintf(stderr, "[harness] Failed to generate report\n");
+            }
         }
+    } else {
+        fprintf(stderr, "[harness] Report generation skipped due to shutdown signal\n");
+    }
+
+    /* Check if shutdown was requested during report generation */
+    if (cortex_should_shutdown() && !was_interrupted) {
+        fprintf(stderr, "[harness] Shutdown requested during report generation\n");
+        was_interrupted = 1;
     }
 
     cortex_telemetry_free(&ctx.telemetry);
-    return 0;
+
+    /* Return error code if interrupted, success otherwise */
+    return was_interrupted ? 1 : 0;
 }
 
 

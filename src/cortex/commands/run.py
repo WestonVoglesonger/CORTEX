@@ -1,7 +1,20 @@
-"""Run experiments command"""
+"""Run experiments command with dependency injection.
+
+CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
+"""
 import sys
-from cortex.utils.runner import run_single_kernel, run_all_kernels
-from cortex.utils.paths import generate_run_name
+from cortex.utils.runner import HarnessRunner
+from cortex.utils.paths import generate_run_name, create_run_structure
+from cortex.core import (
+    ConsoleLogger,
+    RealFileSystemService,
+    SubprocessExecutor,
+    SystemTimeProvider,
+    SystemEnvironmentProvider,
+    SystemToolLocator,
+    YamlConfigLoader,
+)
+
 
 def setup_parser(parser):
     """Setup argument parser for run command"""
@@ -42,6 +55,7 @@ def setup_parser(parser):
         action='store_true',
         help='Show verbose harness output'
     )
+
 
 def execute(args):
     """Execute run command"""
@@ -85,16 +99,26 @@ def execute(args):
 
     print()
 
+    # Create production runner with real dependencies
+    filesystem = RealFileSystemService()
+    runner = HarnessRunner(
+        filesystem=filesystem,
+        process_executor=SubprocessExecutor(),
+        config_loader=YamlConfigLoader(filesystem),
+        time_provider=SystemTimeProvider(),
+        env_provider=SystemEnvironmentProvider(),
+        tool_locator=SystemToolLocator(),
+        logger=ConsoleLogger()
+    )
+
     # Custom config mode
     if args.config:
-        from cortex.utils.runner import run_harness
-        from cortex.utils.paths import create_run_structure
         print(f"Using custom config: {args.config}")
 
-        # Create run directory structure (required by run_harness)
+        # Create run directory structure (required by runner)
         create_run_structure(run_name)
 
-        results_dir = run_harness(args.config, run_name=run_name, verbose=args.verbose)
+        results_dir = runner.run(args.config, run_name=run_name, verbose=args.verbose)
         if results_dir:
             print(f"\n✓ Benchmark complete")
             print(f"Results: {results_dir}")
@@ -104,7 +128,7 @@ def execute(args):
 
     # Single kernel mode
     if args.kernel:
-        results_dir = run_single_kernel(
+        results_dir = runner.run_single_kernel(
             args.kernel,
             run_name=run_name,
             duration=args.duration,
@@ -116,7 +140,7 @@ def execute(args):
 
     # Batch mode
     if args.all:
-        results_dir = run_all_kernels(
+        results_dir = runner.run_all_kernels(
             run_name=run_name,
             duration=args.duration,
             repeats=args.repeats,

@@ -1,11 +1,20 @@
 """Pipeline command - Full end-to-end benchmarking"""
 from cortex.commands import build, validate, run, analyze
-from cortex.utils.runner import run_all_kernels
-from cortex.utils.analyzer import run_full_analysis
+from cortex.utils.runner import HarnessRunner
+from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import generate_run_name, get_analysis_dir
 from cortex.utils.build_helper import smart_build
 from cortex.utils.config import load_base_config
 from cortex.utils.discovery import discover_kernels
+from cortex.core import (
+    ConsoleLogger,
+    RealFileSystemService,
+    SubprocessExecutor,
+    SystemTimeProvider,
+    SystemEnvironmentProvider,
+    SystemToolLocator,
+    YamlConfigLoader,
+)
 import argparse
 import sys
 
@@ -78,8 +87,8 @@ def execute(args):
 
         from cortex.commands import check_system
         check_args = argparse.Namespace(verbose=args.verbose)
-        checks, all_pass = check_system.run_all_checks()
-        check_system.print_results(checks, verbose=args.verbose)
+        exit_code = check_system.execute(check_args)
+        all_pass = (exit_code == 0)
 
         if not all_pass:
             print()
@@ -199,7 +208,19 @@ def execute(args):
     print(f"STEP {step_num}: RUN BENCHMARKS")
     print("=" * 80)
 
-    results_dir = run_all_kernels(
+    # Create runner with production dependencies
+    filesystem = RealFileSystemService()
+    runner = HarnessRunner(
+        filesystem=filesystem,
+        process_executor=SubprocessExecutor(),
+        config_loader=YamlConfigLoader(filesystem),
+        time_provider=SystemTimeProvider(),
+        env_provider=SystemEnvironmentProvider(),
+        tool_locator=SystemToolLocator(),
+        logger=ConsoleLogger()
+    )
+
+    results_dir = runner.run_all_kernels(
         run_name=run_name,
         duration=args.duration,
         repeats=args.repeats,
@@ -220,7 +241,13 @@ def execute(args):
     # Get analysis directory for this run
     analysis_dir = str(get_analysis_dir(run_name))
 
-    success = run_full_analysis(
+    # Create analyzer with production dependencies (reuse filesystem from runner)
+    analyzer = TelemetryAnalyzer(
+        filesystem=filesystem,
+        logger=ConsoleLogger()
+    )
+
+    success = analyzer.run_full_analysis(
         results_dir,
         output_dir=analysis_dir,
         plots=['all'],

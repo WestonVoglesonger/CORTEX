@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from cortex.utils.config import discover_kernels, generate_config
-from cortex.utils.analyzer import _extract_kernel_name
+from cortex.utils.analyzer import TelemetryAnalyzer
 
 def test_discover_kernels():
     """Test kernel discovery from registry"""
@@ -38,11 +38,11 @@ def test_extract_kernel_name():
 
     # Test new kernel-data structure
     path1 = Path("results/run-2025-11-10-001/kernel-data/goertzel/telemetry.ndjson")
-    assert _extract_kernel_name(path1) == "goertzel"
+    assert TelemetryAnalyzer._extract_kernel_name(path1) == "goertzel"
 
     # Test another kernel
     path2 = Path("results/batch_123/kernel-data/bandpass_fir/telemetry.csv")
-    assert _extract_kernel_name(path2) == "bandpass_fir"
+    assert TelemetryAnalyzer._extract_kernel_name(path2) == "bandpass_fir"
 
     print("✓ test_extract_kernel_name passed")
 
