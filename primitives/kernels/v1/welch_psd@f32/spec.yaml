@@ -1,7 +1,8 @@
-name: welch_psd
-version: 0.1.0
-dtype: f32
-description: "Welch's method for power spectral density estimation"
+kernel:
+  name: "welch_psd"
+  version: "0.1.0"
+  dtype: "float32"
+  description: "Welch's method for power spectral density estimation"
 
 # ABI Configuration
 abi:

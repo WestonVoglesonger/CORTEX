@@ -66,6 +66,14 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   ctx->n_fft = DEFAULT_N_FFT;
   ctx->n_overlap = DEFAULT_N_OVERLAP;
 
+  /* Validate overlap before using it */
+  if (ctx->n_overlap < 0 || ctx->n_overlap >= ctx->n_fft) {
+    fprintf(stderr, "welch_psd: n_overlap (%d) must be in range [0, n_fft) where n_fft=%d\n",
+            ctx->n_overlap, ctx->n_fft);
+    free(ctx);
+    return result;
+  }
+
   /* Store runtime config */
   ctx->channels = config->channels;
   ctx->window_length_samples = config->window_length_samples;
@@ -154,8 +162,8 @@ void cortex_process(void *handle, const void *input, void *output) {
    * We process each channel independently.
    */
 
-  int channels = ctx->channels;
-  int input_samples = ctx->window_length_samples;
+  const int channels = ctx->channels;
+  const int input_samples = ctx->window_length_samples;
 
   for (int c = 0; c < channels; c++) {
     /* Reset accumulator for this channel */
@@ -220,13 +228,16 @@ void cortex_process(void *handle, const void *input, void *output) {
 
     /* 4. Average and Write Output (Strided Write) */
     if (ctx->segment_count > 0) {
+      /* Pre-compute reciprocal to avoid repeated division (safer and faster) */
+      float scale = 1.0f / (float)ctx->segment_count;
       for (int i = 0; i <= ctx->n_fft / 2; i++) {
         /* Output index: i * channels + c */
         /* Overflow protection: max i = 128, channels validated at init (line 78) */
         size_t out_idx = (size_t)i * channels + c;
-        out_data[out_idx] = ctx->psd_sum[i] / ctx->segment_count;
+        out_data[out_idx] = ctx->psd_sum[i] * scale;
       }
     } else {
+      /* No segments processed - output zeros */
       for (int i = 0; i <= ctx->n_fft / 2; i++) {
         /* Same overflow protection as above */
         size_t out_idx = (size_t)i * channels + c;

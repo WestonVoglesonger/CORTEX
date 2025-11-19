@@ -21,7 +21,9 @@ def compute(input_data, config):
     n_fft = config.get('n_fft', 256)
     n_overlap = config.get('n_overlap', 128)
     window = config.get('window', 'hann')
-    fs = 160.0  # Sampling rate (Hz) - hardcoded for v1 validation
+    # Sampling rate: hardcoded to match CORTEX v1 EEG dataset (160 Hz)
+    # Future versions should accept this as a parameter from the harness
+    fs = 160.0
     
     # SciPy's welch function does exactly what we need
     # scaling='density' is the default, which is what we want for PSD
@@ -58,29 +60,28 @@ if __name__ == "__main__":
             # In a real scenario, this might come from a config file or args
             config = {'n_fft': 256, 'n_overlap': 128, 'window': 'hann'}
             
-            # Reshape if multi-channel?
+            # Infer dimensions from input size
             # The harness passes a flattened buffer [W * C].
-            # Infer channels from input size
-            # The harness typically sends one window of data.
-            # We assume the window length is 160 (default) or try to deduce it.
-            # Since we don't get arguments, we'll assume the standard window size of 160 for now,
-            # but calculate channels based on that.
+            # Default window size is 160 samples for EEG @ 160 Hz
             WINDOW_SIZE = 160
-            
-            if len(input_data) % WINDOW_SIZE != 0:
-                # Fallback: if not multiple of 160, maybe it's a different window size?
-                # Try 256?
-                if len(input_data) % 256 == 0:
-                    WINDOW_SIZE = 256
-                else:
-                    # Default to treating as 1 channel if all else fails, or assume 64 channels?
-                    # Let's stick to the review suggestion: infer from input.
-                    # If we can't infer, we might have to assume 64 as a fallback.
-                    pass
 
-            channels = len(input_data) // WINDOW_SIZE
+            # Try to infer channels
+            if len(input_data) % WINDOW_SIZE == 0:
+                channels = len(input_data) // WINDOW_SIZE
+            elif len(input_data) % 256 == 0:
+                # Fallback: try alternate window size
+                WINDOW_SIZE = 256
+                channels = len(input_data) // WINDOW_SIZE
+            else:
+                # Cannot infer dimensions - fail with clear error
+                raise ValueError(
+                    f"Cannot infer window size and channel count from input size {len(input_data)}. "
+                    f"Expected size to be divisible by 160 or 256. "
+                    f"Got remainder: {len(input_data) % 160} (160), {len(input_data) % 256} (256)"
+                )
+
             if channels == 0:
-                channels = 1 # Should not happen if len > 0
+                raise ValueError(f"Invalid channel count: got {channels} from input size {len(input_data)}")
 
             # Reshape to [samples, channels]
             # Input is interleaved: [s0c0, s0c1, ... s0c63, s1c0...]
