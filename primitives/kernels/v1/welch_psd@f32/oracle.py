@@ -26,13 +26,7 @@ def compute(input_data, config):
     # SciPy's welch function does exactly what we need
     # scaling='density' is the default, which is what we want for PSD
     # detrend=False matches standard DSP implementations unless specified
-    
-    # If input is too short, pad or handle gracefully
-    if len(input_data) < n_fft:
-        # For now, return zeros or handle as error. 
-        # But to match C implementation which might process partial or zero pad,
-        # let's just let scipy handle it or return zeros.
-        return np.zeros(n_fft // 2 + 1, dtype=np.float32)
+    # scipy.welch handles short inputs by zero-padding to nfft
 
     freqs, psd = welch(input_data, 
                        fs=fs, 
@@ -87,12 +81,7 @@ if __name__ == "__main__":
             channels = len(input_data) // WINDOW_SIZE
             if channels == 0:
                 channels = 1 # Should not happen if len > 0
-                
-            # Update config based on window size (match C kernel logic)
-            if WINDOW_SIZE < 256:
-                config['n_fft'] = WINDOW_SIZE
-                config['n_overlap'] = WINDOW_SIZE // 2
-                
+
             # Reshape to [samples, channels]
             # Input is interleaved: [s0c0, s0c1, ... s0c63, s1c0...]
             # So we reshape to (-1, channels)

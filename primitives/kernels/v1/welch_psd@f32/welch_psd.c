@@ -1,6 +1,7 @@
 #include "cortex_plugin.h"
 #include "kiss_fft.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,9 +69,26 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   ctx->channels = config->channels;
   ctx->window_length_samples = config->window_length_samples;
 
+  /* Validate configuration to prevent integer overflow */
+  /* Maximum index: (window_length_samples - 1) * channels + (channels - 1) */
+  if (ctx->channels > 0 && ctx->window_length_samples > 0) {
+    size_t max_sample_idx = (size_t)(ctx->window_length_samples - 1);
+    /* Check if calculation would overflow (conservative check) */
+    if (max_sample_idx > SIZE_MAX / ctx->channels) {
+      fprintf(stderr, "welch_psd: Configuration would cause integer overflow "
+              "(window_length=%u, channels=%u)\n",
+              ctx->window_length_samples, ctx->channels);
+      cortex_teardown(ctx);
+      return result;
+    }
+  }
+
   ctx->n_step = ctx->n_fft - ctx->n_overlap;
   if (ctx->n_step <= 0) {
     /* Invalid config: overlap must be less than FFT size */
+    fprintf(stderr, "welch_psd: Invalid overlap configuration "
+            "(n_fft=%d, n_overlap=%d, n_step=%d)\n",
+            ctx->n_fft, ctx->n_overlap, ctx->n_step);
     cortex_teardown(ctx);
     return result;
   }
@@ -136,32 +154,35 @@ void cortex_process(void *handle, const void *input, void *output) {
   int channels = ctx->channels;
   int input_samples = ctx->window_length_samples;
 
-  /* Check bounds */
-  if (input_samples < ctx->n_fft) {
-    /* Input too short for FFT */
-    memset(out_data, 0, sizeof(float) * (ctx->n_fft / 2 + 1) * channels);
-    return;
-  }
-
   for (int c = 0; c < channels; c++) {
     /* Reset accumulator for this channel */
     memset(ctx->psd_sum, 0, sizeof(float) * (ctx->n_fft / 2 + 1));
     ctx->segment_count = 0;
 
     int cursor = 0;
-    while (cursor + ctx->n_fft <= input_samples) {
-      /* 1. Copy and Window (Strided Read) */
+
+    /* Process segments with zero-padding for short inputs (matches scipy behavior) */
+    /* When input_samples < n_fft, scipy processes one zero-padded segment */
+    int process_at_least_once = (input_samples < ctx->n_fft);
+
+    while (cursor + ctx->n_fft <= input_samples || (process_at_least_once && cursor == 0)) {
+      /* 1. Copy and Window (Strided Read) with zero-padding */
       for (int i = 0; i < ctx->n_fft; i++) {
-        /* Input index: (cursor + i) * channels + c */
-        /* Use size_t to prevent overflow */
-        size_t sample_idx = (size_t)cursor + i;
-        size_t idx = sample_idx * channels + c;
+        float sample = 0.0f; /* Default to zero-padding */
 
-        float sample = in_data[idx];
+        /* Only read from input if within bounds */
+        if (cursor + i < input_samples) {
+          /* Input index: (cursor + i) * channels + c */
+          /* Use size_t to prevent overflow */
+          size_t sample_idx = (size_t)cursor + i;
+          size_t idx = sample_idx * channels + c;
 
-        /* Handle NaN */
-        if (isnan(sample)) {
-          sample = 0.0f;
+          sample = in_data[idx];
+
+          /* Handle NaN */
+          if (isnan(sample)) {
+            sample = 0.0f;
+          }
         }
 
         ctx->fft_in[i].r = sample * ctx->window[i];
