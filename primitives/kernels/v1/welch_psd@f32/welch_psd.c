@@ -17,6 +17,7 @@ typedef struct {
   int n_fft;
   int n_overlap;
   int n_step;
+  int nperseg;       /* Effective window length: min(window_length_samples, n_fft) */
   float *window;
 
   /* Runtime config */
@@ -73,8 +74,8 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   /* Maximum index: (window_length_samples - 1) * channels + (channels - 1) */
   if (ctx->channels > 0 && ctx->window_length_samples > 0) {
     size_t max_sample_idx = (size_t)(ctx->window_length_samples - 1);
-    /* Check if calculation would overflow (conservative check) */
-    if (max_sample_idx > SIZE_MAX / ctx->channels) {
+    /* Check if calculation would overflow (>= prevents off-by-one error) */
+    if (max_sample_idx >= SIZE_MAX / ctx->channels) {
       fprintf(stderr, "welch_psd: Configuration would cause integer overflow "
               "(window_length=%u, channels=%u)\n",
               ctx->window_length_samples, ctx->channels);
@@ -83,18 +84,26 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     }
   }
 
-  ctx->n_step = ctx->n_fft - ctx->n_overlap;
+  /* Calculate effective window length (matches scipy behavior) */
+  /* scipy.welch uses nperseg = min(len(x), requested_nperseg) */
+  ctx->nperseg = (ctx->window_length_samples < (uint32_t)ctx->n_fft)
+                  ? ctx->window_length_samples
+                  : ctx->n_fft;
+
+  /* Step size is based on nperseg, not n_fft (matches scipy) */
+  ctx->n_step = ctx->nperseg - ctx->n_overlap;
   if (ctx->n_step <= 0) {
-    /* Invalid config: overlap must be less than FFT size */
+    /* Invalid config: overlap must be less than effective segment length */
     fprintf(stderr, "welch_psd: Invalid overlap configuration "
-            "(n_fft=%d, n_overlap=%d, n_step=%d)\n",
-            ctx->n_fft, ctx->n_overlap, ctx->n_step);
+            "(nperseg=%d, n_overlap=%d, n_step=%d)\n",
+            ctx->nperseg, ctx->n_overlap, ctx->n_step);
     cortex_teardown(ctx);
     return result;
   }
 
   /* Allocate resources */
-  ctx->window = (float *)malloc(sizeof(float) * ctx->n_fft);
+  /* Window size is nperseg (not n_fft) to match scipy */
+  ctx->window = (float *)malloc(sizeof(float) * ctx->nperseg);
   ctx->fft_in = (kiss_fft_cpx *)malloc(sizeof(kiss_fft_cpx) * ctx->n_fft);
   ctx->fft_out = (kiss_fft_cpx *)malloc(sizeof(kiss_fft_cpx) * ctx->n_fft);
   ctx->psd_sum = (float *)calloc(ctx->n_fft / 2 + 1, sizeof(float));
@@ -113,16 +122,16 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     return result;
   }
 
-  generate_hann_window(ctx->window, ctx->n_fft);
+  /* Generate window with effective segment length (matches scipy) */
+  generate_hann_window(ctx->window, ctx->nperseg);
 
   /* Pre-compute window energy scale factor */
   /* Standard Welch: Scale by 1 / (Fs * Sum(w^2)) */
   /* For one-sided PSD, we multiply non-DC/Nyquist terms by 2. */
-  /* We'll store the base scale: 1.0 / Sum(w^2) (Assuming Fs=1.0 for relative)
-   */
+  /* Window energy computed over nperseg (not n_fft) to match scipy behavior */
   /* Use double for energy calculation to preserve precision */
   double win_energy = 0.0;
-  for (int i = 0; i < ctx->n_fft; i++) {
+  for (int i = 0; i < ctx->nperseg; i++) {
     win_energy += (double)ctx->window[i] * (double)ctx->window[i];
   }
 
@@ -162,16 +171,17 @@ void cortex_process(void *handle, const void *input, void *output) {
     int cursor = 0;
 
     /* Process segments with zero-padding for short inputs (matches scipy behavior) */
-    /* When input_samples < n_fft, scipy processes one zero-padded segment */
-    int process_at_least_once = (input_samples < ctx->n_fft);
+    /* When input_samples < nperseg, scipy processes one zero-padded segment */
+    int process_at_least_once = (input_samples < ctx->nperseg);
 
-    while (cursor + ctx->n_fft <= input_samples || (process_at_least_once && cursor == 0)) {
+    while (cursor + ctx->nperseg <= input_samples || (process_at_least_once && cursor == 0)) {
       /* 1. Copy and Window (Strided Read) with zero-padding */
       for (int i = 0; i < ctx->n_fft; i++) {
         float sample = 0.0f; /* Default to zero-padding */
+        float window_val = (i < ctx->nperseg) ? ctx->window[i] : 0.0f;
 
-        /* Only read from input if within bounds */
-        if (cursor + i < input_samples) {
+        /* Only read from input if within bounds and within nperseg */
+        if (i < ctx->nperseg && cursor + i < input_samples) {
           /* Input index: (cursor + i) * channels + c */
           /* Use size_t to prevent overflow */
           size_t sample_idx = (size_t)cursor + i;
@@ -185,7 +195,7 @@ void cortex_process(void *handle, const void *input, void *output) {
           }
         }
 
-        ctx->fft_in[i].r = sample * ctx->window[i];
+        ctx->fft_in[i].r = sample * window_val;
         ctx->fft_in[i].i = 0.0f;
       }
 

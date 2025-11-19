@@ -9,10 +9,16 @@ abi:
   output_shape: [n_fft/2 + 1, C] # Interleaved [frequencies, channels]
 
 # Numerical Validation
+# Tolerances are looser than other kernels (e.g., bandpass_fir uses rtol=1e-5)
+# due to accumulated floating-point error across multiple operations:
+# - Window generation (cosine evaluation)
+# - FFT butterfly operations (KissFFT uses single-precision)
+# - Magnitude squared calculations
+# - Averaging across segments
 numerical:
   tolerances:
-    rtol: 2e-3
-    atol: 1e-4
+    rtol: 2e-3  # Relative tolerance: 0.2%
+    atol: 1e-4  # Absolute tolerance for near-zero values
 
 # Oracle Configuration
 oracle:
