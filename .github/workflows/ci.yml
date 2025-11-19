@@ -41,8 +41,16 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make
+
     - name: Install package with dev dependencies
       run: pip install -e .[dev]
+
+    - name: Build kernels for integration tests
+      run: make plugins
 
     - name: Run pytest
       run: pytest tests/ -v
