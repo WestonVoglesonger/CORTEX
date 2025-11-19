@@ -1,13 +1,15 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O3 -fPIC -shared -I../../../../src/engine/include -Idependencies
-LDFLAGS = 
+CC = cc
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -Idependencies
+LDFLAGS = -lm
 
-# Detect OS for shared library extension
+# Detect OS for shared library extension and flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	LIB_EXT = dylib
+	SOFLAGS = -dynamiclib -undefined dynamic_lookup
 else
 	LIB_EXT = so
+	SOFLAGS = -shared
 endif
 
 TARGET = libwelch_psd.$(LIB_EXT)
@@ -19,7 +21,7 @@ OBJS = $(SRCS:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(SOFLAGS) $(OBJS) $(LDFLAGS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

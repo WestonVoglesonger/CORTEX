@@ -66,24 +66,47 @@ if __name__ == "__main__":
             
             # Reshape if multi-channel?
             # The harness passes a flattened buffer [W * C].
-            # We need to know C (channels). The harness passes 64 channels.
-            # W=160, C=64.
-            channels = 64
-            if len(input_data) % channels == 0:
-                # Reshape to [samples, channels] or [channels, samples]
-                # Harness uses interleaved: [s0c0, s0c1, ... s0c63, s1c0...]
-                # So we reshape to (-1, channels)
-                input_reshaped = input_data.reshape(-1, channels)
+            # Infer channels from input size
+            # The harness typically sends one window of data.
+            # We assume the window length is 160 (default) or try to deduce it.
+            # Since we don't get arguments, we'll assume the standard window size of 160 for now,
+            # but calculate channels based on that.
+            WINDOW_SIZE = 160
+            
+            if len(input_data) % WINDOW_SIZE != 0:
+                # Fallback: if not multiple of 160, maybe it's a different window size?
+                # Try 256?
+                if len(input_data) % 256 == 0:
+                    WINDOW_SIZE = 256
+                else:
+                    # Default to treating as 1 channel if all else fails, or assume 64 channels?
+                    # Let's stick to the review suggestion: infer from input.
+                    # If we can't infer, we might have to assume 64 as a fallback.
+                    pass
+
+            channels = len(input_data) // WINDOW_SIZE
+            if channels == 0:
+                channels = 1 # Should not happen if len > 0
                 
-                # Welch needs to be applied per channel.
-                # Scipy welch can handle axis. axis=-1 is default (last axis).
-                # If we pass (samples, channels), we want axis=0.
+            # Update config based on window size (match C kernel logic)
+            if WINDOW_SIZE < 256:
+                config['n_fft'] = WINDOW_SIZE
+                config['n_overlap'] = WINDOW_SIZE // 2
                 
-                psd_list = []
-                for c in range(channels):
-                    channel_data = input_reshaped[:, c]
-                    psd = compute(channel_data, config)
-                    psd_list.append(psd)
+            # Reshape to [samples, channels]
+            # Input is interleaved: [s0c0, s0c1, ... s0c63, s1c0...]
+            # So we reshape to (-1, channels)
+            input_reshaped = input_data.reshape(-1, channels)
+            
+            # Welch needs to be applied per channel.
+            # Scipy welch can handle axis. axis=-1 is default (last axis).
+            # If we pass (samples, channels), we want axis=0.
+            
+            psd_list = []
+            for c in range(channels):
+                channel_data = input_reshaped[:, c]
+                psd = compute(channel_data, config)
+                psd_list.append(psd)
                 
                 # Stack results: [frequencies, channels] -> flatten
                 # C implementation output order: likely interleaved [f0c0, f0c1...]?
@@ -126,14 +149,11 @@ if __name__ == "__main__":
                 # "output_window_length_samples x output_channels".
                 # If interleaved, it should be [f0c0, f0c1, ... f0c63, f1c0...]
                 
-                psd_matrix = np.array(psd_list).T # [frequencies, channels]
-                output_data = psd_matrix.flatten().astype(np.float32)
-                
-                output_data.tofile(args.output)
-            else:
-                # Fallback for simple 1D test
-                psd = compute(input_data, config)
-                np.array(psd, dtype=np.float32).tofile(args.output)
+            # Stack results: [frequencies, channels] -> flatten
+            psd_matrix = np.array(psd_list).T # [frequencies, channels]
+            output_data = psd_matrix.flatten().astype(np.float32)
+            
+            output_data.tofile(args.output)
                 
         except Exception as e:
             print(f"Oracle error: {e}", file=sys.stderr)

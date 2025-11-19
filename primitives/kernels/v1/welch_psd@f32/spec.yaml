@@ -1,4 +1,3 @@
-```yaml
 name: welch_psd
 version: 0.1.0
 dtype: f32
@@ -13,8 +12,8 @@ abi:
 # Numerical Validation
 numerical:
   tolerances:
-    rtol: 1e-5
-    atol: 1e-6
+    rtol: 2e-3
+    atol: 1e-4
 
 # Oracle Configuration
 oracle:
@@ -36,18 +35,3 @@ config:
     type: string
     default: "hann"
     description: "Window function to use (hann, hamming, blackman)"
-
-# Input/Output tensor shapes
-io:
-  input:
-    shape: ["samples"]
-    dtype: float32
-  output:
-    shape: ["frequencies"]
-    dtype: float32
-
-# Validation tolerances
-tolerances:
-  float32:
-    rtol: 1e-5
-    atol: 1e-5

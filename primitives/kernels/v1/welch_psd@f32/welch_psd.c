@@ -35,7 +35,7 @@ typedef struct {
 /* Window function generator */
 static void generate_hann_window(float *window, int size) {
   for (int i = 0; i < size; i++) {
-    window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (size - 1)));
+    window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / size));
   }
 }
 
@@ -56,8 +56,19 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     return result;
 
   /* Parse config */
-  ctx->n_fft = 256;     /* Default */
-  ctx->n_overlap = 128; /* Default */
+  /* Default values */
+  int default_n_fft = 256;
+  int default_n_overlap = 128;
+
+  /* Adjust defaults if window length is smaller */
+  if (config->window_length_samples > 0 &&
+      config->window_length_samples < (uint32_t)default_n_fft) {
+    ctx->n_fft = config->window_length_samples;
+    ctx->n_overlap = ctx->n_fft / 2;
+  } else {
+    ctx->n_fft = default_n_fft;
+    ctx->n_overlap = default_n_overlap;
+  }
 
   /* Store runtime config */
   ctx->channels = config->channels;
@@ -73,8 +84,9 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
   ctx->n_step = ctx->n_fft - ctx->n_overlap;
   if (ctx->n_step <= 0) {
-    free(ctx);
-    return result;
+    /* Fallback to prevent infinite loop or div by zero */
+    ctx->n_step = 1;
+    ctx->n_overlap = ctx->n_fft - 1;
   }
 
   /* Allocate resources */
@@ -108,11 +120,12 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   /* For one-sided PSD, we multiply non-DC/Nyquist terms by 2. */
   /* We'll store the base scale: 1.0 / Sum(w^2) (Assuming Fs=1.0 for relative)
    */
-  float win_energy = 0.0f;
+  /* Use double for energy calculation to preserve precision */
+  double win_energy = 0.0;
   for (int i = 0; i < ctx->n_fft; i++) {
-    win_energy += ctx->window[i] * ctx->window[i];
+    win_energy += (double)ctx->window[i] * (double)ctx->window[i];
   }
-  ctx->energy_scale = 1.0f / win_energy;
+  ctx->energy_scale = (float)(1.0 / win_energy);
 
   result.handle = ctx;
   result.output_window_length_samples = ctx->n_fft / 2 + 1;
