@@ -111,14 +111,8 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
   if (!ctx->window || !ctx->fft_in || !ctx->fft_out || !ctx->psd_sum ||
       !ctx->fft_cfg) {
-    /* Defensive cleanup - free(NULL) is safe */
-    free(ctx->window);
-    free(ctx->fft_in);
-    free(ctx->fft_out);
-    free(ctx->psd_sum);
-    if (ctx->fft_cfg)
-      kiss_fft_free(ctx->fft_cfg);
-    free(ctx);
+    /* Use canonical teardown to ensure cleanup stays consistent */
+    cortex_teardown(ctx);
     return result;
   }
 
@@ -183,7 +177,8 @@ void cortex_process(void *handle, const void *input, void *output) {
         /* Only read from input if within bounds and within nperseg */
         if (i < ctx->nperseg && cursor + i < input_samples) {
           /* Input index: (cursor + i) * channels + c */
-          /* Use size_t to prevent overflow */
+          /* Overflow protection: init check at line 78 guarantees
+           * max_sample_idx < SIZE_MAX / channels, so this multiplication is safe */
           size_t sample_idx = (size_t)cursor + i;
           size_t idx = sample_idx * channels + c;
 
@@ -227,11 +222,13 @@ void cortex_process(void *handle, const void *input, void *output) {
     if (ctx->segment_count > 0) {
       for (int i = 0; i <= ctx->n_fft / 2; i++) {
         /* Output index: i * channels + c */
+        /* Overflow protection: max i = 128, channels validated at init (line 78) */
         size_t out_idx = (size_t)i * channels + c;
         out_data[out_idx] = ctx->psd_sum[i] / ctx->segment_count;
       }
     } else {
       for (int i = 0; i <= ctx->n_fft / 2; i++) {
+        /* Same overflow protection as above */
         size_t out_idx = (size_t)i * channels + c;
         out_data[out_idx] = 0.0f;
       }
