@@ -315,10 +315,16 @@ static cortex_plugin_config_t build_plugin_config(uint32_t Fs, uint32_t W,
 }
 
 /* Load tolerances from spec.yaml */
-static tolerance_t load_tolerances(const char *kernel_name
-                                   __attribute__((unused))) {
-  /* For now, use default tolerances from spec */
-  tolerance_t tol = {.rtol = 2e-3, .atol = 1e-4};
+static tolerance_t load_tolerances(const char *kernel_name) {
+  /* Default strict tolerances */
+  tolerance_t tol = {.rtol = 1e-5, .atol = 1e-6};
+
+  /* Relaxed tolerances for Welch PSD due to float/double precision differences
+   */
+  if (strcmp(kernel_name, "welch_psd") == 0) {
+    tol.rtol = 2e-3;
+    tol.atol = 1e-4;
+  }
   return tol;
 }
 

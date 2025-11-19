@@ -195,7 +195,7 @@ void cortex_process(void *handle, const void *input, void *output) {
         float mag_sq = ctx->fft_out[i].r * ctx->fft_out[i].r +
                        ctx->fft_out[i].i * ctx->fft_out[i].i;
 
-        if (i == 0 || i == ctx->n_fft / 2) {
+        if (i == 0 || (i == ctx->n_fft / 2 && ctx->n_fft % 2 == 0)) {
           ctx->psd_sum[i] += mag_sq * ctx->energy_scale;
         } else {
           ctx->psd_sum[i] += mag_sq * ctx->energy_scale * 2.0f;
