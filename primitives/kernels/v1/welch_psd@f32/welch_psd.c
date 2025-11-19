@@ -9,6 +9,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#define DEFAULT_N_FFT 256
+#define DEFAULT_N_OVERLAP 128
+
 typedef struct {
   int n_fft;
   int n_overlap;
@@ -30,7 +33,7 @@ typedef struct {
   /* Accumulator for averaging */
   float *psd_sum;
   int segment_count;
-} welch_context_t;
+} welch_psd_state_t;
 
 /* Window function generator */
 static void generate_hann_window(float *window, int size) {
@@ -51,23 +54,20 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   if (config->dtype != CORTEX_DTYPE_FLOAT32)
     return result;
 
-  welch_context_t *ctx = (welch_context_t *)calloc(1, sizeof(welch_context_t));
+  welch_psd_state_t *ctx =
+      (welch_psd_state_t *)calloc(1, sizeof(welch_psd_state_t));
   if (!ctx)
     return result;
 
   /* Parse config */
-  /* Default values */
-  int default_n_fft = 256;
-  int default_n_overlap = 128;
-
   /* Adjust defaults if window length is smaller */
   if (config->window_length_samples > 0 &&
-      config->window_length_samples < (uint32_t)default_n_fft) {
+      config->window_length_samples < (uint32_t)DEFAULT_N_FFT) {
     ctx->n_fft = config->window_length_samples;
     ctx->n_overlap = ctx->n_fft / 2;
   } else {
-    ctx->n_fft = default_n_fft;
-    ctx->n_overlap = default_n_overlap;
+    ctx->n_fft = DEFAULT_N_FFT;
+    ctx->n_overlap = DEFAULT_N_OVERLAP;
   }
 
   /* Store runtime config */
@@ -98,15 +98,11 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
   if (!ctx->window || !ctx->fft_in || !ctx->fft_out || !ctx->psd_sum ||
       !ctx->fft_cfg) {
-    /* Defensive cleanup */
-    if (ctx->window)
-      free(ctx->window);
-    if (ctx->fft_in)
-      free(ctx->fft_in);
-    if (ctx->fft_out)
-      free(ctx->fft_out);
-    if (ctx->psd_sum)
-      free(ctx->psd_sum);
+    /* Defensive cleanup - free(NULL) is safe */
+    free(ctx->window);
+    free(ctx->fft_in);
+    free(ctx->fft_out);
+    free(ctx->psd_sum);
     if (ctx->fft_cfg)
       kiss_fft_free(ctx->fft_cfg);
     free(ctx);
@@ -138,7 +134,7 @@ void cortex_process(void *handle, const void *input, void *output) {
   if (!handle || !input || !output)
     return;
 
-  welch_context_t *ctx = (welch_context_t *)handle;
+  welch_psd_state_t *ctx = (welch_psd_state_t *)handle;
   const float *in_data = (const float *)input;
   float *out_data = (float *)output;
 
@@ -168,8 +164,17 @@ void cortex_process(void *handle, const void *input, void *output) {
       for (int i = 0; i < ctx->n_fft; i++) {
         /* Input index: (cursor + i) * channels + c */
         /* Use size_t to prevent overflow */
-        size_t idx = (size_t)(cursor + i) * channels + c;
-        ctx->fft_in[i].r = in_data[idx] * ctx->window[i];
+        size_t sample_idx = (size_t)cursor + i;
+        size_t idx = sample_idx * channels + c;
+
+        float sample = in_data[idx];
+
+        /* Handle NaN */
+        if (isnan(sample)) {
+          sample = 0.0f;
+        }
+
+        ctx->fft_in[i].r = sample * ctx->window[i];
         ctx->fft_in[i].i = 0.0f;
       }
 
@@ -214,16 +219,12 @@ void cortex_process(void *handle, const void *input, void *output) {
 }
 
 void cortex_teardown(void *handle) {
-  welch_context_t *ctx = (welch_context_t *)handle;
+  welch_psd_state_t *ctx = (welch_psd_state_t *)handle;
   if (ctx) {
-    if (ctx->window)
-      free(ctx->window);
-    if (ctx->fft_in)
-      free(ctx->fft_in);
-    if (ctx->fft_out)
-      free(ctx->fft_out);
-    if (ctx->psd_sum)
-      free(ctx->psd_sum);
+    free(ctx->window);
+    free(ctx->fft_in);
+    free(ctx->fft_out);
+    free(ctx->psd_sum);
     if (ctx->fft_cfg)
       kiss_fft_free(ctx->fft_cfg);
     free(ctx);
