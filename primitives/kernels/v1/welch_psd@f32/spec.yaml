@@ -6,7 +6,7 @@ description: "Welch's method for power spectral density estimation"
 # ABI Configuration
 abi:
   input_shape: [W, C]
-  output_shape: [n_fft/2 + 1, C] # Interleaved [frequencies, channels]e
+  output_shape: [n_fft/2 + 1, C] # Interleaved [frequencies, channels]
 
 # Numerical Validation
 numerical:

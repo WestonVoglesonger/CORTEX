@@ -21,7 +21,7 @@ def compute(input_data, config):
     n_fft = config.get('n_fft', 256)
     n_overlap = config.get('n_overlap', 128)
     window = config.get('window', 'hann')
-    fs = 1.0  # Normalized frequency
+    fs = 160.0  # Sampling rate (Hz) - hardcoded for v1 validation
     
     # SciPy's welch function does exactly what we need
     # scaling='density' is the default, which is what we want for PSD

@@ -84,9 +84,9 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
   ctx->n_step = ctx->n_fft - ctx->n_overlap;
   if (ctx->n_step <= 0) {
-    /* Fallback to prevent infinite loop or div by zero */
-    ctx->n_step = 1;
-    ctx->n_overlap = ctx->n_fft - 1;
+    /* Invalid config: overlap must be less than FFT size */
+    cortex_teardown(ctx);
+    return result;
   }
 
   /* Allocate resources */
@@ -121,7 +121,11 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   for (int i = 0; i < ctx->n_fft; i++) {
     win_energy += (double)ctx->window[i] * (double)ctx->window[i];
   }
-  ctx->energy_scale = (float)(1.0 / win_energy);
+
+  /* Scale by 1 / (Fs * Sum(w^2)) */
+  double fs =
+      (config->sample_rate_hz > 0) ? (double)config->sample_rate_hz : 1.0;
+  ctx->energy_scale = (float)(1.0 / (fs * win_energy));
 
   result.handle = ctx;
   result.output_window_length_samples = ctx->n_fft / 2 + 1;
