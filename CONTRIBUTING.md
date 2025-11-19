@@ -8,28 +8,41 @@ Be respectful, collaborative, and professional. Focus on technical merit and con
 
 ## Repository Structure
 
-CORTEX follows a clean 7-directory AWS-inspired structure:
+CORTEX follows a clean AWS-inspired structure:
 
 ```
 CORTEX/
 ├── primitives/        # Computational kernels and configurations
 │   ├── kernels/       # Kernel implementations organized by version
-│   │   └── v1/        # Version 1 kernels (e.g., fft@f32/, ema@f32/)
+│   │   └── v1/        # Version 1 kernels (bandpass_fir@f32/, car@f32/, etc.)
 │   └── configs/       # Kernel configuration files (YAML)
 ├── datasets/          # Dataset management and conversion tools
-│   ├── raw/           # Original datasets (excluded from git)
-│   ├── processed/     # Converted CORTEX binary format
+│   ├── eegmmidb/      # EEG Motor Movement/Imagery Database
+│   │   └── converted/ # Converted CORTEX binary format
+│   ├── fake/          # Synthetic test datasets
 │   └── tools/         # Dataset conversion scripts
 ├── src/               # All source code
 │   ├── cortex/        # Python CLI application
-│   ├── engine/        # C execution engine
-│   │   ├── harness/   # Benchmark harness implementation
-│   │   └── include/   # C header files
-│   └── tests/         # Test suites
-├── docs/              # Documentation (guides, reference, architecture)
-├── outputs/           # Benchmark results and visualizations
-├── environments/      # Development environment configs
-└── tools/             # Development utilities
+│   │   ├── commands/  # CLI command implementations
+│   │   ├── core/      # Core business logic
+│   │   ├── ui/        # User interface components
+│   │   └── utils/     # Utility functions
+│   └── engine/        # C execution engine
+│       ├── harness/   # Benchmark harness implementation
+│       ├── include/   # C header files
+│       ├── replayer/  # Dataset replay engine
+│       └── scheduler/ # Window scheduler
+├── tests/             # Test suites (unit and integration)
+│   ├── unit/          # Python unit tests
+│   └── integration/   # Python integration tests
+├── docs/              # Documentation
+│   ├── getting-started/  # Quick start guides
+│   ├── guides/        # How-to guides
+│   ├── reference/     # API and reference docs
+│   ├── architecture/  # Design decisions (ADRs)
+│   └── development/   # Development roadmap and planning
+├── results/           # Benchmark results and visualizations
+└── build/             # Build artifacts (generated)
 ```
 
 Understanding this structure is essential for contributing effectively.
@@ -38,32 +51,54 @@ Understanding this structure is essential for contributing effectively.
 
 **primitives/**
 - Houses all computational kernels and their configurations
-- `primitives/kernels/v1/` contains versioned kernel implementations (e.g., `fft@f32/`, `ema@f32/`)
-- `primitives/configs/` contains YAML configuration files that reference kernel spec_uri paths
-- This is where you'll add new signal processing algorithms
+- `primitives/kernels/v1/` contains versioned kernel implementations:
+  - `bandpass_fir@f32/` - FIR bandpass filter
+  - `car@f32/` - Common Average Reference
+  - `goertzel@f32/` - Goertzel algorithm for frequency detection
+  - `notch_iir@f32/` - IIR notch filter
+  - `welch_psd@f32/` - Welch power spectral density
+- `primitives/configs/cortex.yaml` configures which kernels to load
+- Each kernel directory contains: `spec.yaml`, `README.md`, `oracle.py`, `{name}.c`, `Makefile`
 
 **datasets/**
-- `raw/` stores original datasets (git-ignored, not tracked)
-- `processed/` contains converted binary format datasets used by the harness
+- `eegmmidb/converted/` stores the EEG Motor Movement/Imagery Database in CORTEX binary format
+- `fake/` contains synthetic test datasets for development
 - `tools/` has Python scripts for dataset conversion (e.g., EDF to CORTEX format)
+- Dataset files are tracked in git (small synthetic datasets) or gitignored (large real datasets)
 
 **src/**
-- All source code lives here, organized by component
-- `cortex/` is the Python CLI application (uses pyproject.toml for modern packaging)
-- `engine/` contains the C execution engine with `harness/` and `include/` subdirectories
-- `tests/` has all test suites for both Python and C components
+- All source code organized by component
+- `cortex/` is the Python CLI application with submodules:
+  - `commands/` - Command implementations (run, analyze, pipeline, etc.)
+  - `core/` - Core logic (runner, analyzer)
+  - `ui/` - User interface components (spinners, progress bars)
+  - `utils/` - Utility functions
+- `engine/` contains the C execution engine:
+  - `harness/` - Main benchmark harness
+  - `include/` - C header files (plugin ABI, types)
+  - `replayer/` - Dataset replay engine
+  - `scheduler/` - Window scheduling logic
+
+**tests/**
+- Test suites at repository root (not in src/)
+- `unit/` contains Python unit tests
+- `integration/` contains Python integration tests
+- C test files are at top level: `test_replayer.c`, `test_scheduler.c`, etc.
+- Tests run in CI on every push/PR
 
 **docs/**
-- Structured documentation: `guides/` for how-tos, `reference/` for API docs, `architecture/` for design
+- Comprehensive documentation organized by purpose:
+  - `getting-started/` - Installation and quick start
+  - `guides/` - How-to guides for common tasks
+  - `reference/` - API documentation and specifications
+  - `architecture/` - ADRs (Architecture Decision Records)
+  - `development/` - Roadmap, planning, future enhancements
 - Always update relevant docs when making changes
 
-**outputs/**
+**results/**
 - Benchmark results, visualizations, and analysis outputs
 - Generated during `cortex run` and `cortex analyze` commands
-
-**environments/** & **tools/**
-- Development environment configurations and utilities
-- Docker configs, CI/CD scripts, and development tools
+- Contains timestamped run directories with telemetry and plots
 
 ## Development Setup
 
@@ -87,9 +122,10 @@ cortex validate
 
 **Key directories**:
 - `src/cortex/` - Python CLI application code
-- `src/engine/` - C execution engine and harness
+- `src/engine/harness/` - C benchmark harness
 - `primitives/kernels/v1/` - Kernel implementations
 - `primitives/configs/` - Configuration files
+- `tests/` - Test suites (Python and C)
 - `datasets/tools/` - Dataset conversion scripts
 
 ## How to Contribute
@@ -242,30 +278,40 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 
 ### Before Submitting PRs
 
-- [ ] All unit tests pass: `make tests`
+- [ ] All C unit tests pass: `cd tests && make test`
+- [ ] All Python tests pass: `pytest tests/`
 - [ ] Kernel accuracy tests pass: `cortex validate`
 - [ ] Build succeeds on both macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] Documentation updated for changes
+- [ ] CI checks pass (tests run automatically on push/PR)
 
 ### Test Coverage
 
-- Unit tests for new components (see `tests/`)
-- Integration tests for end-to-end workflows
-- Numerical validation against oracles (within tolerance)
+- C unit tests for engine components (replayer, scheduler, kernel registry)
+- Python unit tests for CLI and core logic (see `tests/unit/`)
+- Python integration tests for end-to-end workflows (see `tests/integration/`)
+- Numerical validation against oracles (scipy, MNE references)
 - Cross-platform builds (macOS .dylib + Linux .so)
 
 ### Running Tests
 
 ```bash
-# Run all unit tests
-make tests
+# Run all C unit tests
+cd tests && make test
 
-# Run specific test suites
-make -C tests test-replayer
-make -C tests test-scheduler
+# Run all Python tests
+pytest tests/
 
-# Validate all kernels
+# Run specific Python test suites
+pytest tests/unit/
+pytest tests/integration/
+
+# Run specific test files
+pytest tests/unit/test_analyzer.py
+pytest tests/integration/test_run_command.py
+
+# Validate all kernels against oracles
 cortex validate
 
 # Validate specific kernel
@@ -327,14 +373,26 @@ Closes #42
 ## Development Workflow
 
 ```bash
-# Build everything
+# Build everything (harness + plugins)
 make clean && make
 
-# Run specific tests
-make -C tests test-replayer
-make -C tests test-scheduler
+# Build only plugins
+make plugins
 
-# Validate kernels
+# Build only harness
+make harness
+
+# Run C tests
+cd tests && make test
+
+# Run Python tests
+pytest tests/
+
+# Run specific Python test suites
+pytest tests/unit/test_analyzer.py -v
+pytest tests/integration/test_run_command.py -v
+
+# Validate kernels against oracles
 cortex validate
 
 # Run benchmarks (with custom name)
@@ -343,7 +401,7 @@ cortex run --all --duration 60 --run-name test-run
 # Analyze results
 cortex analyze --run-name test-run
 
-# Full pipeline (auto-named)
+# Full pipeline (auto-named with timestamp)
 cortex pipeline
 ```
 
@@ -351,11 +409,13 @@ cortex pipeline
 
 1. **Adding a new kernel**: Follow the "Developing Kernels" section above, then validate with `cortex validate --kernel {name}`
 
-2. **Converting datasets**: Use tools in `datasets/tools/` to convert raw datasets to CORTEX format
+2. **Converting datasets**: Use tools in `datasets/tools/` to convert EDF datasets to CORTEX binary format
 
-3. **Modifying the engine**: Edit C code in `src/engine/`, rebuild with `make`, and test with the harness
+3. **Modifying the C engine**: Edit code in `src/engine/harness/`, rebuild with `make harness`, and run tests
 
-4. **Updating the CLI**: Edit Python code in `src/cortex/`, changes are immediately available in development mode
+4. **Updating the CLI**: Edit Python code in `src/cortex/`, changes are immediately available in editable install mode (`pip install -e .`)
+
+5. **Adding tests**: Add C tests to `tests/test_*.c`, Python unit tests to `tests/unit/`, integration tests to `tests/integration/`
 
 ## Questions?
 
