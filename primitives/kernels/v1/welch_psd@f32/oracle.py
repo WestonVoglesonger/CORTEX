@@ -109,45 +109,8 @@ if __name__ == "__main__":
                 psd_list.append(psd)
                 
                 # Stack results: [frequencies, channels] -> flatten
-                # C implementation output order: likely interleaved [f0c0, f0c1...]?
-                # Let's check C code.
-                # C code: out_data[i] = ctx->psd_sum[i] / ctx->segment_count;
-                # Wait, the C code I wrote only outputs ONE channel's worth of data?
-                # Or does it handle multiple channels?
-                # "result.output_channels = config->channels;"
-                # But the process loop:
-                # "ctx->fft_in[i].r = in_data[cursor + i] * ctx->window[i];"
-                # This reads contiguous floats. If input is interleaved, this is WRONG.
-                # The C code assumes single channel or planar?
-                # Harness says: "Buffers are tightly packed in row‑major order (channels × samples)."
-                # Wait, cortex_plugin.h says: "(channels × samples)".
-                # Usually this means [c0s0, c0s1... c1s0...] (Planar) OR [s0c0, s0c1...] (Interleaved).
-                # "row-major order (channels x samples)" usually means shape is (channels, samples).
-                # So data[0] is ch0_s0, data[1] is ch0_s1...
-                # Let's verify cortex_plugin.h comment again.
-                # "Buffers are tightly packed in row‑major order (channels × samples)."
-                # If it means a 2D array A[channels][samples], then it is Planar.
-                # If test_kernel_accuracy.c says:
-                # "float *data; /* [samples × channels] interleaved */"
-                # Line 48 of test_kernel_accuracy.c.
-                # So the harness uses INTERLEAVED.
-                
-                # My C code treats input as a single contiguous block of floats.
-                # If interleaved, `in_data[cursor + i]` reads across channels!
-                # This is a BUG in my C code. It treats the whole buffer as one signal.
-                
-                # For now, let's fix the Python oracle to match what the C code *should* do,
-                # and then I must fix the C code.
-                
-                # If C code is buggy, validation will fail anyway.
-                # Let's assume we want to fix both.
-                
-                # Python Oracle:
-                # Input is interleaved [samples, channels].
-                # We want to compute PSD for each channel.
-                # Output should be [frequencies, channels] interleaved?
-                # "output_window_length_samples x output_channels".
-                # If interleaved, it should be [f0c0, f0c1, ... f0c63, f1c0...]
+                # C implementation output order: interleaved [f0c0, f0c1...]
+                # This matches the harness expectation.
                 
             # Stack results: [frequencies, channels] -> flatten
             psd_matrix = np.array(psd_list).T # [frequencies, channels]
