@@ -21,16 +21,17 @@ oracle:
   dependencies: [scipy, numpy]
 
 # Kernel configuration parameters
+# NOTE: v0.1.0 uses fixed defaults below; runtime configuration will be added in future versions
 config:
   n_fft:
     type: int
     default: 256
-    description: "Length of the FFT used"
+    description: "Length of the FFT used (fixed in v0.1.0)"
   n_overlap:
     type: int
     default: 128
-    description: "Number of points of overlap between segments"
+    description: "Number of points of overlap between segments (fixed in v0.1.0)"
   window:
     type: string
     default: "hann"
-    description: "Window function to use (hann, hamming, blackman)"
+    description: "Window function to use (only hann implemented in v0.1.0)"

@@ -59,28 +59,14 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   if (!ctx)
     return result;
 
-  /* Parse config */
-  /* Adjust defaults if window length is smaller */
-  if (config->window_length_samples > 0 &&
-      config->window_length_samples < (uint32_t)DEFAULT_N_FFT) {
-    ctx->n_fft = config->window_length_samples;
-    ctx->n_overlap = ctx->n_fft / 2;
-  } else {
-    ctx->n_fft = DEFAULT_N_FFT;
-    ctx->n_overlap = DEFAULT_N_OVERLAP;
-  }
+  /* Set defaults - these are fixed in v0.1.0 */
+  /* Future versions will parse config->kernel_params to allow customization */
+  ctx->n_fft = DEFAULT_N_FFT;
+  ctx->n_overlap = DEFAULT_N_OVERLAP;
 
   /* Store runtime config */
   ctx->channels = config->channels;
   ctx->window_length_samples = config->window_length_samples;
-
-  /* Simple config parsing (in a real implementation, use a JSON parser or
-   * similar) */
-  /* For now, we'll rely on defaults or simple string searching if needed,
-     but the harness passes a raw string. We'll assume defaults for this MVP
-     unless we parse the JSON string. */
-
-  /* TODO: Parse config->config_json to override defaults */
 
   ctx->n_step = ctx->n_fft - ctx->n_overlap;
   if (ctx->n_step <= 0) {
