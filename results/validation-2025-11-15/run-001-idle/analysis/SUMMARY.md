@@ -1,19 +1,21 @@
-# CORTEX Benchmark Results Summary
+# Latency Comparison Summary
 
-Generated: 2025-11-15 14:59:23
+Generated: 2025-11-26 15:20:59
 
-## Overall Statistics
+## Latency Statistics (μs)
 
-| Kernel | Windows | P50 (µs) | P95 (µs) | P99 (µs) | Jitter P95-P50 (µs) | Deadline Misses | Miss Rate (%) |
-|--------|---------|----------|----------|----------|---------------------|-----------------|---------------|
-| bandpass_fir | 1203 | 5015.00 | 6363.00 | 8680.74 | 1348.00 | 0 | 0.00 |
-| car | 1203 | 28.00 | 48.00 | 72.00 | 20.00 | 0 | 0.00 |
-| goertzel | 1203 | 350.00 | 641.90 | 743.78 | 291.90 | 0 | 0.00 |
-| notch_iir | 22 | 125.00 | 132.90 | 134.58 | 7.90 | 0 | 0.00 |
+| Kernel | Mean | Median | P95 | P99 | Min | Max | Std Dev |
+|--------|------|--------|-----|-----|-----|-----|----------|
+| bandpass_fir | 4968.76 | 5015.0 | 6363.0 | 8680.74 | 2293.0 | 43186.0 | 2005.44 |
+| car | 36.0 | 28.0 | 48.0 | 72.0 | 11.0 | 3847.0 | 111.29 |
+| goertzel | 416.9 | 350.0 | 641.9 | 743.78 | 131.0 | 3765.0 | 237.29 |
+| notch_iir | 135.92 | 133.0 | 188.0 | 219.73 | 52.0 | 2126.0 | 73.83 |
 
-## Interpretation
+## Deadline Miss Rates
 
-- **P50/P95/P99**: 50th/95th/99th percentile latencies
-- **Jitter**: Difference between P95 and P50 (indicates timing variance)
-- **Deadline Misses**: Number of windows that exceeded the 500ms deadline
-- **Miss Rate**: Percentage of windows that missed the deadline
+| Kernel | Miss Rate (%) | Total Samples | Misses |
+|--------|---------------|---------------|--------|
+| bandpass_fir | 0.0 | 1203.0 | 0.0 |
+| car | 0.0 | 1203.0 | 0.0 |
+| goertzel | 0.0 | 1203.0 | 0.0 |
+| notch_iir | 0.0 | 1204.0 | 0.0 |

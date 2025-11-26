@@ -2,7 +2,7 @@
 
 ## Purpose
 
-These three benchmark runs provide the empirical foundation for CORTEX's macOS benchmark reproducibility methodology. They validate the discovery that CPU frequency scaling causes 49% performance variance and demonstrate that sustained background load maintains consistent frequency.
+These three benchmark runs provide the empirical foundation for CORTEX's macOS benchmark reproducibility methodology. They validate the discovery that CPU frequency scaling causes 50.6% performance variance and demonstrate that sustained background load maintains consistent frequency.
 
 ## Runs
 
@@ -14,14 +14,14 @@ These three benchmark runs provide the empirical foundation for CORTEX's macOS b
 
 | Metric | Idle | Medium | Heavy |
 |--------|------|--------|-------|
-| Mean latency (avg across kernels) | ~5000 µs | ~2500 µs | ~3000 µs |
-| Variance vs medium | +49% | baseline | +36% |
+| Mean latency (avg across kernels) | ~1,389 µs | ~708 µs | ~953 µs |
+| Variance vs medium | +50.6% | baseline | +36% |
 | CPU frequency state | Scaled down | Locked high | Locked high |
 | Interpretation | ❌ Invalid | ✅ Baseline | 🧪 Validation |
 
 ### Interpretation
 
-1. **Idle → Medium (-49%)**: Proves macOS frequency scaling is actively degrading performance
+1. **Idle → Medium (-50.6%)**: Proves macOS frequency scaling is actively degrading performance
 2. **Medium → Heavy (+36%)**: Proves both maintain high frequency (slowdown is CPU contention, not frequency)
 3. **Conclusion**: Medium load achieves goal-equivalence to Linux performance governor
 
@@ -79,7 +79,7 @@ If citing this validation data in publications:
 >
 > Validation data: `results/validation-2025-11-15/`
 >
-> Methodology: Three-way comparison (idle/medium/heavy load profiles) across 4 computational kernels with n=1200+ samples per configuration. Results demonstrate 49% performance degradation due to CPU frequency scaling in idle mode, validating sustained background load as frequency control methodology for macOS platforms.
+> Methodology: Three-way comparison (idle/medium/heavy load profiles) across 4 computational kernels with n=1200+ samples per configuration. Results demonstrate 50.6% performance degradation due to CPU frequency scaling in idle mode, validating sustained background load as frequency control methodology for macOS platforms.
 
 ## Reproducibility
 
@@ -98,7 +98,7 @@ To reproduce these exact results:
 4. **Run**: `cortex pipeline`
 5. **Results**: Check `results/run-<timestamp>/`
 
-**Important**: Results may vary slightly due to system-specific factors (CPU model, thermal conditions, background processes), but the 49% idle→medium delta should be consistent across macOS systems.
+**Important**: Results may vary slightly due to system-specific factors (CPU model, thermal conditions, background processes), but the 50.6% idle→medium delta should be consistent across macOS systems.
 
 ## Data Integrity
 
@@ -150,4 +150,4 @@ For future validation runs, create new directories with appropriate timestamps (
 
 ## Last Updated
 
-2025-11-16: Validation directory created, files reorganized, derived files removed
+2025-11-26: Updated notch_iir idle data (22→1204 samples), regenerated analysis, corrected degradation figure (49%→50.6%)
