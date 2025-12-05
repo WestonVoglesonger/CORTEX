@@ -217,8 +217,8 @@ When `stress-ng` is not installed:
 
 **Validation**: Medium vs Heavy comparison (36% delta) proves both lock CPU frequency
 
-**Complete analysis**: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
-**Raw validation data**: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+**Technical report**: [`experiments/dvfs-validation-2025-11-15/technical-report/`](../../experiments/dvfs-validation-2025-11-15/technical-report/)
+**Raw validation data**: [`experiments/dvfs-validation-2025-11-15/`](../../experiments/dvfs-validation-2025-11-15/)
 **Decision rationale**: [ADR-002](../architecture/adr/adr-002-benchmark-reproducibility-macos.md)
 
 **Linux Alternative**:

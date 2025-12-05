@@ -4,7 +4,7 @@
 
 **Key Finding**: Both hypotheses CONFIRMED with high confidence.
 
-1. **CPU Frequency Scaling**: Idle mode is **~49% slower** than medium/heavy
+1. **CPU Frequency Scaling**: Idle mode is **~2× slower** than medium/heavy (geometric mean of median latencies)
    - This definitively proves macOS is scaling down CPU frequency when idle
    - Background load keeps frequency consistently high
 
@@ -26,7 +26,7 @@
 
 *Note: notch_iir idle has only 22 samples (incomplete run)*
 
-**Average**: Idle is **48.6% slower** than medium across all kernels
+**Aggregated (geometric mean of medians)**: Idle is **~2.3× slower** than medium (284.3 µs vs 123.1 µs). Geometric mean is used because kernels span multiple orders of magnitude, ensuring each kernel contributes proportionally.
 
 **Interpretation**: 
 - macOS is clearly dropping CPU frequency in idle mode
@@ -83,7 +83,7 @@ Example (car kernel):
 
 1. **Never use `load_profile: "idle"` on macOS**
    - Results are invalid due to frequency scaling
-   - 49% performance difference is unacceptable
+   - ~2× performance difference is unacceptable
 
 2. **Don't use `load_profile: "heavy"` as your baseline**
    - 36% slower than medium
@@ -110,7 +110,7 @@ Example (car kernel):
    load_profile: "medium"  # Prevents CPU frequency scaling
    
    # NOT recommended for macOS
-   # load_profile: "idle"  # CPU freq scaling causes 49% slowdown
+   # load_profile: "idle"  # CPU freq scaling causes ~2× slowdown
    ```
 
 ## What This Means for Your Academic Deliverable
@@ -137,7 +137,7 @@ Example (car kernel):
 **Consistency**: 
 - Medium and heavy both have full sample sets
 - Results are statistically robust (n > 1200)
-- Frequency scaling effect is massive (49%) - far exceeds noise
+- Frequency scaling effect is massive (~2× slower) - far exceeds noise
 
 ## Bottom Line
 

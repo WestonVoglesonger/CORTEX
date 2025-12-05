@@ -320,13 +320,14 @@ class TelemetryAnalyzer:
             plt.close('all')
 
     def plot_cdf_overlay(self, df: pd.DataFrame, output_path: str,
-                        format: str = 'png') -> bool:
+                        format: str = 'png', deadline_us: float = 10000.0) -> bool:
         """Generate CDF overlay plot for latency distributions.
 
         Args:
             df: Telemetry DataFrame (not statistics)
             output_path: Path to save plot
             format: Image format
+            deadline_us: Deadline threshold in microseconds (default: 10000 = 10ms)
 
         Returns:
             True if plot saved successfully, False otherwise
@@ -354,11 +355,46 @@ class TelemetryAnalyzer:
 
             ax.plot(sorted_data, cdf, label=plugin, color=color, linewidth=2)
 
-        ax.set_xlabel('Latency (μs)')
+        # Set logarithmic x-axis scale
+        ax.set_xscale('log')
+        
+        # Set clear tick marks for presentation
+        # Find reasonable range based on data
+        all_latencies = df_no_warmup['latency_us']
+        min_lat = all_latencies.min()
+        max_lat = all_latencies.max()
+        
+        # Generate tick positions: 10, 100, 1k, 10k, 100k, etc.
+        tick_positions = []
+        tick_labels = []
+        start_power = int(np.floor(np.log10(max(1, min_lat))))
+        end_power = int(np.ceil(np.log10(max(1, max_lat))))
+        
+        for power in range(start_power, end_power + 1):
+            for multiplier in [1, 2, 5]:
+                tick_val = multiplier * (10 ** power)
+                if tick_val >= min_lat * 0.5 and tick_val <= max_lat * 2:
+                    tick_positions.append(tick_val)
+                    if tick_val < 1000:
+                        tick_labels.append(f'{int(tick_val)}')
+                    elif tick_val < 1000000:
+                        tick_labels.append(f'{int(tick_val/1000)}k')
+                    else:
+                        tick_labels.append(f'{int(tick_val/1000000)}M')
+        
+        # Use a simpler approach: standard log ticks
+        ax.set_xticks([10, 100, 1000, 10000, 100000])
+        ax.set_xticklabels(['10', '100', '1k', '10k', '100k'])
+
+        # Add deadline threshold line
+        ax.axvline(x=deadline_us, color='red', linestyle='--', linewidth=2, 
+                   label=f'Deadline ({deadline_us/1000:.0f}ms)')
+
+        ax.set_xlabel('Latency (μs, log scale)')
         ax.set_ylabel('Cumulative Probability')
-        ax.set_title('Latency CDF Comparison')
+        ax.set_title('Kernel Latency Profiles (Log Scale)')
         ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax.grid(True, alpha=0.3, which='both')
 
         plt.tight_layout()
 

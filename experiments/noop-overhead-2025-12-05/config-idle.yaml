@@ -1,0 +1,33 @@
+cortex_version: 1
+
+system:
+  name: "noop-overhead-idle"
+  description: "No-op kernel overhead measurement - idle profile"
+
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+
+realtime:
+  scheduler: fifo
+  priority: 90
+  cpu_affinity: [0]
+  deadline_ms: 500
+
+benchmark:
+  parameters:
+    duration_seconds: 600
+    repeats: 1
+    warmup_seconds: 10
+  load_profile: "idle"
+
+output:
+  directory: "results"
+  format: "ndjson"
+
+plugins:
+  - name: "noop"
+    status: ready
+    spec_uri: "primitives/kernels/v1/noop@f32"

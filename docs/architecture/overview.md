@@ -91,13 +91,14 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 
 ### 2. Replayer (`src/engine/replayer/`)
 
-**Purpose**: Dataset streaming with real-time cadence
+**Purpose**: Dataset streaming with real-time cadence and environmental control
 
 **Responsibilities**:
 - Read EEG dataset from disk (currently float32 raw format)
 - Stream samples at configured sample rate (Fs, typically 160 Hz)
 - Deliver hop-sized chunks (H samples) on schedule
 - Maintain timing cadence: period = H/Fs (e.g., 80/160 = 500 ms)
+- **Manage background load** via stress-ng for CPU frequency control
 - Loop dataset if needed for longer benchmarks
 - Callback to scheduler when chunk ready
 
@@ -108,6 +109,14 @@ Period = H / Fs
 
 Example: 160 Hz, H=80 → 2 chunks/sec, 500ms period
 ```
+
+**Background Load Management**:
+The replayer owns stress-ng because it controls the **timing environment** for reproducible benchmarking:
+
+- **Why replayer?** The component that manages streaming cadence also controls CPU frequency during streaming
+- **Why not harness?** Timing gaps between harness orchestration and replayer execution would create measurement invalidity
+- **Lifecycle:** stress-ng starts with replayer, runs during entire streaming period, stops on replayer destruction
+- **Profiles:** "idle" (no load), "medium" (4 CPUs @ 50%), "heavy" (8 CPUs @ 90%)
 
 **Formats supported**:
 - Float32 raw (current)

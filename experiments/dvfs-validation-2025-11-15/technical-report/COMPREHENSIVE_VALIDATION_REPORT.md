@@ -12,7 +12,7 @@
 
 1. [Executive Summary](#1-executive-summary)
 2. [Study Design and Methodology](#2-study-design-and-methodology)
-3. [The Discovery: 49% Performance Variance](#3-the-discovery-49-performance-variance)
+3. [The Discovery: ~2× Performance Difference](#3-the-discovery-2×-performance-difference)
 4. [Detailed Per-Kernel Analysis](#4-detailed-per-kernel-analysis)
 5. [Cross-Kernel Comparative Analysis](#5-cross-kernel-comparative-analysis)
 6. [Statistical Analysis](#6-statistical-analysis)
@@ -29,22 +29,22 @@
 
 ### 1.1 Primary Finding
 
-This study empirically validates that **CPU frequency scaling on macOS causes a 49% average performance degradation** in BCI signal processing kernel benchmarks when running without background load. This counterintuitive result demonstrates that idle systems are unsuitable for consistent benchmarking on modern macOS platforms.
+This study empirically validates that **CPU frequency scaling on macOS causes idle systems to be ~2.3× slower** than medium-load systems in BCI signal processing kernel benchmarks (aggregated using geometric mean of median latencies). This counterintuitive result demonstrates that idle systems are unsuitable for consistent benchmarking on modern macOS platforms.
 
 ### 1.2 Key Results
 
 | Configuration | Performance Status | Variability | Recommendation |
 |--------------|-------------------|-------------|----------------|
-| **Idle** (no background load) | ❌ 49% slower | High (frequency fluctuation) | **INVALID for benchmarking** |
+| **Idle** (no background load) | ❌ ~2.3× slower | High (frequency fluctuation) | **INVALID for benchmarking** |
 | **Medium** (4 CPUs @ 50%) | ✅ Baseline | Low (consistent frequency) | **RECOMMENDED baseline** |
-| **Heavy** (8 CPUs @ 90%) | ⚠️ 36% slower than medium | High (CPU contention) | Validation/stress testing only |
+| **Heavy** (8 CPUs @ 90%) | ⚠️ ~1.5× slower than medium | High (CPU contention) | Validation/stress testing only |
 
 ### 1.3 Core Insights
 
-1. **Frequency Scaling is the Dominant Factor**: The 49% idle→medium improvement far exceeds typical measurement noise
+1. **Frequency Scaling is the Dominant Factor**: The ~2.3× idle→medium performance difference far exceeds typical measurement noise
 2. **Background Load is Not a Workaround**: It's a requirement for consistent CPU frequency on macOS
 3. **Medium Load Achieves Goal-Equivalence**: Matches Linux `performance` governor behavior
-4. **Heavy Load Validates Mechanism**: 36% medium→heavy degradation proves CPU contention is measurable and distinct from frequency effects
+4. **Heavy Load Validates Mechanism**: ~1.5× medium→heavy slowdown proves CPU contention is measurable and distinct from frequency effects
 
 ### 1.4 Impact on CORTEX Methodology
 
@@ -97,7 +97,7 @@ Three background load profiles were tested:
 #### 1. Idle (Baseline Attempt)
 - **Configuration**: No background processes
 - **Expectation**: True system performance without interference
-- **Reality**: CPU frequency scaling caused 49% degradation
+- **Reality**: CPU frequency scaling caused ~2.3× slower performance (geometric mean of median latencies)
 
 #### 2. Medium (Recommended Baseline)
 - **Configuration**: `stress-ng --cpu 4 --cpu-load 50`
@@ -107,7 +107,7 @@ Three background load profiles were tested:
 #### 3. Heavy (Validation)
 - **Configuration**: `stress-ng --cpu 8 --cpu-load 90`
 - **Rationale**: Validate that background load is measurable
-- **Result**: 36% slowdown vs medium, confirming CPU contention
+- **Result**: ~1.5× slower vs medium, confirming CPU contention
 
 ### 2.3 Data Collection
 
@@ -163,25 +163,44 @@ Each window generated NDJSON telemetry with:
 
 ---
 
-## 3. The Discovery: 49% Performance Variance
+## 3. The Discovery: ~2× Performance Difference
 
 ### 3.1 The Counterintuitive Result
 
 **Initial Hypothesis**: Background load should degrade or not affect performance.
 
-**Observed Reality**: Background load (medium) improved performance by 49% compared to idle.
+**Observed Reality**: Background load (medium) improved performance by ~2.3× compared to idle (geometric mean of median latencies).
+
+**Aggregation Method**: We use **geometric mean** to aggregate across kernels because they span multiple orders of magnitude (tens to thousands of microseconds). Geometric mean ensures each kernel contributes proportionally rather than being dominated by the largest kernel.
 
 ```
-Idle Mean (all kernels):     1384 µs
-Medium Mean (all kernels):    708 µs
-Performance improvement:      -48.6%
+Idle (geometric mean of medians):     284.3 µs
+Medium (geometric mean of medians):   123.1 µs
+Performance ratio:                     ~2.3× slower (idle vs medium)
 ```
 
 This counterintuitive result immediately suggested a confounding variable rather than true background load impact.
 
 ### 3.2 Aggregate Performance Comparison
 
-#### Mean Latency Across All Kernels
+#### Aggregation Method
+
+To aggregate performance across kernels spanning multiple orders of magnitude (tens to thousands of microseconds), we use **geometric mean** of median latencies:
+
+**Geometric Mean Formula**: `exp(mean(log(median_latencies)))`
+
+**Rationale**:
+- Kernels have vastly different scales (car: ~28µs, bandpass_fir: ~5000µs)
+- Arithmetic mean would be dominated by the largest kernel
+- Geometric mean ensures each kernel contributes proportionally
+- This is the statistically appropriate method for multiplicative relationships
+
+**Results**:
+- Idle (geometric mean of medians): 284.3 µs
+- Medium (geometric mean of medians): 123.1 µs
+- **Ratio**: Idle is ~2.3× slower than medium
+
+#### Mean Latency Across All Kernels (Per-Kernel Breakdown)
 
 | Kernel | Idle (µs) | Medium (µs) | Idle→Medium Change | Heavy (µs) | Medium→Heavy Change |
 |--------|-----------|-------------|-------------------|-----------|---------------------|
@@ -195,19 +214,19 @@ This counterintuitive result immediately suggested a confounding variable rather
 
 #### Key Observations
 
-1. **Consistency Across Kernels**: All four kernels showed 45-53% improvement (idle→medium)
+1. **Consistency Across Kernels**: All four kernels showed ~2× slower performance in idle (geometric mean aggregation)
 2. **Kernel Independence**: Effect was independent of computational complexity
-3. **Validation via Heavy Load**: Medium→heavy showed expected degradation (36%)
+3. **Validation via Heavy Load**: Medium→heavy showed expected degradation (~1.5× slower)
 
 ### 3.3 The "Smoking Gun": Two-Stage Pattern
 
 The data reveals a clear two-stage pattern:
 
 ```
-Stage 1: Idle → Medium (-49%)
+Stage 1: Idle → Medium (~2.3× slower)
   Cause: CPU frequency scaling (systemic)
 
-Stage 2: Medium → Heavy (+36%)
+Stage 2: Medium → Heavy (~1.5× slower)
   Cause: CPU contention (expected)
 ```
 
@@ -228,7 +247,7 @@ This pattern is only consistent with frequency scaling in idle mode.
 | goertzel | 350 | 138 | **-60.6%** | 282 | **+104.3%** |
 | notch_iir | 125 | 55 | **-56.0%** | 61 | **+10.9%** |
 
-**Pattern**: Median latencies tell the same story - idle is consistently 50-60% slower.
+**Pattern**: Median latencies tell the same story - idle is consistently ~2× slower across all kernels. When aggregated using geometric mean (appropriate for data spanning orders of magnitude), idle is ~2.3× slower than medium.
 
 ### 3.5 Variability Impact
 
@@ -1161,7 +1180,7 @@ When publishing benchmarks on macOS, report:
 >
 > **Validation**: We validated this approach by comparing three load profiles (idle, medium, heavy) across four BCI signal processing kernels (n=1200+ samples each). Medium load provided 49% better performance than idle (demonstrating frequency scaling mitigation) and 36% better performance than heavy load (demonstrating minimal contention).
 >
-> [1] Voglesonger, W. (2025). CORTEX CPU Frequency Scaling Validation Study. GitHub: https://github.com/WestonVoglesonger/CORTEX/tree/main/results/validation-2025-11-15
+> [1] Voglesonger, W. (2025). CORTEX CPU Frequency Scaling Validation Study. GitHub: https://github.com/WestonVoglesonger/CORTEX/tree/main/experiments/dvfs-validation-2025-11-15
 
 ---
 
@@ -1584,11 +1603,11 @@ Before accepting benchmark results:
 
 #### A.2 Data Files
 
-**Location**: `/Users/westonvoglesonger/Projects/CORTEX/results/validation-2025-11-15/`
+**Location**: `/Users/westonvoglesonger/Projects/CORTEX/experiments/dvfs-validation-2025-11-15/`
 
 **Structure**:
 ```
-validation-2025-11-15/
+dvfs-validation-2025-11-15/
 ├── README.md (this file)
 ├── run-001-idle/
 │   ├── analysis/
@@ -1906,8 +1925,8 @@ If using this methodology or data in publications, please cite:
   author={Voglesonger, Weston},
   year={2025},
   institution={CORTEX Project},
-  url={https://github.com/WestonVoglesonger/CORTEX/tree/main/results/validation-2025-11-15},
-  note={Validation data: results/validation-2025-11-15/}
+  url={https://github.com/WestonVoglesonger/CORTEX/tree/main/experiments/dvfs-validation-2025-11-15},
+  note={Validation data: experiments/dvfs-validation-2025-11-15/}
 }
 ```
 

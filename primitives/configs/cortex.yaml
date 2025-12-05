@@ -7,8 +7,8 @@ system:
 dataset:
   path: "datasets/eegmmidb/converted/S001R03.float32"
   format: "float32"
-  channels: 64  # Unchanged
-  sample_rate_hz: 160  # Unchanged
+  channels: 64 
+  sample_rate_hz: 160  
 
 realtime:
   scheduler: fifo            # fifo | rr | deadline | other
@@ -23,7 +23,7 @@ power:
 benchmark:
   metrics: [latency, jitter, throughput, memory_usage, energy_consumption]
   parameters:
-    duration_seconds: 5
+    duration_seconds: 30
     repeats: 3
     warmup_seconds: 5
   load_profile: "medium"

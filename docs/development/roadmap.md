@@ -114,8 +114,8 @@ When embedded device HIL testing begins on Linux hosts:
 
 **Documentation**:
 - Decision rationale: [ADR-002](../architecture/adr/adr-002-benchmark-reproducibility-macos.md)
-- Industry comparison: [`docs/research/fall-2025-frequency-scaling-analysis/`](../research/fall-2025-frequency-scaling-analysis/)
-- Validation data: [`results/validation-2025-11-15/`](../../results/validation-2025-11-15/)
+- Technical report: [`experiments/dvfs-validation-2025-11-15/technical-report/`](../../experiments/dvfs-validation-2025-11-15/technical-report/)
+- Validation data: [`experiments/dvfs-validation-2025-11-15/`](../../experiments/dvfs-validation-2025-11-15/)
 - Configuration guide: [Platform-Specific Recommendations](../reference/configuration.md#platform-specific-recommendations)
 
 ### Unimplemented Configuration Fields

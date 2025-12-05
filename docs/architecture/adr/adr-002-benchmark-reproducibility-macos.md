@@ -226,7 +226,7 @@ We conducted three complete benchmark runs across all 4 kernels (bandpass_fir, c
 ### Fall 2025 (Current)
 - ✅ Use `load_profile: "medium"` for all benchmarks
 - ✅ Document in methodology section of academic deliverable
-- ✅ Preserve validation runs in repository: `results/validation-2025-11-15/`
+- ✅ Preserve validation runs in repository: `experiments/dvfs-validation-2025-11-15/`
 
 ### Spring 2026 (Embedded Device Testing)
 - Reinstate power config feature from commit 02197d8
@@ -250,18 +250,21 @@ We conducted three complete benchmark runs across all 4 kernels (bandpass_fir, c
 
 ### Documentation
 
-- **Industry analysis**: `docs/research/fall-2025-frequency-scaling-analysis/industry-standards.md`
-- **Empirical validation**: `docs/research/fall-2025-frequency-scaling-analysis/empirical-validation.md`
-- **Complete results**: `docs/research/fall-2025-frequency-scaling-analysis/detailed-results.md`
+- **Technical report**: `experiments/dvfs-validation-2025-11-15/technical-report/` (complete analysis and supporting documents)
+- **Industry analysis**: `experiments/dvfs-validation-2025-11-15/technical-report/industry-standards.md`
+- **Empirical validation**: `experiments/dvfs-validation-2025-11-15/technical-report/empirical-validation.md`
+- **Complete results**: `experiments/dvfs-validation-2025-11-15/technical-report/detailed-results.md`
+- **Measurement validity**: `experiments/dvfs-validation-2025-11-15/technical-report/measurement-validity-analysis.md`
 - **Configuration guide**: `docs/reference/configuration.md` (Platform-Specific Recommendations section)
-- **Methodology**: `docs/architecture/benchmarking-methodology.md` (CPU Frequency Control section)
+- **Methodology**: `docs/architecture/benchmarking-methodology.md` (CPU Frequency Control and Timing Validity sections)
 
 ### Validation Data
 
-- **Raw telemetry**: `results/validation-2025-11-15/` (3 runs, n=1200+ samples each)
-- **Run 1 (idle)**: `results/validation-2025-11-15/run-001-idle/`
-- **Run 2 (medium)**: `results/validation-2025-11-15/run-002-medium/`
-- **Run 3 (heavy)**: `results/validation-2025-11-15/run-003-heavy/`
+- **Raw telemetry**: `experiments/dvfs-validation-2025-11-15/` (3 runs, n=1200+ samples each)
+- **Run 1 (idle)**: `experiments/dvfs-validation-2025-11-15/run-001-idle/`
+- **Run 2 (medium)**: `experiments/dvfs-validation-2025-11-15/run-002-medium/`
+- **Run 3 (heavy)**: `experiments/dvfs-validation-2025-11-15/run-003-heavy/`
+- **Technical report**: `experiments/dvfs-validation-2025-11-15/technical-report/` (comprehensive analysis documentation)
 
 ### External References
 
