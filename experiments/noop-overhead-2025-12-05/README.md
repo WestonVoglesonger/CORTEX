@@ -79,14 +79,14 @@ Running the no-op under different load profiles reveals what is **harness overhe
 
 | Kernel | SNR Range | Industry Standard (10:1) |
 |--------|-----------|---------------------------|
-| car@f32 | 8:1 to 50:1 | ✅ Exceeds |
+| car@f32 | 8:1 to 50:1 | ⚠️ Borderline (8:1 < 10:1 at minimum) |
 | notch_iir@f32 | 37:1 to 115:1 | ✅ Exceeds |
 | goertzel@f32 | 93:1 to 417:1 | ✅ Exceeds |
 | bandpass_fir@f32 | 1500:1 to 5000:1 | ✅ Exceeds |
 
-**Methodology note**: SNR ranges calculated using full observed latency range (minimum to maximum) from DVFS validation study. Lower bound (e.g., 8:1 for car) represents worst-case SNR using minimum latency. For typical-case SNR using median latency, see measurement-validity-analysis.md (28:1 to 2,300:1).
+**Methodology note**: SNR ranges calculated using full observed latency range (minimum to maximum) from DVFS validation study. Lower bound represents worst-case SNR using minimum latency. For typical-case SNR using median latency, see measurement-validity-analysis.md (28:1 to 2,300:1).
 
-**Status**: ✅ **VALIDATED** - All kernels exceed 8:1 worst-case SNR, most exceed 100:1
+**Status**: ✅ **VALIDATED** - Three kernels exceed 10:1 worst-case SNR. car@f32 worst-case (8:1) is borderline but represents <1% of latency distribution; typical car@f32 SNR is 28:1 (exceeds standard).
 
 ### Claim 3: Observer Effect vs Frequency Scaling
 
@@ -220,7 +220,7 @@ Instead we observe:
 
 **Recommended statement**:
 
-> Harness dispatch overhead was measured empirically using a no-op kernel (identity function) across two load profiles. The minimum latency of 1 µs (n=2400 samples combined) represents the true harness overhead, comprising timing calls (~100ns), function dispatch (~50-100ns), memory operations (~800ns), and bookkeeping (~100ns). This overhead represents 0.02-12.5% of measured kernel latencies (8 µs to 5 ms range). Signal-to-noise ratios range from 8:1 worst-case (minimum latency) to 2300:1 typical (median latency), all exceeding the industry standard of 10:1.
+> Harness dispatch overhead was measured empirically using a no-op kernel (identity function) across two load profiles. The minimum latency of 1 µs (n=2400 samples combined) represents the true harness overhead, comprising timing calls (~100ns), function dispatch (~50-100ns), memory operations (~800ns), and bookkeeping (~100ns). This overhead represents 0.02-12.5% of measured kernel latencies (8 µs to 5 ms range). Typical signal-to-noise ratios (using median latency) range from 28:1 to 2300:1, all exceeding the industry standard of 10:1. Worst-case SNR (using minimum latency) ranges from 8:1 to 1500:1, with car@f32 borderline (8:1) representing <1% of its latency distribution.
 
 **Data availability**:
 - Idle results: `experiments/noop-overhead-2025-12-05/noop-idle/`
@@ -233,7 +233,8 @@ Instead we observe:
 **What to cite**:
 - **"Harness overhead: 1 µs (minimum, n=2400)"**
 - "Overhead <13% for all kernels, <3% for kernels >30 µs"
-- "Worst-case SNR: 8:1 (car minimum); Typical SNR: 28:1 to 2300:1 (medians); all exceed 10:1 industry standard"
+- "Typical SNR: 28:1 to 2300:1 (all exceed 10:1 standard)"
+- "Worst-case SNR: 8:1 (car minimum, borderline) to 1500:1 (bandpass_fir minimum)"
 
 **What NOT to say**:
 - "Median overhead is 2 µs" ❌ (conflates harness + environment)
