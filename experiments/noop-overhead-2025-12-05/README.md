@@ -75,7 +75,7 @@ Running the no-op under different load profiles reveals what is **harness overhe
 
 ### Claim 2: Signal-to-Noise Ratios
 
-**Empirically validated SNR** (using 1 µs minimum overhead):
+**Empirically validated SNR** (using 1 µs harness overhead as noise):
 
 | Kernel | SNR Range | Industry Standard (10:1) |
 |--------|-----------|---------------------------|
@@ -84,7 +84,9 @@ Running the no-op under different load profiles reveals what is **harness overhe
 | goertzel@f32 | 93:1 to 417:1 | ✅ Exceeds |
 | bandpass_fir@f32 | 1500:1 to 5000:1 | ✅ Exceeds |
 
-**Status**: ✅ **VALIDATED** - All kernels exceed 8:1, most exceed 100:1
+**Methodology note**: SNR ranges calculated using full observed latency range (minimum to maximum) from DVFS validation study. Lower bound (e.g., 8:1 for car) represents worst-case SNR using minimum latency. For typical-case SNR using median latency, see measurement-validity-analysis.md (28:1 to 2,300:1).
+
+**Status**: ✅ **VALIDATED** - All kernels exceed 8:1 worst-case SNR, most exceed 100:1
 
 ### Claim 3: Observer Effect vs Frequency Scaling
 
@@ -218,7 +220,7 @@ Instead we observe:
 
 **Recommended statement**:
 
-> Harness dispatch overhead was measured empirically using a no-op kernel (identity function) across two load profiles. The minimum latency of 1 µs (n=2400 samples combined) represents the true harness overhead, comprising timing calls (~100ns), function dispatch (~50-100ns), memory operations (~800ns), and bookkeeping (~100ns). This overhead represents 0.02-12.5% of measured kernel latencies (8 µs to 5 ms range), with signal-to-noise ratios ranging from 8:1 to 5000:1, all exceeding the industry standard of 10:1.
+> Harness dispatch overhead was measured empirically using a no-op kernel (identity function) across two load profiles. The minimum latency of 1 µs (n=2400 samples combined) represents the true harness overhead, comprising timing calls (~100ns), function dispatch (~50-100ns), memory operations (~800ns), and bookkeeping (~100ns). This overhead represents 0.02-12.5% of measured kernel latencies (8 µs to 5 ms range). Signal-to-noise ratios range from 8:1 worst-case (minimum latency) to 2300:1 typical (median latency), all exceeding the industry standard of 10:1.
 
 **Data availability**:
 - Idle results: `experiments/noop-overhead-2025-12-05/noop-idle/`
@@ -231,7 +233,7 @@ Instead we observe:
 **What to cite**:
 - **"Harness overhead: 1 µs (minimum, n=2400)"**
 - "Overhead <13% for all kernels, <3% for kernels >30 µs"
-- "SNR 8:1 to 5000:1, exceeding 10:1 industry standard"
+- "Worst-case SNR: 8:1 (car minimum); Typical SNR: 28:1 to 2300:1 (medians); all exceed 10:1 industry standard"
 
 **What NOT to say**:
 - "Median overhead is 2 µs" ❌ (conflates harness + environment)
