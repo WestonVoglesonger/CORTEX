@@ -15,7 +15,7 @@ The no-op kernel (identity function) was run under two load profiles (idle and m
 - Idle median: 3 µs = 1 µs harness + 2 µs DVFS penalty
 - Medium median: 2 µs = 1 µs harness + 1 µs stress-ng effects
 
-**Conclusion**: Harness overhead is 1 µs, representing 0.02-12.5% of measured signals (8 µs - 5 ms range). All kernels achieve SNR >8:1, exceeding industry standards.
+**Conclusion**: Harness overhead is 1 µs, representing 0.02-12.5% of measured signals (8 µs - 5 ms range). Typical SNR (using median latency) ranges from 28:1 to 2300:1, all exceeding the 10:1 industry standard. Worst-case SNR (using minimum latency) ranges from 8:1 to 1500:1, with car@f32 borderline.
 
 ---
 
@@ -181,7 +181,7 @@ void cortex_process(void* handle, const void* input, void* output) {
 
 1. **Harness dispatch overhead quantified**: **1 µs minimum** (concrete, citable number)
 2. **Overhead is small vs signal**: <13% for all kernels, <3% for kernels >30 µs
-3. **SNR exceeds industry standards**: All kernels >8:1, most >100:1
+3. **Typical SNR exceeds industry standards**: 28:1 to 2300:1 (all exceed 10:1); worst-case SNR 8:1 to 1500:1 (car@f32 borderline at 8:1)
 4. **Methodology sound**: Empirical evidence supports measurement validity claims
 5. **Decomposition successful**: Separated harness overhead (1 µs) from environmental noise (1-2 µs)
 
