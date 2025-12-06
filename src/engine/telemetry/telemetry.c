@@ -1,8 +1,12 @@
 #define _DEFAULT_SOURCE  /* For gethostname on Linux */
 #define _POSIX_C_SOURCE 200112L
 
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE  /* For BSD types (u_int, u_char, etc.) on macOS */
+#endif
+
 #include "telemetry.h"
-#include "../util/util.h"
+#include "../harness/util/util.h"
 
 #include <errno.h>
 #include <stdio.h>

@@ -11,7 +11,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "../harness/telemetry/telemetry.h"
+#include "../telemetry/telemetry.h"
 #include "../harness/util/util.h"
 
 #ifdef __linux__

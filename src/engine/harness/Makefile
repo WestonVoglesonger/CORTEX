@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -Itelemetry -Iutil -Ireport
+CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -I../telemetry -Iutil -Ireport
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)
@@ -14,7 +14,7 @@ endif
 APP_SOURCES = app/main.c
 CFG_SOURCES = config/config.c
 LOD_SOURCES = loader/loader.c
-TEL_SOURCES = telemetry/telemetry.c
+TEL_SOURCES = ../telemetry/telemetry.c
 UTL_SOURCES = util/util.c util/signal_handler.c
 RPT_SOURCES = report/report.c
 
