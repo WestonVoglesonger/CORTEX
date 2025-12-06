@@ -5,7 +5,7 @@ without any real filesystem, subprocess, or time dependencies. Fast and isolated
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, call
+from unittest.mock import Mock, MagicMock, call, patch
 from pathlib import Path
 
 from cortex.utils.runner import HarnessRunner, HARNESS_BINARY_PATH
@@ -171,7 +171,8 @@ class TestHarnessRunnerRun:
         assert 'caffeinate' in cmd_arg
         assert '-dims' in cmd_arg
 
-    def test_run_successful_execution_linux_with_systemd_inhibit(self):
+    @patch('sys.stdin.isatty')
+    def test_run_successful_execution_linux_with_systemd_inhibit(self, mock_isatty):
         """Test successful run on Linux with systemd-inhibit available."""
         # Arrange
         def exists_side_effect(path):
@@ -182,8 +183,9 @@ class TestHarnessRunnerRun:
         self.fs.is_file.return_value = True
         self.config.load_yaml.return_value = {}
         self.env.get_system_type.return_value = 'Linux'
-        self.env.get_environ.return_value = {}
+        self.env.get_environ.return_value = {}  # No SUDO_USER, not running under sudo
         self.tools.has_tool.side_effect = lambda tool: tool == 'systemd-inhibit'
+        mock_isatty.return_value = True  # Simulate interactive terminal
 
         mock_handle = Mock(spec=ProcessHandle)
         # In verbose mode, we call wait() then poll() for return code
