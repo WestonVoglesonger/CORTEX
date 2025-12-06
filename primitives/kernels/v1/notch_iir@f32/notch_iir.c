@@ -7,6 +7,7 @@
  */
 
 #include "cortex_plugin.h"
+#include "accessor.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -21,20 +22,20 @@
 #define DEFAULT_NOTCH_Q 30.0
 
 /*
- * FUTURE: Parameterized Kernels
- * =============================
- * Currently uses hardcoded defaults for benchmarking. In future versions:
- * - Accept runtime parameters from YAML config (f0_hz, Q factor)
- * - Support different notch frequencies (50Hz vs 60Hz power line)
- * - Enable user-customizable filter characteristics
- * - Part of broader capability assessment system for arbitrary configurations
+ * Runtime Parameters (via accessor API)
+ * ======================================
+ * This kernel accepts optional runtime parameters from YAML config:
+ *
+ * params:
+ *   f0_hz: 60.0   # Notch frequency in Hz (default: 60.0 for Americas)
+ *   Q: 30.0       # Quality factor (default: 30.0)
+ *
+ * Common configurations:
+ * - Americas (60Hz power line): f0_hz=60.0
+ * - Europe/Asia (50Hz power line): f0_hz=50.0
+ * - Narrower notch: increase Q (e.g., Q=40.0)
+ * - Wider notch: decrease Q (e.g., Q=20.0)
  */
-
-/* Parameter structure for runtime configuration */
-typedef struct {
-    double f0_hz;  /* Notch frequency in Hz */
-    double Q;      /* Quality factor */
-} notch_params_t;
 
 /* State structure for notch IIR filter */
 typedef struct {
@@ -95,17 +96,10 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return result;
     }
 
-    /* Parse kernel parameters (when harness supports it) */
-    double f0_hz = DEFAULT_NOTCH_F0_HZ;
-    double Q = DEFAULT_NOTCH_Q;
-
-    if (config->kernel_params && config->kernel_params_size >= sizeof(notch_params_t)) {
-        /* Parameters provided by harness */
-        const notch_params_t *params = (const notch_params_t *)config->kernel_params;
-        f0_hz = params->f0_hz;
-        Q = params->Q;
-    }
-    /* Otherwise use defaults */
+    /* Parse kernel parameters using accessor API */
+    const char *params_str = (const char *)config->kernel_params;
+    double f0_hz = cortex_param_float(params_str, "f0_hz", DEFAULT_NOTCH_F0_HZ);
+    double Q = cortex_param_float(params_str, "Q", DEFAULT_NOTCH_Q);
 
     /* Allocate state structure */
     notch_iir_state_t *state = (notch_iir_state_t *)calloc(1, sizeof(notch_iir_state_t));

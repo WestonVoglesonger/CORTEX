@@ -80,8 +80,15 @@ static int load_plugin(const char *plugin_name,
     pc.channels = plugin_cfg->runtime.channels;
     pc.dtype = plugin_cfg->runtime.dtype;
     pc.allow_in_place = plugin_cfg->runtime.allow_in_place ? 1 : 0;
-    pc.kernel_params = NULL;
-    pc.kernel_params_size = 0;
+
+    /* Pass kernel parameters as string (if provided) */
+    if (plugin_cfg->params[0] != '\0') {
+        pc.kernel_params = (void*)plugin_cfg->params;
+        pc.kernel_params_size = (uint32_t)strlen(plugin_cfg->params);
+    } else {
+        pc.kernel_params = NULL;
+        pc.kernel_params_size = 0;
+    }
 
     /* Register plugin with scheduler */
     cortex_scheduler_plugin_api_t api = out_loaded->api;

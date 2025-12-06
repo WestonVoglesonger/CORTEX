@@ -1,0 +1,53 @@
+# CORTEX C Code Style Configuration
+# Based on existing kernel code style (car@f32, notch_iir@f32, etc.)
+
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Line length
+ColumnLimit: 100
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Pointers and references
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Spacing
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# Comments
+ReflowComments: true
+
+# Function declarations/definitions
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackParameters: false
+BinPackArguments: false
+
+# Include sorting (disabled to preserve manual ordering)
+SortIncludes: false
+
+# Other
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
