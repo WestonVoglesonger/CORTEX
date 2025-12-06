@@ -1,0 +1,66 @@
+cortex_version: 1
+
+system:
+  name: "linux-governor-validation"
+  description: "Linux CPU governor validation - governor set externally via shell script"
+
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+
+realtime:
+  scheduler: fifo
+  priority: 90
+  cpu_affinity: [0]
+  deadline_ms: 500
+
+power:
+  # Governor is set externally via shell script before each run
+  # This config is used for all three governor conditions
+  turbo: false
+
+benchmark:
+  metrics: [latency, jitter, throughput, memory_usage]
+  parameters:
+    duration_seconds: 120
+    repeats: 5
+    warmup_seconds: 10
+  load_profile: "idle"  # No stress-ng - using direct governor control on Linux
+
+output:
+  directory: "results"
+  format: "ndjson"
+  include_raw_data: false
+
+# All 4 BCI kernels (identical to macOS validation experiment)
+plugins:
+  - name: "car"
+    status: ready
+    spec_uri: "primitives/kernels/v1/car@f32"
+    spec_version: "1.0.0"
+
+  - name: "notch_iir"
+    status: ready
+    spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    spec_version: "1.0.0"
+    params:
+      f0_hz: 60.0
+      Q: 30.0
+
+  - name: "goertzel"
+    status: ready
+    spec_uri: "primitives/kernels/v1/goertzel@f32"
+    spec_version: "1.0.0"
+    params:
+      target_hz: 10.0
+
+  - name: "bandpass_fir"
+    status: ready
+    spec_uri: "primitives/kernels/v1/bandpass_fir@f32"
+    spec_version: "1.0.0"
+    params:
+      low_hz: 8.0
+      high_hz: 30.0
+      order: 101

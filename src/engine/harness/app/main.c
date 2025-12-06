@@ -154,23 +154,26 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
 
     printf("[harness] Running plugin: %s\n", plugin_name);
 
-    /* Collect system information for telemetry metadata */
-    cortex_system_info_t sysinfo;
-    if (cortex_collect_system_info(&sysinfo) != 0) {
-        fprintf(stderr, "[harness] warning: failed to collect system info\n");
-        memset(&sysinfo, 0, sizeof(sysinfo));
-    }
-
-    /* Step 1: Get plugin config pointer */
-    /* Step 2: Build per-plugin telemetry path */
     /* Track starting telemetry count for this plugin */
     size_t telemetry_start_count = ctx->telemetry.count;
 
+    /* Step 1: Get plugin config pointer */
+    /* Step 2: Build per-plugin output directory and telemetry path */
+    char plugin_output_dir[1024];
+    snprintf(plugin_output_dir, sizeof(plugin_output_dir),
+             "%s/kernel-data/%s",
+             ctx->run_cfg.output.directory, plugin_name);
+
+    /* Create per-plugin output directory */
+    if (cortex_create_directories(plugin_output_dir) != 0) {
+        fprintf(stderr, "[harness] failed to create output directory for plugin '%s'\n", plugin_name);
+        return -1;
+    }
+
     char telemetry_path[1024];
     snprintf(telemetry_path, sizeof(telemetry_path),
-             "%s/telemetry.csv",
-             ctx->run_cfg.output.directory);
-    
+             "%s/telemetry.csv", plugin_output_dir);
+
     /* Step 3: Call make_scheduler() with plugin config */
     cortex_scheduler_t *scheduler = NULL;
     if (make_scheduler(plugin_cfg, 
@@ -242,36 +245,40 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     cortex_scheduler_destroy(scheduler);  /* Must destroy scheduler before unloading plugin */
     ctx->scheduler = NULL;
     cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
-    
-    /* Step 9: After all repeats, write only this plugin's records to file */
+
+    /* Step 9: Write this plugin's telemetry to per-plugin output directory */
     size_t telemetry_end_count = ctx->telemetry.count;
 
-    /* Choose output format from config */
-    const char *format = ctx->run_cfg.output.format;
-    const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
+    if (telemetry_end_count > telemetry_start_count) {
+        cortex_system_info_t sysinfo;
+        if (cortex_collect_system_info(&sysinfo) != 0) {
+            memset(&sysinfo, 0, sizeof(sysinfo));
+        }
 
-    /* Write telemetry to output directory */
-    char telemetry_output_path[1024];
-    snprintf(telemetry_output_path, sizeof(telemetry_output_path),
-             "%s/telemetry.%s",
-             ctx->run_cfg.output.directory, ext);
+        const char *format = ctx->run_cfg.output.format;
+        const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
 
-    /* Ensure output directory exists */
-    if (cortex_create_directories(ctx->run_cfg.output.directory) == 0) {
+        char telemetry_output_path[1024];
+        snprintf(telemetry_output_path, sizeof(telemetry_output_path),
+                 "%s/telemetry.%s", plugin_output_dir, ext);
+
+        printf("[harness] Writing telemetry: %s (%zu records)\n",
+               telemetry_output_path, telemetry_end_count - telemetry_start_count);
+        fflush(stdout);
+
         if (strcmp(format, "ndjson") == 0) {
             cortex_telemetry_write_ndjson_filtered(telemetry_output_path, &ctx->telemetry,
                                                    telemetry_start_count, telemetry_end_count,
                                                    &sysinfo);
         } else {
-            /* Default to CSV for unknown formats or explicit "csv" */
             cortex_telemetry_write_csv_filtered(telemetry_output_path, &ctx->telemetry,
                                                 telemetry_start_count, telemetry_end_count,
                                                 &sysinfo);
         }
     }
-    
+
     /* Step 10: Keep buffer for report generation (don't reset) */
-    /* Buffer will accumulate records from all plugins */
+    /* Buffer accumulates records from all plugins for combined report */
 
     if (repeat_failed) {
         fprintf(stderr, "[harness] Plugin '%s' interrupted, telemetry preserved\n", plugin_name);
@@ -300,6 +307,16 @@ int main(int argc, char **argv) {
         fprintf(stderr, "failed to load config: %s\n", config_path);
         return 1;
     }
+
+    /* Allow environment variable to override output directory */
+    /* This lets the Python runner pass the run-specific output path */
+    const char *output_dir_override = getenv("CORTEX_OUTPUT_DIR");
+    if (output_dir_override && strlen(output_dir_override) > 0) {
+        strncpy(ctx.run_cfg.output.directory, output_dir_override,
+                sizeof(ctx.run_cfg.output.directory) - 1);
+        ctx.run_cfg.output.directory[sizeof(ctx.run_cfg.output.directory) - 1] = '\0';
+    }
+
     char err[128];
     if (cortex_config_validate(&ctx.run_cfg, err, sizeof(err)) != 0) {
         fprintf(stderr, "invalid config: %s\n", err);
@@ -387,6 +404,34 @@ int main(int argc, char **argv) {
     if (cortex_should_shutdown() && !was_interrupted) {
         fprintf(stderr, "[harness] Shutdown requested before report generation\n");
         was_interrupted = 1;
+    }
+
+    /* Write all telemetry data ONCE after all plugins complete */
+    if (ctx.telemetry.count > 0) {
+        cortex_system_info_t sysinfo;
+        if (cortex_collect_system_info(&sysinfo) != 0) {
+            memset(&sysinfo, 0, sizeof(sysinfo));
+        }
+
+        const char *format = ctx.run_cfg.output.format;
+        const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
+
+        char telemetry_output_path[1024];
+        snprintf(telemetry_output_path, sizeof(telemetry_output_path),
+                 "%s/telemetry.%s",
+                 ctx.run_cfg.output.directory, ext);
+
+        if (cortex_create_directories(ctx.run_cfg.output.directory) == 0) {
+            printf("[harness] Writing telemetry: %s (%zu records)\n",
+                   telemetry_output_path, ctx.telemetry.count);
+            fflush(stdout);
+
+            if (strcmp(format, "ndjson") == 0) {
+                cortex_telemetry_write_ndjson(telemetry_output_path, &ctx.telemetry, &sysinfo);
+            } else {
+                cortex_telemetry_write_csv(telemetry_output_path, &ctx.telemetry, &sysinfo);
+            }
+        }
     }
 
     /* Generate HTML report after all plugins complete (skip if interrupted) */

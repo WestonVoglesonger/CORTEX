@@ -138,38 +138,57 @@ class HarnessRunner:
         cmd = [HARNESS_BINARY_PATH, 'run', config_path]
 
         # Add platform-specific sleep prevention wrapper
+        # Can be disabled with CORTEX_NO_INHIBIT=1 (useful when running under sudo)
         system = self.env.get_system_type()
         sleep_prevention_tool = None
+        no_inhibit = self.env.get_environ().get('CORTEX_NO_INHIBIT', '0') == '1'
 
-        if system == 'Darwin':
-            # macOS: use caffeinate
-            if self.tools.has_tool('caffeinate'):
-                cmd = ['caffeinate', '-dims'] + cmd
-                sleep_prevention_tool = 'caffeinate'
-        elif system == 'Linux':
-            # Linux: use systemd-inhibit if available
-            if self.tools.has_tool('systemd-inhibit'):
-                cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
-                sleep_prevention_tool = 'systemd-inhibit'
+        if not no_inhibit:
+            if system == 'Darwin':
+                # macOS: use caffeinate
+                if self.tools.has_tool('caffeinate'):
+                    cmd = ['caffeinate', '-dims'] + cmd
+                    sleep_prevention_tool = 'caffeinate'
+            elif system == 'Linux':
+                # Linux: systemd-inhibit requires polkit authentication
+                # This works in interactive terminals but fails when:
+                # - Running under sudo (polkit can't authenticate)
+                # - Running in non-interactive scripts
+                # Check for these conditions and skip if auth will likely fail
+                env_vars = self.env.get_environ()
+                is_interactive = sys.stdin.isatty()
+                running_under_sudo = 'SUDO_USER' in env_vars
+
+                if self.tools.has_tool('systemd-inhibit') and is_interactive and not running_under_sudo:
+                    cmd = ['systemd-inhibit', '--what=sleep:idle'] + cmd
+                    sleep_prevention_tool = 'systemd-inhibit'
 
         # Force unbuffered output for real-time progress updates
         if self.tools.has_tool('stdbuf'):
             cmd = ['stdbuf', '-o0', '-e0'] + cmd
 
-        # Set environment variable for unbuffered output
+        # Set environment variables
         env = self.env.get_environ()
         env['PYTHONUNBUFFERED'] = '1'
+
+        # Pass run-specific output directory to harness
+        # This overrides config's output.directory so kernel-data goes to the right place
+        run_dir = get_run_directory(run_name)
+        env['CORTEX_OUTPUT_DIR'] = str(run_dir)
 
         # Notify user of sleep prevention status
         if sleep_prevention_tool:
             self.log.info(f"[cortex] Sleep prevention active ({sleep_prevention_tool}) for benchmark consistency")
             self.log.info(f"[cortex] Display will stay on during benchmark")
+        elif no_inhibit:
+            # Intentionally disabled (e.g., script handles it externally)
+            pass
+        elif system == 'Linux' and 'SUDO_USER' in self.env.get_environ():
+            # Running under sudo - systemd-inhibit skipped (polkit auth issues)
+            # Don't warn, the calling script should handle sleep prevention
+            pass
         elif system in ['Darwin', 'Linux']:
-            self.log.info(f"[cortex] Warning: Sleep prevention tool not found")
-            self.log.info(f"[cortex] Ensure system won't sleep during benchmarks")
-
-        # Set up output redirection based on verbose flag
-        run_dir = get_run_directory(run_name)
+            self.log.info(f"[cortex] Note: Ensure system won't sleep during benchmarks")
 
         # Helper to execute subprocess and wait for completion
         def _execute_and_wait(stdout_dest, stderr_dest, show_spinner):

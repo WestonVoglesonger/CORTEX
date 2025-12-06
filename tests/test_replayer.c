@@ -9,6 +9,7 @@
  * 5. Integrates correctly with the scheduler
  */
 
+#define _DEFAULT_SOURCE  /* For usleep on Linux */
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>

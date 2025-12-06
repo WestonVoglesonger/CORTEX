@@ -1,3 +1,6 @@
+#define _DEFAULT_SOURCE  /* For gethostname on Linux */
+#define _POSIX_C_SOURCE 200112L
+
 #include "telemetry.h"
 #include "../util/util.h"
 
