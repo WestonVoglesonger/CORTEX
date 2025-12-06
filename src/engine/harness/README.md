@@ -17,7 +17,7 @@ Purpose: Orchestrate replayer → scheduler → plugins behind the stable ABI, a
 - `src/engine/harness/app/main.c` — CLI entrypoint; loads YAML; orchestrates lifecycle.
 - `src/engine/harness/config/config.{h,c}` — YAML parsing, kernel spec loading, and validation; mapping to structs.
 - `src/engine/harness/loader/loader.{h,c}` — `dlopen`/`dlsym` helpers; build `cortex_scheduler_plugin_api_t`.
-- `src/engine/harness/telemetry/telemetry.{h,c}` — Basic CSV writer (Week 3). JSON + summaries planned.
+- `src/engine/telemetry/telemetry.{h,c}` — Basic CSV/NDJSON writer (promoted to engine-level component).
 - `src/engine/harness/util/util.{h,c}` — time helpers and run‑id utilities.
 - `src/engine/harness/Makefile` — builds `cortex` binary (links scheduler and replayer).
 - Planned: `energy_rapl.{h,c}` (Linux) and `bg_load.{h,c}`.

@@ -7,7 +7,7 @@
 #ifndef CORTEX_HARNESS_REPORT_H
 #define CORTEX_HARNESS_REPORT_H
 
-#include "../telemetry/telemetry.h"
+#include "../../telemetry/telemetry.h"
 
 /* Generate HTML report from telemetry buffer
  *
