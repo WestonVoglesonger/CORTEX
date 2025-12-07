@@ -97,7 +97,7 @@ $$
 - `param1`: Description (default: value)
 - `param2`: Description (default: value)
 
-**Note**: Parameters currently hardcoded in C implementation (kernel_params not yet wired).
+Parameters are extracted at runtime using the accessor API (see Step 5 for implementation).
 
 ## Edge Cases
 
@@ -241,21 +241,28 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return (cortex_init_result_t){NULL, 0, 0};
     }
     
-    // 4. Store configuration
+    // 4. Extract runtime parameters (if needed)
+    // #include "accessor.h" at top of file
+    // const char *params = (const char *)config->kernel_params;
+    // double my_param = cortex_param_float(params, "my_param", 1.0);  // default: 1.0
+    // int order = cortex_param_int(params, "order", 4);  // default: 4
+    // See src/engine/params/README.md for full accessor API
+
+    // 5. Store configuration
     state->W = config->window_length_samples;
     state->C = config->channels;
-    
-    // 5. Pre-allocate any working buffers
+
+    // 6. Pre-allocate any working buffers
     // state->buffer = malloc(state->W * sizeof(float));
     // if (!state->buffer) {
     //     free(state);
     //     return (cortex_init_result_t){NULL, 0, 0};
     // }
     
-    // 6. Initialize algorithm-specific state (coefficients, delays, etc.)
-    // ...
-    
-    // 7. Return handle and output dimensions
+    // 7. Initialize algorithm-specific state (coefficients, delays, etc.)
+    // Use extracted parameters here to configure your algorithm
+
+    // 8. Return handle and output dimensions
     return (cortex_init_result_t){
         .handle = state,
         .output_window_length = state->W,  // Adjust if output differs
@@ -320,7 +327,8 @@ Copy and adapt from existing kernel:
 # Makefile for your_kernel@f32 plugin
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../src/engine/include -fPIC
+CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../src/engine/include -I../../../../src/engine/params -fPIC
+PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
 LDFLAGS = -lm
 
 # Detect platform for plugin extension
@@ -341,8 +349,12 @@ OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
-	$(CC) $(SOFLAG) -o $@ $^ $(LDFLAGS)
+$(TARGET): $(OBJ) $(PARAMS_LIB)
+	$(CC) $(SOFLAG) -o $@ $(OBJ) $(PARAMS_LIB) $(LDFLAGS)
+
+# Build params library if it doesn't exist
+$(PARAMS_LIB):
+	$(MAKE) -C ../../../../src/engine/params
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<

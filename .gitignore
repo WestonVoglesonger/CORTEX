@@ -218,8 +218,8 @@ tests/test_*
 # Project-specific documentation (local to repository instance)
 CLAUDE.md
 
-# Claude Code local settings (MCP server configs, tokens, local paths)
-.claude/settings.local.json
+# Claude Code directory (personal dev tools, configs, MCP servers, local settings)
+.claude/
 
 # Static analysis caches
 .clang-tidy-cache/

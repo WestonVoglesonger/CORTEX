@@ -76,17 +76,56 @@ The harness fills this struct before `init()`:
 - `plugins[*].runtime.channels` → `channels`  
 - `plugins[*].runtime.dtype` → `dtype`  
 - `plugins[*].runtime.allow_in_place` → `allow_in_place`  
-- `plugins[*].params` → serialized into `kernel_params`
-  **Note (current limitation)**: Not yet implemented. Harness sets `kernel_params = NULL` for all plugins
-  (see `src/engine/harness/app/main.c` lines 82-83). All current kernel implementations use fixed parameters:
-  - `notch_iir`: f0=60 Hz, Q=30 (hardcoded in C)
-  - `bandpass_fir`: numtaps=129, passband=[8,30] Hz (hardcoded)
-  - `goertzel`: bands fixed to alpha (8-13 Hz), beta (13-30 Hz)
-  
-  To enable configurable parameters in future:
-  1. Update harness to serialize YAML `params` → `kernel_params` struct
-  2. Update ALL kernels to parse `kernel_params` if provided, else use defaults
-  3. Update kernel specs to document parameterization  
+- `plugins[*].params` → serialized string passed to `kernel_params`
+
+  ✅ **Fully Implemented**: Harness passes YAML params as string to `kernel_params`.
+  Kernels extract values using the accessor API (see example below).
+
+### Extracting Runtime Parameters
+
+Kernels use the **parameter accessor API** to extract runtime configuration from the `kernel_params` string:
+
+```c
+#include "cortex_plugin.h"
+#include "accessor.h"  // Parameter accessor functions
+
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    // ... ABI validation ...
+
+    // Extract parameters with typed accessors and defaults
+    const char *params = (const char *)config->kernel_params;
+    double f0_hz = cortex_param_float(params, "f0_hz", 60.0);    // default: 60.0
+    int order = cortex_param_int(params, "order", 4);             // default: 4
+
+    char window[32];
+    cortex_param_string(params, "window", window, sizeof(window), "hann");  // default: "hann"
+
+    bool normalize = cortex_param_bool(params, "normalize", true);  // default: true
+
+    // Validate extracted parameters
+    if (f0_hz <= 0.0 || f0_hz >= config->sample_rate_hz / 2.0) {
+        fprintf(stderr, "[kernel] error: f0_hz must be in (0, Nyquist)\n");
+        return (cortex_init_result_t){0};
+    }
+
+    // Use parameters to configure kernel behavior...
+    // compute_filter_coefficients(f0_hz, order);
+
+    return result;
+}
+```
+
+**Accessor Functions** (defined in `src/engine/params/accessor.h`):
+- `double cortex_param_float(const char *params, const char *key, double default_val)`
+- `long cortex_param_int(const char *params, const char *key, long default_val)`
+- `void cortex_param_string(const char *params, const char *key, char *out_buf, size_t buf_size, const char *default_val)`
+- `bool cortex_param_bool(const char *params, const char *key, bool default_val)`
+
+**Supported Formats**:
+- YAML-style: `"f0_hz: 60.0, Q: 30.0"`
+- URL-style: `"f0_hz=60.0&Q=30.0"`
+
+See `src/engine/params/README.md` for complete API documentation and examples  
 
 ---
 

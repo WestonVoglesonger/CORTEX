@@ -70,5 +70,5 @@ plugins:
 - ✅ Specification defined
 - ✅ Oracle implementation (`oracle.py`)
 - ✅ C implementation complete
-- ✅ Parameterization support (awaiting harness implementation)
+- ✅ Parameterization support (fully implemented via accessor API)
 
