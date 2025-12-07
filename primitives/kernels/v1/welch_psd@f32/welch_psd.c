@@ -1,4 +1,5 @@
 #include "cortex_plugin.h"
+#include "accessor.h"
 #include "kiss_fft.h"
 #include <math.h>
 #include <stdint.h>
@@ -61,10 +62,17 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
   if (!ctx)
     return result;
 
-  /* Set defaults - these are fixed in v0.1.0 */
-  /* Future versions will parse config->kernel_params to allow customization */
-  ctx->n_fft = DEFAULT_N_FFT;
-  ctx->n_overlap = DEFAULT_N_OVERLAP;
+  /* Parse kernel parameters for FFT configuration */
+  const char *params_str = (const char *)config->kernel_params;
+  ctx->n_fft = (int)cortex_param_int(params_str, "n_fft", DEFAULT_N_FFT);
+  ctx->n_overlap = (int)cortex_param_int(params_str, "n_overlap", DEFAULT_N_OVERLAP);
+
+  /* Validate n_fft is positive and power of 2 */
+  if (ctx->n_fft <= 0 || (ctx->n_fft & (ctx->n_fft - 1)) != 0) {
+    fprintf(stderr, "welch_psd: n_fft (%d) must be a positive power of 2\n", ctx->n_fft);
+    free(ctx);
+    return result;
+  }
 
   /* Validate overlap before using it */
   if (ctx->n_overlap < 0 || ctx->n_overlap >= ctx->n_fft) {

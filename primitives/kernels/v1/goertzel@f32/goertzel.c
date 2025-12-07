@@ -7,6 +7,7 @@
  */
 
 #include "cortex_plugin.h"
+#include "accessor.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -17,11 +18,11 @@
 #define CORTEX_ABI_VERSION 2u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 
-/* Fixed frequency bands for v1 (not configurable - kernel_params not passed yet) */
-#define ALPHA_LOW_HZ 8
-#define ALPHA_HIGH_HZ 13
-#define BETA_LOW_HZ 13
-#define BETA_HIGH_HZ 30
+/* Default frequency bands (configurable via kernel_params) */
+#define DEFAULT_ALPHA_LOW_HZ 8.0
+#define DEFAULT_ALPHA_HIGH_HZ 13.0
+#define DEFAULT_BETA_LOW_HZ 13.0
+#define DEFAULT_BETA_HIGH_HZ 30.0
 
 #define NUM_BANDS 2  /* Alpha and beta for v1 */
 
@@ -71,11 +72,32 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     state->window_length = config->window_length_samples;
     state->sample_rate_hz = config->sample_rate_hz;
 
+    /* Parse kernel parameters for frequency bands */
+    const char *params_str = (const char *)config->kernel_params;
+    double alpha_low = cortex_param_float(params_str, "alpha_low", DEFAULT_ALPHA_LOW_HZ);
+    double alpha_high = cortex_param_float(params_str, "alpha_high", DEFAULT_ALPHA_HIGH_HZ);
+    double beta_low = cortex_param_float(params_str, "beta_low", DEFAULT_BETA_LOW_HZ);
+    double beta_high = cortex_param_float(params_str, "beta_high", DEFAULT_BETA_HIGH_HZ);
+
+    /* Validate frequency ranges */
+    if (alpha_low <= 0.0 || alpha_high <= alpha_low) {
+        fprintf(stderr, "[goertzel] error: invalid alpha band: low=%.1f, high=%.1f\n",
+                alpha_low, alpha_high);
+        free(state);
+        return result;
+    }
+    if (beta_low <= 0.0 || beta_high <= beta_low) {
+        fprintf(stderr, "[goertzel] error: invalid beta band: low=%.1f, high=%.1f\n",
+                beta_low, beta_high);
+        free(state);
+        return result;
+    }
+
     /* Compute bin indices from Hz frequency bands: k = round(f * N / Fs) */
-    state->alpha_start_bin = (uint32_t)round((double)ALPHA_LOW_HZ * (double)state->window_length / (double)state->sample_rate_hz);
-    state->alpha_end_bin = (uint32_t)round((double)ALPHA_HIGH_HZ * (double)state->window_length / (double)state->sample_rate_hz);
-    state->beta_start_bin = (uint32_t)round((double)BETA_LOW_HZ * (double)state->window_length / (double)state->sample_rate_hz);
-    state->beta_end_bin = (uint32_t)round((double)BETA_HIGH_HZ * (double)state->window_length / (double)state->sample_rate_hz);
+    state->alpha_start_bin = (uint32_t)round(alpha_low * (double)state->window_length / (double)state->sample_rate_hz);
+    state->alpha_end_bin = (uint32_t)round(alpha_high * (double)state->window_length / (double)state->sample_rate_hz);
+    state->beta_start_bin = (uint32_t)round(beta_low * (double)state->window_length / (double)state->sample_rate_hz);
+    state->beta_end_bin = (uint32_t)round(beta_high * (double)state->window_length / (double)state->sample_rate_hz);
 
     /* Validate bin ranges */
     if (state->alpha_start_bin >= state->alpha_end_bin) {
