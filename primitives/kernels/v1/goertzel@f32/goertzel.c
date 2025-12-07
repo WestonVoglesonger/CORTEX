@@ -125,6 +125,16 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return result;
     }
 
+    /* Validate band ordering: beta must come after alpha to prevent total_bins underflow */
+    if (state->beta_end_bin < state->alpha_start_bin) {
+        fprintf(stderr, "[goertzel] error: beta band (%.1f-%.1f Hz, bins %u-%u) must come after "
+                "alpha band (%.1f-%.1f Hz, bins %u-%u)\n",
+                beta_low, beta_high, state->beta_start_bin, state->beta_end_bin,
+                alpha_low, alpha_high, state->alpha_start_bin, state->alpha_end_bin);
+        free(state);
+        return result;
+    }
+
     /* Compute total bins: all bins from alpha_start to beta_end (inclusive) */
     state->total_bins = state->beta_end_bin - state->alpha_start_bin + 1;
 

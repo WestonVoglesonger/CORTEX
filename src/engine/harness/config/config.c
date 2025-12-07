@@ -293,6 +293,39 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
     return kernel_count;
 }
 
+/* Check if next line is indented (peek without consuming) */
+static int peek_next_line_indented(FILE *fp) {
+    if (!fp) return 0;
+
+    long pos = ftell(fp);
+    if (pos < 0) return 0;  /* ftell error */
+
+    char line[1024];
+    int is_indented = 0;
+
+    if (fgets(line, sizeof(line), fp)) {
+        /* Indented if starts with space or tab */
+        is_indented = (line[0] == ' ' || line[0] == '\t');
+    }
+    /* Else: EOF or error → treat as not indented (is_indented stays 0) */
+
+    /* Restore file position */
+    fseek(fp, pos, SEEK_SET);
+    return is_indented;
+}
+
+/* Strip leading indentation from line (modifies in place) */
+static void strip_indent(char *line) {
+    if (!line) return;
+
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+
+    if (p != line) {
+        memmove(line, p, strlen(p) + 1);
+    }
+}
+
 int cortex_config_load(const char *path, cortex_run_config_t *out) {
     if (!path || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -367,14 +400,52 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 continue;
             }
             if (starts_with(raw, "params:")) {
-                /* Parse kernel-specific parameters (simple approach for now) */
-                const char *v = raw + strlen("params:");
-                while (*v == ' ') v++;
-                /* For now, just store the raw string - plugins can parse it */
-                char tmp[1024]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
-                trim(tmp);
-                strncpy(out->plugins[plugin_index].params, tmp, sizeof(out->plugins[plugin_index].params)-1);
-                out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params)-1] = '\0';
+                /* Parse kernel-specific parameters (supports block-style and inline) */
+                const char *rest = raw + strlen("params:");
+                while (*rest == ' ') rest++;
+
+                char params_buffer[4096] = {0};
+
+                if (*rest == '\0' || *rest == '\n') {
+                    /* Block-style: read subsequent indented lines */
+                    while (peek_next_line_indented(f)) {
+                        char indented_line[1024];
+                        if (!fgets(indented_line, sizeof(indented_line), f)) break;
+
+                        strip_indent(indented_line);
+
+                        /* Remove trailing newline */
+                        size_t len = strlen(indented_line);
+                        if (len > 0 && indented_line[len-1] == '\n') {
+                            indented_line[len-1] = '\0';
+                            len--;
+                        }
+
+                        /* Skip empty lines and comments */
+                        if (len == 0 || indented_line[0] == '#') {
+                            continue;
+                        }
+
+                        /* Append to buffer with newline separator */
+                        size_t current_len = strlen(params_buffer);
+                        if (current_len + len + 2 < sizeof(params_buffer)) {
+                            if (current_len > 0) {
+                                strcat(params_buffer, "\n");
+                            }
+                            strcat(params_buffer, indented_line);
+                        }
+                    }
+                } else {
+                    /* Inline-style: "f0_hz: 50.0, Q: 35.0" */
+                    strncpy(params_buffer, rest, sizeof(params_buffer) - 1);
+                    params_buffer[sizeof(params_buffer) - 1] = '\0';
+                }
+
+                /* Store params */
+                trim(params_buffer);
+                strncpy(out->plugins[plugin_index].params, params_buffer,
+                        sizeof(out->plugins[plugin_index].params) - 1);
+                out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params) - 1] = '\0';
                 continue;
             }
             /* runtime: no longer parsed - loaded from spec.yaml */
