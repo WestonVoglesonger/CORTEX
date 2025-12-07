@@ -7,13 +7,13 @@
 
 ## Executive Summary
 
-The no-op kernel (identity function) was run under two load profiles (idle and medium) to decompose harness overhead from environmental noise. Key findings with n=1200 samples per profile:
+The no-op kernel (identity function) was run under two load profiles (idle and medium) to decompose harness overhead from environmental noise. Key findings with n=1199/1200 samples per profile:
 
 **True harness overhead: 1 µs** (minimum across both profiles)
 
 **Environmental effects**:
-- Idle median: 3 µs = 1 µs harness + 2 µs DVFS penalty
-- Medium median: 2 µs = 1 µs harness + 1 µs stress-ng effects
+- Idle median: 5 µs = 1 µs harness + 4 µs DVFS penalty
+- Medium median: 4 µs = 1 µs harness + 3 µs stress-ng effects
 
 **Conclusion**: Harness overhead is 1 µs, representing 0.02-12.5% of measured signals (8 µs - 5 ms range). Typical SNR (using median latency) ranges from 28:1 to 2300:1, all exceeding the 10:1 industry standard. Worst-case SNR (using minimum latency) ranges from 8:1 to 1500:1, with car@f32 borderline.
 
@@ -23,13 +23,13 @@ The no-op kernel (identity function) was run under two load profiles (idle and m
 
 Running the no-op under different load profiles reveals what is **harness overhead** vs **environmental noise**:
 
-| Metric | Idle (n=1201) | Medium (n=1199) | Interpretation |
+| Metric | Idle (n=1199) | Medium (n=1200) | Interpretation |
 |--------|---------------|-----------------|----------------|
 | **Minimum** | **1 µs** | **1 µs** | ✅ **True harness overhead** |
-| Median | 3 µs | 2 µs | Idle slower due to DVFS |
-| P95 | 5 µs | 8 µs | Medium has stress-ng jitter |
-| Max | 21 µs | 3330 µs | Medium outliers from preemption |
-| Mean | 3.5 µs | 8.7 µs | Medium mean inflated by outliers |
+| Median | 5 µs | 4 µs | Idle slower due to DVFS |
+| P95 | 6 µs | 6 µs | Similar jitter characteristics |
+| Max | 64 µs | 56 µs | Both show occasional preemption |
+| Mean | 4.92 µs | 3.73 µs | Both means close to median |
 
 ### Decomposition Analysis
 
@@ -40,17 +40,18 @@ Running the no-op under different load profiles reveals what is **harness overhe
 - NDJSON bookkeeping: ~100ns
 - **Total**: ~1 µs ✅
 
-**Idle median = 3 µs**:
+**Idle median = 5 µs**:
 - 1 µs harness (base)
-- +2 µs DVFS penalty (CPU at lower clock → slower memcpy)
+- +4 µs DVFS penalty (CPU at lower clock → slower memcpy)
 
-**Medium median = 2 µs**:
+**Medium median = 4 µs**:
 - 1 µs harness (base)
-- +1 µs environmental (cache pollution from stress-ng, occasional scheduler delays)
+- +3 µs environmental (cache pollution from stress-ng, occasional scheduler delays)
 
-**Medium outliers (P95=8µs, Max=3.3ms)**:
-- Scheduler preemption from stress-ng background load
-- Rare events (<5% of samples)
+**Similar P95 characteristics (both 6µs)**:
+- Both profiles show similar jitter patterns
+- Maximum values (64µs idle, 56µs medium) indicate occasional preemption
+- Much tighter distribution than previous run (no extreme outliers)
 
 ---
 
@@ -151,27 +152,27 @@ void cortex_process(void* handle, const void* input, void* output) {
 
 ### Statistical Summary
 
-**Idle Profile (n=1201)**:
+**Idle Profile (n=1199)**:
 - Minimum: **1 µs** (harness floor)
-- Median: 3 µs (DVFS penalty visible)
-- P95: 5 µs
-- Max: 21 µs
-- Mean: 3.5 µs
+- Median: 5 µs (DVFS penalty visible)
+- P95: 6 µs
+- Max: 64 µs
+- Mean: 4.92 µs
 
-**Medium Profile (n=1199)**:
+**Medium Profile (n=1200)**:
 - Minimum: **1 µs** (harness floor, same as idle)
-- Median: 2 µs (CPU at high frequency)
-- P95: 8 µs (stress-ng jitter)
-- Max: 3330 µs (rare scheduler preemption)
-- Mean: 8.7 µs (inflated by outliers)
+- Median: 4 µs (CPU at higher frequency, but stress-ng effects present)
+- P95: 6 µs (similar jitter to idle)
+- Max: 56 µs (occasional preemption)
+- Mean: 3.73 µs
 
 ### Key Insight
 
-**The minimum is identical (1 µs) across both profiles**, proving it represents the true harness overhead independent of environmental factors. Differences in median/P95/max are environmental:
+**The minimum is identical (1 µs) across both profiles**, proving it represents the true harness overhead independent of environmental factors. Differences in median are environmental:
 
-- **Idle median > Medium median**: DVFS makes memcpy slower
-- **Medium P95 > Idle P95**: stress-ng causes scheduler jitter
-- **Medium max >> Idle max**: stress-ng causes rare severe preemptions
+- **Idle median > Medium median** (5µs vs 4µs): DVFS makes operations slower at low CPU frequency
+- **Similar P95 values** (6µs both profiles): Both show similar jitter characteristics
+- **Similar max values** (64µs vs 56µs): Occasional preemption events in both profiles
 
 ---
 
@@ -223,15 +224,16 @@ Instead we observe:
 > Harness dispatch overhead was measured empirically using a no-op kernel (identity function) across two load profiles. The minimum latency of 1 µs (n=2400 samples combined) represents the true harness overhead, comprising timing calls (~100ns), function dispatch (~50-100ns), memory operations (~800ns), and bookkeeping (~100ns). This overhead represents 0.02-12.5% of measured kernel latencies (8 µs to 5 ms range). Typical signal-to-noise ratios (using median latency) range from 28:1 to 2300:1, all exceeding the industry standard of 10:1. Worst-case SNR (using minimum latency) ranges from 8:1 to 1500:1, with car@f32 borderline (8:1) representing <1% of its latency distribution.
 
 **Data availability**:
-- Idle results: `experiments/noop-overhead-2025-12-05/noop-idle/`
-- Medium results: `experiments/noop-overhead-2025-12-05/noop-medium/`
+- Idle results: `experiments/noop-overhead-2025-12-05/run-001-idle/`
+- Medium results: `experiments/noop-overhead-2025-12-05/run-002-medium/`
+- Figures: `experiments/noop-overhead-2025-12-05/figures/`
 - Configurations: `experiments/noop-overhead-2025-12-05/config-{idle,medium}.yaml`
 - Kernel implementation: `primitives/kernels/v1/noop@f32/`
 
 ### For Measurement Validity Arguments
 
 **What to cite**:
-- **"Harness overhead: 1 µs (minimum, n=2400)"**
+- **"Harness overhead: 1 µs (minimum, n=2399)"**
 - "Overhead <13% for all kernels, <3% for kernels >30 µs"
 - "Typical SNR: 28:1 to 2300:1 (all exceed 10:1 standard)"
 - "Worst-case SNR: 8:1 (car minimum, borderline) to 1500:1 (bandpass_fir minimum)"
@@ -247,7 +249,7 @@ Instead we observe:
 ### For Reviewers
 
 **If asked "How did you isolate harness overhead?"**:
-> "We ran a no-op kernel (identity function) under two load profiles. The minimum latency (1 µs) was identical across both profiles, confirming it represents true harness overhead independent of environmental factors. The median difference (3 µs idle vs 2 µs medium) reflects DVFS and stress-ng effects, not harness variation."
+> "We ran a no-op kernel (identity function) under two load profiles. The minimum latency (1 µs) was identical across both profiles, confirming it represents true harness overhead independent of environmental factors. The median difference (5 µs idle vs 4 µs medium) reflects DVFS and stress-ng effects, not harness variation."
 
 **If asked "What about cache/branch effects?"**:
 > "Direct measurement of cache/branch perturbation would require specialized hardware counters and is beyond scope. However, our real kernel benchmarks show stable minimum latencies (-0.3% to -1.9% variation), clean DVFS signals (130% effect), and consistent behavior across all kernels. If measurement artifacts dominated, we would see noisy, inconsistent results instead."
@@ -258,15 +260,26 @@ Instead we observe:
 
 ```
 experiments/noop-overhead-2025-12-05/
-├── README.md (this file)
+├── README.md                # This file
 ├── config-idle.yaml         # Idle profile configuration
 ├── config-medium.yaml       # Medium profile configuration
-├── noop-idle/               # Idle results (n=1201, min=1µs, median=3µs)
-│   ├── harness.log          # Raw telemetry
-│   └── analysis/            # (empty - stats from log)
-└── noop-medium/             # Medium results (n=1199, min=1µs, median=2µs)
-    ├── harness.log          # Raw telemetry
-    └── analysis/            # (empty - stats from log)
+├── scripts/                 # Automation and analysis scripts
+│   ├── README.md                      # Script documentation
+│   ├── run-experiment.sh              # Main orchestration
+│   ├── generate_noop_comparison.py    # Figure generation
+│   ├── calculate_overhead_stats.py    # Statistical analysis
+│   └── create_all_figures.sh          # Wrapper for all figures
+├── run-001-idle/            # Idle results (n=1199, min=1µs, median=5µs)
+│   ├── kernel-data/noop/telemetry.ndjson  # Raw telemetry
+│   ├── analysis/SUMMARY.md                # CORTEX analysis
+│   └── cortex-results-path.txt            # Original results link
+├── run-002-medium/          # Medium results (n=1200, min=1µs, median=4µs)
+│   ├── kernel-data/noop/telemetry.ndjson
+│   ├── analysis/SUMMARY.md
+│   └── cortex-results-path.txt
+└── figures/                 # Publication-quality visualizations
+    ├── noop_idle_medium_comparison.png    # Main figure (PNG)
+    └── noop_idle_medium_comparison.pdf    # Publication version (PDF)
 ```
 
 **Kernel implementation**: `primitives/kernels/v1/noop@f32/`
@@ -280,7 +293,36 @@ experiments/noop-overhead-2025-12-05/
 
 ## Reproducibility
 
-To reproduce these measurements:
+### Automated Reproduction (Recommended)
+
+The complete experiment can be reproduced using automation scripts:
+
+```bash
+cd experiments/noop-overhead-2025-12-05
+
+# Run complete experiment: idle + medium + figures (~21 minutes)
+./scripts/run-experiment.sh
+
+# View statistical analysis
+python3 scripts/calculate_overhead_stats.py
+
+# View figures
+open figures/noop_idle_medium_comparison.png
+```
+
+**What the automation does**:
+1. Validates dependencies (cortex CLI, stress-ng, noop kernel)
+2. Backs up old data with timestamps
+3. Runs idle profile (10 minutes, ~1200 samples)
+4. Runs medium profile (10 minutes, ~1200 samples)
+5. Generates publication-quality figures
+6. Provides statistical summary
+
+See `scripts/README.md` for details.
+
+### Manual Reproduction
+
+For step-by-step manual execution:
 
 ```bash
 # 1. Build no-op kernel (if not already built)
@@ -288,33 +330,23 @@ cd primitives/kernels/v1/noop@f32
 make
 
 # 2. Run idle profile (10 minutes)
-cortex run --config experiments/noop-overhead-2025-12-05/config-idle.yaml \
-  --run-name noop-idle
+cd /Users/westonvoglesonger/Projects/CORTEX
+cortex run --config experiments/noop-overhead-2025-12-05/config-idle.yaml
 
 # 3. Run medium profile (10 minutes)
-cortex run --config experiments/noop-overhead-2025-12-05/config-medium.yaml \
-  --run-name noop-medium
+cortex run --config experiments/noop-overhead-2025-12-05/config-medium.yaml
 
-# 4. Extract statistics
-for profile in idle medium; do
-  echo "=== $profile ==="
-  grep "latency_ns=" results/noop-$profile/harness.log | \
-    awk -F'latency_ns=' '{print $2}' | awk '{print $1}' | \
-    sort -n | awk 'BEGIN {count=0}
-      {arr[count++]=$1}
-      END {
-        print "n =", count;
-        print "Min:", arr[0], "ns";
-        print "Median:", arr[int(count/2)], "ns";
-        print "P95:", arr[int(count*0.95)], "ns";
-        print "Max:", arr[count-1], "ns"
-      }'
-done
+# 4. Generate figures
+cd experiments/noop-overhead-2025-12-05
+python3 scripts/generate_noop_comparison.py
+
+# 5. Extract statistics
+python3 scripts/calculate_overhead_stats.py
 ```
 
 **Expected results**:
 - Minimum ~1 µs (both profiles)
-- Median: idle ~3 µs, medium ~2 µs
+- Median: idle ~5 µs, medium ~4 µs
 - (±20% variation due to system load)
 
 ---
@@ -333,4 +365,4 @@ done
 - Weston Voglesonger (@WestonVoglesonger)
 - With assistance from Claude Code (Anthropic)
 
-**Last Updated**: December 5, 2025 - Added idle vs medium decomposition analysis
+**Last Updated**: December 6, 2025 - Added complete automation infrastructure and updated with new experimental data

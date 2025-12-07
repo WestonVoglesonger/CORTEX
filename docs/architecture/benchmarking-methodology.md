@@ -186,7 +186,7 @@ This design ensures reported latencies represent pure kernel performance without
 
 The `clock_gettime()` call via VDSO (user-space, no syscall) takes approximately 20-30ns per call. With two calls per window, **timing overhead is ~50ns**.
 
-**Empirical harness overhead** (measured via no-op kernel, see [`experiments/noop-overhead-2025-12-05/`](../../experiments/noop-overhead-2025-12-05/)): **1 µs minimum** (n=2400 samples)
+**Empirical harness overhead** (measured via no-op kernel, see [`experiments/noop-overhead-2025-12-05/`](../../experiments/noop-overhead-2025-12-05/)): **1 µs minimum** (n=2399 samples)
 
 This 1 µs includes:
 - Timing calls: ~100ns
