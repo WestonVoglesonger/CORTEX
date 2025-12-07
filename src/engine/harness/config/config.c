@@ -293,8 +293,18 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
     return kernel_count;
 }
 
-/* Check if next line is indented (peek without consuming) */
-static int peek_next_line_indented(FILE *fp) {
+/* Measure indentation level of a line (count leading spaces/tabs) */
+static int measure_indent(const char *str) {
+    if (!str) return 0;
+    int indent = 0;
+    while (str[indent] == ' ' || str[indent] == '\t') {
+        indent++;
+    }
+    return indent;
+}
+
+/* Check if next line is indented MORE than min_indent (peek without consuming) */
+static int peek_next_line_indented(FILE *fp, int min_indent) {
     if (!fp) return 0;
 
     long pos = ftell(fp);
@@ -304,8 +314,9 @@ static int peek_next_line_indented(FILE *fp) {
     int is_indented = 0;
 
     if (fgets(line, sizeof(line), fp)) {
-        /* Indented if starts with space or tab */
-        is_indented = (line[0] == ' ' || line[0] == '\t');
+        /* Indented if indentation is STRICTLY GREATER than minimum */
+        int indent = measure_indent(line);
+        is_indented = (indent > min_indent);
     }
     /* Else: EOF or error → treat as not indented (is_indented stays 0) */
 
@@ -407,8 +418,11 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 char params_buffer[4096] = {0};
 
                 if (*rest == '\0' || *rest == '\n') {
-                    /* Block-style: read subsequent indented lines */
-                    while (peek_next_line_indented(f)) {
+                    /* Measure base indentation of the params: line */
+                    int base_indent = measure_indent(line);
+
+                    /* Block-style: read lines MORE indented than params: line */
+                    while (peek_next_line_indented(f, base_indent)) {
                         char indented_line[1024];
                         if (!fgets(indented_line, sizeof(indented_line), f)) break;
 
