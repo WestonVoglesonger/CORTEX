@@ -48,6 +48,10 @@ $(TEST_CLOCK_RESOLUTION): test_clock_resolution.c
 $(TEST_SIGNAL_HANDLER): test_signal_handler.c $(SIGNAL_HANDLER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# Build params library if it doesn't exist
+$(PARAM_ACCESSOR_LIB):
+	$(MAKE) -C ../src/engine/params
+
 $(TEST_PARAM_ACCESSOR): test_param_accessor.c $(PARAM_ACCESSOR_LIB)
 	$(CC) $(CFLAGS) -o $@ $< $(PARAM_ACCESSOR_LIB) $(LDFLAGS)
 
