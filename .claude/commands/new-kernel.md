@@ -61,7 +61,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     if (config->dtype != CORTEX_DTYPE_FLOAT32) return result;
 
     /* Allocate state */
-    {name}_state_t *st = (car_state_t *)calloc(1, sizeof({name}_state_t));
+    {name}_state_t *st = ({name}_state_t *)calloc(1, sizeof({name}_state_t));
     if (!st) return result;
 
     /* Store configuration */
