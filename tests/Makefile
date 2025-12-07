@@ -11,6 +11,7 @@ TELEMETRY_SRC = ../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
 LOADER_SRC = ../src/engine/harness/loader/loader.c
 SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
+PARAM_ACCESSOR_LIB = ../src/engine/params/libcortex_params.a
 
 # Test binaries
 TEST_REPLAYER = test_replayer
@@ -20,10 +21,11 @@ TEST_KERNEL_REGISTRY = test_kernel_registry
 TEST_KERNEL_ACCURACY = test_kernel_accuracy
 TEST_CLOCK_RESOLUTION = test_clock_resolution
 TEST_SIGNAL_HANDLER = test_signal_handler
+TEST_PARAM_ACCESSOR = test_param_accessor
 
-.PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-kernel-accuracy test-clock-resolution test-signal-handler
+.PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-kernel-accuracy test-clock-resolution test-signal-handler test-param-accessor
 
-all: $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER)
+all: $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
 
 $(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -46,7 +48,14 @@ $(TEST_CLOCK_RESOLUTION): test_clock_resolution.c
 $(TEST_SIGNAL_HANDLER): test_signal_handler.c $(SIGNAL_HANDLER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: test-replayer test-scheduler test-telemetry test-kernel-registry test-signal-handler
+# Build params library if it doesn't exist
+$(PARAM_ACCESSOR_LIB):
+	$(MAKE) -C ../src/engine/params
+
+$(TEST_PARAM_ACCESSOR): test_param_accessor.c $(PARAM_ACCESSOR_LIB)
+	$(CC) $(CFLAGS) -o $@ $< $(PARAM_ACCESSOR_LIB) $(LDFLAGS)
+
+test: test-replayer test-scheduler test-telemetry test-kernel-registry test-signal-handler test-param-accessor
 
 test-clock-resolution: $(TEST_CLOCK_RESOLUTION)
 	@echo "Running clock resolution tests..."
@@ -76,20 +85,25 @@ test-signal-handler: $(TEST_SIGNAL_HANDLER)
 	@echo "Running signal handler tests..."
 	@./$(TEST_SIGNAL_HANDLER)
 
+test-param-accessor: $(TEST_PARAM_ACCESSOR)
+	@echo "Running parameter accessor tests..."
+	@./$(TEST_PARAM_ACCESSOR)
+
 clean:
-	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER)
+	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
 	rm -f /tmp/cortex_test_*.dat /tmp/test_output.bin /tmp/test_input_* /tmp/cortex_test_telemetry.*
 
 help:
 	@echo "Available targets:"
-	@echo "  all                - Build all tests (default)"
-	@echo "  test               - Run all tests"
-	@echo "  test-replayer      - Run replayer tests only"
-	@echo "  test-scheduler     - Run scheduler tests only"
-	@echo "  test-telemetry     - Run telemetry tests only"
+	@echo "  all                  - Build all tests (default)"
+	@echo "  test                 - Run all tests"
+	@echo "  test-replayer        - Run replayer tests only"
+	@echo "  test-scheduler       - Run scheduler tests only"
+	@echo "  test-telemetry       - Run telemetry tests only"
 	@echo "  test-kernel-registry - Run kernel registry tests only"
 	@echo "  test-kernel-accuracy - Run kernel accuracy tests only"
 	@echo "  test-clock-resolution - Run clock resolution and timing accuracy tests"
-	@echo "  test-signal-handler - Run signal handler tests only"
-	@echo "  clean              - Remove test binaries and temp files"
-	@echo "  help               - Show this help message"
+	@echo "  test-signal-handler  - Run signal handler tests only"
+	@echo "  test-param-accessor  - Run parameter accessor tests only"
+	@echo "  clean                - Remove test binaries and temp files"
+	@echo "  help                 - Show this help message"

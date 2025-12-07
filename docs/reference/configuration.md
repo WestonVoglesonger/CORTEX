@@ -11,7 +11,6 @@ for plugins. Plugins never read YAML.
 - `power.governor`, `power.turbo` - CPU power management settings (no struct fields exist)
 - `benchmark.metrics` array - Metric selection (currently collects all metrics; no struct field exists)
 - `realtime.deadline.*` (runtime_us, period_us, deadline_us) - DEADLINE scheduler parameters (no struct fields exist)
-- `plugins[].params` - Kernel-specific parameters (parsed to config.h:29 but set to NULL in main.c:82-83)
 - `plugins[].spec_version` - Kernel spec version (parsed to config.h:26 but never validated or used)
 - `plugins[].tolerances` - Per-plugin numerical tolerance specifications (no struct field; loaded from kernel spec.yaml)
 - `plugins[].oracle` - Per-plugin oracle reference paths (no struct field; referenced via kernel spec.yaml)
@@ -24,6 +23,7 @@ for plugins. Plugins never read YAML.
 - `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see replayer.c)
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
+- `plugins[].params` - Kernel-specific runtime parameters (✅ fully implemented with accessor API; see src/engine/params/README.md)
 
 See [docs/development/roadmap.md](../development/roadmap.md) for implementation timeline.
 
@@ -52,12 +52,24 @@ dataset:
 **Explicit mode (has `plugins:` section):**
 ```yaml
 plugins:
+  - name: "notch_iir"
+    status: ready
+    spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    params:
+      f0_hz: 60.0  # Notch frequency (Hz)
+      Q: 30.0      # Quality factor
   - name: "goertzel"
     status: ready
     spec_uri: "primitives/kernels/v1/goertzel@f32"
+    params:
+      alpha_low: 8.0
+      alpha_high: 13.0
+      beta_low: 13.0
+      beta_high: 30.0
 ```
 - Only runs explicitly listed kernels
 - Empty `plugins:` section means run zero kernels (valid for testing)
+- Parameters are kernel-specific (see kernel README for available params)
 
 ### Discovery Criteria
 

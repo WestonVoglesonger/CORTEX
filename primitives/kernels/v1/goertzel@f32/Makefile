@@ -2,7 +2,9 @@
 # Platform-specific shared library build
 
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -I../../../../src/engine/params
+PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
+
 
 # Detect platform and set extension/flag
 UNAME_S := $(shell uname -s)
@@ -25,8 +27,12 @@ all: $(PLUGIN_LIB)
 $(PLUGIN_OBJ): $(PLUGIN_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(PLUGIN_LIB): $(PLUGIN_OBJ)
-	$(CC) $(SOFLAG) -o $@ $^ -lm
+$(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB)
+	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(PARAMS_LIB) -lm
+
+# Build params library if it doesn't exist
+$(PARAMS_LIB):
+	$(MAKE) -C ../../../../src/engine/params
 
 clean:
 	rm -f $(PLUGIN_OBJ) $(PLUGIN_LIB)

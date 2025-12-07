@@ -34,21 +34,21 @@ output:
   include_raw_data: false
 
 # --- Plugin definitions (feed into ABI init) ---
-# Example plugin configuration:
+# Uncomment to run specific kernels (if omitted, auto-detects all built kernels)
 #
-# plugins:
-#   - name: "car"
-#     status: ready
-#     spec_uri: "primitives/kernels/v1/car@f32"
-#     spec_version: "1.0.0"
-#   
-#   - name: "notch_iir"
-#     status: ready
-#     spec_uri: "primitives/kernels/v1/notch_iir@f32"
-#     spec_version: "1.0.0"
-#     params:  # Optional: only if kernel has parameters
-#       f0_hz: 60.0
-#       Q: 30.0
-#
+plugins:
+  - name: "car"
+    status: ready
+    spec_uri: "primitives/kernels/v1/car@f32"
+    spec_version: "1.0.0"
+
+  - name: "notch_iir"
+    status: ready
+    spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    spec_version: "1.0.0"
+    params:  # ✅ Runtime parameters (fully supported!)
+      f0_hz: 60.0  # Notch frequency (Hz)
+      Q: 30.0      # Quality factor
+
 # The harness loads dimensions (W, H, C) from the kernel spec.yaml
 # and dtype from the spec. Dataset channels must match spec channels.

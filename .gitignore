@@ -218,6 +218,13 @@ tests/test_*
 # Project-specific documentation (local to repository instance)
 CLAUDE.md
 
+# Claude Code directory (personal dev tools, configs, MCP servers, local settings)
+.claude/
+
+# Static analysis caches
+.clang-tidy-cache/
+.clang-format-cache/
+
 # EDF dataset files (large, don't commit)
 datasets/eegmmidb/raw/*.edf
 datasets/eegmmidb/raw/*.event

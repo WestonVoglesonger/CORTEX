@@ -1,0 +1,41 @@
+# Test configuration for kernel parameter support
+# Tests notch_iir with European power line frequency (50Hz)
+
+cortex_version: 1
+
+system:
+  name: "cortex_params_test"
+  description: "Test kernel parameters (notch_iir with f0_hz=50Hz)"
+
+dataset:
+  path: "datasets/eegmmidb/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+
+realtime:
+  scheduler: fifo
+  priority: 90
+  cpu_affinity: [0]
+  deadline_ms: 500
+
+power:
+  governor: "performance"
+  turbo: false
+
+benchmark:
+  metrics: [latency, jitter, throughput]
+  parameters:
+    duration_seconds: 5
+    repeats: 1
+    warmup_seconds: 1
+  load_profile: "idle"
+
+plugins:
+  - name: "notch_iir"
+    status: ready
+    spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    spec_version: "1.0.0"
+    params:
+      f0_hz: 50.0  # European power line (50Hz instead of default 60Hz)
+      Q: 35.0      # Slightly narrower notch (default is 30.0)

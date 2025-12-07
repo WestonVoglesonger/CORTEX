@@ -293,6 +293,50 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
     return kernel_count;
 }
 
+/* Measure indentation level of a line (count leading spaces/tabs) */
+static int measure_indent(const char *str) {
+    if (!str) return 0;
+    int indent = 0;
+    while (str[indent] == ' ' || str[indent] == '\t') {
+        indent++;
+    }
+    return indent;
+}
+
+/* Check if next line is indented MORE than min_indent (peek without consuming) */
+static int peek_next_line_indented(FILE *fp, int min_indent) {
+    if (!fp) return 0;
+
+    long pos = ftell(fp);
+    if (pos < 0) return 0;  /* ftell error */
+
+    char line[1024];
+    int is_indented = 0;
+
+    if (fgets(line, sizeof(line), fp)) {
+        /* Indented if indentation is STRICTLY GREATER than minimum */
+        int indent = measure_indent(line);
+        is_indented = (indent > min_indent);
+    }
+    /* Else: EOF or error → treat as not indented (is_indented stays 0) */
+
+    /* Restore file position */
+    fseek(fp, pos, SEEK_SET);
+    return is_indented;
+}
+
+/* Strip leading indentation from line (modifies in place) */
+static void strip_indent(char *line) {
+    if (!line) return;
+
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+
+    if (p != line) {
+        memmove(line, p, strlen(p) + 1);
+    }
+}
+
 int cortex_config_load(const char *path, cortex_run_config_t *out) {
     if (!path || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -367,14 +411,62 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 continue;
             }
             if (starts_with(raw, "params:")) {
-                /* Parse kernel-specific parameters (simple approach for now) */
-                const char *v = raw + strlen("params:");
-                while (*v == ' ') v++;
-                /* For now, just store the raw string - plugins can parse it */
-                char tmp[1024]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
-                trim(tmp);
-                strncpy(out->plugins[plugin_index].params, tmp, sizeof(out->plugins[plugin_index].params)-1);
-                out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params)-1] = '\0';
+                /* Parse kernel-specific parameters (supports block-style and inline) */
+                const char *rest = raw + strlen("params:");
+                while (*rest == ' ') rest++;
+
+                char params_buffer[4096] = {0};
+
+                if (*rest == '\0' || *rest == '\n') {
+                    /* Measure base indentation of the params: line */
+                    int base_indent = measure_indent(line);
+
+                    /* Block-style: read lines MORE indented than params: line */
+                    while (peek_next_line_indented(f, base_indent)) {
+                        char indented_line[1024];
+                        if (!fgets(indented_line, sizeof(indented_line), f)) break;
+
+                        strip_indent(indented_line);
+
+                        /* Strip inline comments (YAML standard behavior) */
+                        char *comment_pos = strchr(indented_line, '#');
+                        if (comment_pos) {
+                            *comment_pos = '\0';
+                        }
+
+                        /* Remove trailing newline and whitespace */
+                        size_t len = strlen(indented_line);
+                        while (len > 0 && (indented_line[len-1] == '\n' ||
+                                           indented_line[len-1] == '\r' ||
+                                           isspace((unsigned char)indented_line[len-1]))) {
+                            indented_line[--len] = '\0';
+                        }
+
+                        /* Skip empty lines (after comment stripping) */
+                        if (len == 0) {
+                            continue;
+                        }
+
+                        /* Append to buffer with newline separator */
+                        size_t current_len = strlen(params_buffer);
+                        if (current_len + len + 2 < sizeof(params_buffer)) {
+                            if (current_len > 0) {
+                                strcat(params_buffer, "\n");
+                            }
+                            strcat(params_buffer, indented_line);
+                        }
+                    }
+                } else {
+                    /* Inline-style: "f0_hz: 50.0, Q: 35.0" */
+                    strncpy(params_buffer, rest, sizeof(params_buffer) - 1);
+                    params_buffer[sizeof(params_buffer) - 1] = '\0';
+                }
+
+                /* Store params */
+                trim(params_buffer);
+                strncpy(out->plugins[plugin_index].params, params_buffer,
+                        sizeof(out->plugins[plugin_index].params) - 1);
+                out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params) - 1] = '\0';
                 continue;
             }
             /* runtime: no longer parsed - loaded from spec.yaml */
