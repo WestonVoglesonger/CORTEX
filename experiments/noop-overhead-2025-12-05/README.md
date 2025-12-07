@@ -261,6 +261,7 @@ Instead we observe:
 ```
 experiments/noop-overhead-2025-12-05/
 ├── README.md                # This file
+├── LINUX_REPLICATION.md     # Instructions for running on Linux
 ├── config-idle.yaml         # Idle profile configuration
 ├── config-medium.yaml       # Medium profile configuration
 ├── scripts/                 # Automation and analysis scripts
@@ -269,6 +270,9 @@ experiments/noop-overhead-2025-12-05/
 │   ├── generate_noop_comparison.py    # Figure generation
 │   ├── calculate_overhead_stats.py    # Statistical analysis
 │   └── create_all_figures.sh          # Wrapper for all figures
+├── technical-report/        # Comprehensive technical analysis
+│   ├── README.md                      # Report overview
+│   └── HARNESS_OVERHEAD_ANALYSIS.md   # Complete analysis
 ├── run-001-idle/            # Idle results (n=1199, min=1µs, median=5µs)
 │   ├── kernel-data/noop/telemetry.ndjson  # Raw telemetry
 │   ├── analysis/SUMMARY.md                # CORTEX analysis
@@ -354,9 +358,11 @@ python3 scripts/calculate_overhead_stats.py
 ## Related Documentation
 
 - **Validation study**: `experiments/dvfs-validation-2025-11-15/` - DVFS effects on real kernels
+- **Linux replication**: `experiments/linux-governor-validation-2025-12-05/` - Cross-platform DVFS validation
 - **Measurement validity**: `experiments/dvfs-validation-2025-11-15/technical-report/measurement-validity-analysis.md` - SHIM comparison
 - **Benchmarking methodology**: `docs/architecture/benchmarking-methodology.md` - Timing and Measurement Validity section
 - **No-op kernel**: `primitives/kernels/v1/noop@f32/README.md` - Implementation details
+- **Linux replication guide**: `LINUX_REPLICATION.md` - Instructions for running this experiment on Linux
 
 ---
 

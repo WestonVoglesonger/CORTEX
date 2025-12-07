@@ -25,6 +25,8 @@ This study validates the DVFS/Idle Paradox discovered on macOS by using Linux's 
 | macOS | 284.3 µs (idle) | 123.1 µs (medium) | 2.31× |
 | Linux | 537.7 µs (powersave) | 167.6 µs (performance) | 3.21× |
 
+**Note**: These latency differences (167-538 µs range) are **167-538× larger** than the harness overhead (1 µs, measured empirically via noop kernel in `experiments/noop-overhead-2025-12-05/`), confirming that DVFS effects dominate measurement methodology.
+
 ## Major Discoveries
 
 ### 1. The Schedutil Trap
@@ -160,6 +162,9 @@ stress-ng --cpu 4 --cpu-load 50 &
 ## References
 
 - macOS DVFS Validation: `experiments/dvfs-validation-2025-11-15/`
+- Harness Overhead Measurement: `experiments/noop-overhead-2025-12-05/`
+  - Empirically validates that harness overhead (1 µs) is negligible compared to DVFS effects (3.21× on Linux)
+  - Provides measurement methodology validation for all CORTEX kernels
 - Technical Report: `technical-report/COMPREHENSIVE_VALIDATION_REPORT.md`
 - Architecture Decision Record: `docs/architecture/adr/adr-002-benchmark-reproducibility-macos.md`
 
