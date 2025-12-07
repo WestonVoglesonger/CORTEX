@@ -414,15 +414,22 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
 
                         strip_indent(indented_line);
 
-                        /* Remove trailing newline */
-                        size_t len = strlen(indented_line);
-                        if (len > 0 && indented_line[len-1] == '\n') {
-                            indented_line[len-1] = '\0';
-                            len--;
+                        /* Strip inline comments (YAML standard behavior) */
+                        char *comment_pos = strchr(indented_line, '#');
+                        if (comment_pos) {
+                            *comment_pos = '\0';
                         }
 
-                        /* Skip empty lines and comments */
-                        if (len == 0 || indented_line[0] == '#') {
+                        /* Remove trailing newline and whitespace */
+                        size_t len = strlen(indented_line);
+                        while (len > 0 && (indented_line[len-1] == '\n' ||
+                                           indented_line[len-1] == '\r' ||
+                                           isspace((unsigned char)indented_line[len-1]))) {
+                            indented_line[--len] = '\0';
+                        }
+
+                        /* Skip empty lines (after comment stripping) */
+                        if (len == 0) {
                             continue;
                         }
 
