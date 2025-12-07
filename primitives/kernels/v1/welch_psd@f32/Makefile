@@ -27,5 +27,9 @@ $(TARGET): $(OBJS) $(PARAMS_LIB)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Build params library if it doesn't exist
+$(PARAMS_LIB):
+	$(MAKE) -C ../../../../src/engine/params
+
 clean:
 	rm -f $(OBJS) $(TARGET)

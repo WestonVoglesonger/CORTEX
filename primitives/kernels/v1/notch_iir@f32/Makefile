@@ -29,6 +29,10 @@ $(PLUGIN_OBJ): $(PLUGIN_SRC)
 $(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB)
 	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(PARAMS_LIB) -lm
 
+# Build params library if it doesn't exist
+$(PARAMS_LIB):
+	$(MAKE) -C ../../../../src/engine/params
+
 clean:
 	rm -f $(PLUGIN_OBJ) $(PLUGIN_LIB)
 

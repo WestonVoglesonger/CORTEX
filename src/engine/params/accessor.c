@@ -44,7 +44,8 @@ static const char* find_value(const char *params, const char *key, char *value_b
 
                 /* Extract value until newline, comma, ampersand, or end */
                 size_t i = 0;
-                while (*p && *p != '\n' && *p != ',' && *p != '&' && i < buf_size - 1) {
+                while (*p && *p != '\n' && *p != ',' && *p != '&') {
+                    if (i >= buf_size - 1) break;  /* Ensure room for null terminator */
                     value_buf[i++] = *p++;
                 }
                 value_buf[i] = '\0';

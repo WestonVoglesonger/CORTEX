@@ -101,6 +101,22 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     double f0_hz = cortex_param_float(params_str, "f0_hz", DEFAULT_NOTCH_F0_HZ);
     double Q = cortex_param_float(params_str, "Q", DEFAULT_NOTCH_Q);
 
+    /* Validate parameters */
+    if (f0_hz <= 0.0) {
+        fprintf(stderr, "[notch_iir] error: f0_hz must be positive (got %.1f)\n", f0_hz);
+        return result;
+    }
+    if (Q <= 0.0) {
+        fprintf(stderr, "[notch_iir] error: Q must be positive (got %.2f)\n", Q);
+        return result;
+    }
+    double nyquist = config->sample_rate_hz / 2.0;
+    if (f0_hz >= nyquist) {
+        fprintf(stderr, "[notch_iir] error: f0_hz (%.1f) must be below Nyquist frequency (%.1f)\n",
+                f0_hz, nyquist);
+        return result;
+    }
+
     /* Allocate state structure */
     notch_iir_state_t *state = (notch_iir_state_t *)calloc(1, sizeof(notch_iir_state_t));
     if (!state) {
