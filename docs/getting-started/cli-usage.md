@@ -266,7 +266,6 @@ cortex clean --results     # Clean only results directory
 
 **What gets cleaned:**
 - Build artifacts (`.o`, `.dylib`, `.so` files)
-- Generated configs (`primitives/configs/generated/`)
 - Results directory (`results/`)
 - Analysis outputs (`results/analysis/`)
 

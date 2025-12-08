@@ -31,8 +31,7 @@ primitives/
 │   └── v2/            # Version 2 kernels (future)
 │
 └── configs/           # Benchmark configuration templates
-    ├── cortex.yaml    # Production benchmark config
-    └── generated/     # Auto-generated configs (gitignored)
+    └── cortex.yaml    # Production benchmark config
 ```
 
 ## Primitives Categories

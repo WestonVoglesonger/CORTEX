@@ -571,6 +571,34 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
     }
 
+    /* Apply environment variable overrides */
+    const char *duration_override = getenv("CORTEX_DURATION_OVERRIDE");
+    if (duration_override && strlen(duration_override) > 0) {
+        int val = atoi(duration_override);
+        if (val > 0) {
+            out->benchmark.parameters.duration_seconds = val;
+            printf("[config] Override duration: %d seconds\n", val);
+        }
+    }
+
+    const char *repeats_override = getenv("CORTEX_REPEATS_OVERRIDE");
+    if (repeats_override && strlen(repeats_override) > 0) {
+        int val = atoi(repeats_override);
+        if (val > 0) {
+            out->benchmark.parameters.repeats = val;
+            printf("[config] Override repeats: %d\n", val);
+        }
+    }
+
+    const char *warmup_override = getenv("CORTEX_WARMUP_OVERRIDE");
+    if (warmup_override && strlen(warmup_override) > 0) {
+        int val = atoi(warmup_override);
+        if (val >= 0) {  /* Allow 0 warmup */
+            out->benchmark.parameters.warmup_seconds = val;
+            printf("[config] Override warmup: %d seconds\n", val);
+        }
+    }
+
     fclose(f);
     return 0;
 }
@@ -612,6 +640,70 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
             }
         }
     }
+    return 0;
+}
+
+int cortex_apply_kernel_filter(cortex_run_config_t *cfg, const char *filter) {
+    if (!cfg || !filter || strlen(filter) == 0) {
+        return -1;
+    }
+
+    /* Make a copy of filter string for strtok */
+    char filter_copy[256];
+    strncpy(filter_copy, filter, sizeof(filter_copy) - 1);
+    filter_copy[sizeof(filter_copy) - 1] = '\0';
+
+    /* Build filtered list in temporary array */
+    cortex_plugin_entry_cfg_t filtered_plugins[CORTEX_MAX_PLUGINS];
+    size_t filtered_count = 0;
+
+    /* Parse comma-separated filter */
+    char *token = strtok(filter_copy, ",");
+    while (token) {
+        /* Trim leading whitespace */
+        while (*token == ' ' || *token == '\t') token++;
+
+        /* Trim trailing whitespace */
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+
+        if (strlen(token) == 0) {
+            token = strtok(NULL, ",");
+            continue;
+        }
+
+        /* Find matching plugin in current list */
+        int found = 0;
+        for (size_t i = 0; i < cfg->plugin_count; i++) {
+            if (strcmp(cfg->plugins[i].name, token) == 0) {
+                if (filtered_count < CORTEX_MAX_PLUGINS) {
+                    filtered_plugins[filtered_count++] = cfg->plugins[i];
+                    found = 1;
+                }
+                break;
+            }
+        }
+
+        if (!found) {
+            fprintf(stderr, "[harness] warning: kernel '%s' in CORTEX_KERNEL_FILTER not found (skipped)\n", token);
+        }
+
+        token = strtok(NULL, ",");
+    }
+
+    if (filtered_count == 0) {
+        fprintf(stderr, "[harness] error: CORTEX_KERNEL_FILTER resulted in zero kernels\n");
+        return -1;
+    }
+
+    /* Copy filtered list back to config */
+    memcpy(cfg->plugins, filtered_plugins,
+           filtered_count * sizeof(cortex_plugin_entry_cfg_t));
+    cfg->plugin_count = filtered_count;
+
     return 0;
 }
 

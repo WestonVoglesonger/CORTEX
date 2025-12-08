@@ -183,9 +183,6 @@ results/validation-*/**/*.html
 results/validation-*/**/*.png
 results/validation-*/**/harness.log
 
-# Generated config files (created by CLI at runtime)
-primitives/configs/generated/
-
 # Temporary files
 tmp/
 temp/

@@ -461,7 +461,6 @@ make -C tests test-kernel-registry
 
 Basic CLI smoke tests:
 - Kernel discovery from registry
-- YAML config generation
 - Kernel name extraction from paths
 
 **Run:**
@@ -471,7 +470,6 @@ python3 tests/test_cli.py
 
 **Coverage:**
 - CLI entry points functional
-- Config generation doesn't crash
 - Kernel enumeration works
 
 ## Oracle-Based Validation

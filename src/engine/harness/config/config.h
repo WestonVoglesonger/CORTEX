@@ -83,6 +83,17 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
 /* Auto-detect and populate built kernels. Returns number of kernels found, -1 on error. */
 int cortex_discover_kernels(cortex_run_config_t *cfg);
 
+/**
+ * Apply kernel filter from environment variable.
+ * Filters the plugin list to only include specified kernels.
+ * Works on ANY plugin source (discovery OR explicit config).
+ *
+ * @param cfg Run configuration with plugins array
+ * @param filter Comma-separated kernel names (e.g., "goertzel,car")
+ * @return 0 on success, -1 on error (zero kernels after filtering)
+ */
+int cortex_apply_kernel_filter(cortex_run_config_t *cfg, const char *filter);
+
 #endif /* CORTEX_HARNESS_CONFIG_H */
 
 
