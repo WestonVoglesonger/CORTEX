@@ -1,0 +1,15 @@
+dataset:
+  name: "fake"
+  description: "Synthetic test dataset for CORTEX development and testing"
+
+format:
+  type: "float32"
+  channels: 64
+  sample_rate_hz: 160
+  endian: "little"
+  layout: "interleaved"
+
+recordings:
+  - id: "synthetic"
+    description: "Synthetic EEG data for testing"
+    file: "synthetic.float32"

@@ -23,7 +23,7 @@
 # Requirements:
 #   - Root access (for governor manipulation)
 #   - CORTEX built and ready (run `make all` first)
-#   - Dataset available at datasets/eegmmidb/converted/S001R03.float32
+#   - Dataset available at primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
 set -euo pipefail
 

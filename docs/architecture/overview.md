@@ -120,7 +120,7 @@ The replayer owns stress-ng because it controls the **timing environment** for r
 
 **Formats supported**:
 - Float32 raw (current)
-- EDF+ (via conversion scripts in `datasets/tools/`)
+- EDF+ (dataset primitives include pre-converted files; see docs/guides/adding-datasets.md for adding new datasets)
 
 ### 3. Scheduler (`src/engine/scheduler/`)
 

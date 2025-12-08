@@ -53,7 +53,7 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 ## Channel Order
 - **Source of truth**: EDF header **signal order 0–63** for each file. We snapshot channel names from the first used record and reuse that order for all processing.
 - **Montage reference**: Official 64-electrode 10–10 montage figure provided with the dataset documentation (numbers under each label show the order 1–64; EDF signals are 0–63).
-- **Saved snapshot**: [channel_order.json](../../datasets/eegmmidb/channel_order.json) (array of 64 channel names in EDF order)
+- **Saved snapshot**: [channel_order.json](../../primitives/datasets/v1/physionet-motor-imagery/channel_order.json) (array of 64 channel names in EDF order)
 
 ## Units
 - **EEG potentials**: Physical units as recorded in the EDF header, typically **microvolts (µV)**. All CORTEX kernels process and report values in µV.
@@ -82,28 +82,25 @@ This dataset was obtained via PhysioNet, where it is publicly available. It orig
 
 ### Overview
 
-CORTEX currently requires EDF files to be converted to float32 binary format. The replayer is hardcoded to read float32 data. Conversion scripts and tools are provided in the `datasets/tools/` directory.
+CORTEX currently requires EDF files to be converted to float32 binary format. The replayer is hardcoded to read float32 data. Conversion scripts and tools are provided in the `` directory.
 
 **Note:** Dtype flexibility (Q15/Q7 support) is architecturally designed but not yet implemented. See [future-enhancements.md](../development/future-enhancements.md#quantization-support-q15q7) for planned quantization support in Spring 2026.
 
 ### Quick Start
 
 ```bash
-# 1. Download EDF files from PhysioNet
-cd datasets/tools
-./download_edf.sh
+# Dataset files are pre-converted and included in the repository
+# View available dataset primitives
+ls -lh primitives/datasets/v1/physionet-motor-imagery/converted/
 
-# 2. Convert to float32 binary
-python3 convert_edf_to_float32.py S001R03 S001R07 S001R11
-
-# 3. Verify conversion
-ls -lh ../datasets/eegmmidb/converted/
+# Check dataset metadata
+cat primitives/datasets/v1/physionet-motor-imagery/spec.yaml
 ```
 
 ### Directory Structure
 
 ```
-datasets/eegmmidb/
+primitives/datasets/v1/physionet-motor-imagery/
 ├── raw/                         # Git-ignored EDF files
 │   ├── S001R03.edf
 │   └── ...
@@ -142,7 +139,7 @@ Update `primitives/configs/cortex.yaml` to point to converted dataset:
 
 ```yaml
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
   format: "float32"
   channels: 64
   sample_rate_hz: 160
@@ -150,43 +147,43 @@ dataset:
 
 ### Extending to Other Subjects
 
+### Using Different Recordings
+
+To use different recordings from the dataset:
+
 ```bash
-# Download different subject
-./download_edf.sh S002
+# List available recordings
+ls primitives/datasets/v1/physionet-motor-imagery/converted/
 
-# Convert new subject
-python3 convert_edf_to_float32.py S002R03 S002R07 S002R11
-
-# Update cortex.yaml
-# dataset.path: "datasets/eegmmidb/converted/S002R03.float32"
+# Update config to use a different recording
+# Edit primitives/configs/cortex.yaml:
+#   dataset.path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R07.float32"
 ```
 
-### Verification
+### Dataset Metadata
 
-After conversion, verify:
-- Binary files created: `*.float32` (~4.9MB each)
-- Metadata files created: `*_metadata.json`
-- Channel order file: `channel_order.json`
+Each dataset includes:
+- Binary files: `*.float32` (~4.9MB each for 125s recordings)
+- Metadata files: `*_metadata.json`
+- Channel mapping: `channel_order.json` (64 channel names in EDF order)
 - Sample count: 20,000 per channel (125s at 160Hz)
+
+### Adding New Datasets
+
+See `docs/guides/adding-datasets.md` for instructions on creating new dataset primitives.
 
 ### Troubleshooting
 
-**Download failures:**
+**File not found errors:**
 ```bash
-# Check network connectivity and retry
-./download_edf.sh
-```
+# Verify dataset path exists
+ls -l primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
-**Conversion errors:**
-```bash
-# Ensure dependencies installed
-pip install -e .
-
-# Check EDF file integrity
-python3 -c "import pyedflib; f = pyedflib.EdfReader('S001R03.edf'); print(f.signals_in_file)"
+# Check config file
+cat primitives/configs/cortex.yaml | grep "path:"
 ```
 
 **Missing metadata:**
 - Metadata files are auto-generated during conversion
-- Check `datasets/eegmmidb/converted/*_metadata.json`
+- Check `primitives/datasets/v1/physionet-motor-imagery/converted/*_metadata.json`
 - Re-run conversion if missing

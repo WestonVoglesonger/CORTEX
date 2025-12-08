@@ -124,16 +124,6 @@ class HarnessRunner:
             self.log.error(f"{config_path} exists but is not a file")
             return None
 
-        # Read config to get benchmark parameters for progress tracking
-        try:
-            config_data = self.config.load_yaml(config_path)
-            duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
-            repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
-            warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
-            total_time = warmup + (repeats * duration)
-        except Exception:
-            total_time = None  # Fall back to no progress calculation
-
         # Build command
         cmd = [HARNESS_BINARY_PATH, 'run', config_path]
 

@@ -35,7 +35,7 @@ make all
 ls primitives/kernels/v1/noop@f32/libnoop.so
 
 # Verify dataset exists
-ls datasets/eegmmidb/converted/S001R03.float32
+ls primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
 # Install stress-ng
 sudo apt install stress-ng   # Debian/Ubuntu

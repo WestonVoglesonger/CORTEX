@@ -418,7 +418,7 @@ make plugins
 grep "path:" primitives/configs/cortex.yaml
 
 # Verify file exists
-ls -lh datasets/eegmmidb/converted/S001R03.float32
+ls -lh primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
 # Fix path in config if needed
 vim primitives/configs/cortex.yaml
@@ -435,7 +435,7 @@ vim primitives/configs/cortex.yaml
 **Solution**:
 ```bash
 # Check dataset size
-ls -lh datasets/eegmmidb/converted/*.float32
+ls -lh primitives/datasets/v1/physionet-motor-imagery/converted/*.float32
 
 # Calculate duration (assuming 64ch @ 160Hz float32)
 # bytes / (64 channels * 160 samples/sec * 4 bytes/float) = seconds
@@ -457,7 +457,7 @@ cortex run --kernel {name} --duration 60
 **Solution**:
 ```bash
 # Check dataset metadata
-cat datasets/eegmmidb/converted/*_metadata.json
+cat primitives/datasets/v1/physionet-motor-imagery/converted/*_metadata.json
 
 # Update config to match
 vim primitives/configs/cortex.yaml

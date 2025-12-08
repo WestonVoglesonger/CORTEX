@@ -39,7 +39,7 @@ When the `plugins:` section is **omitted** from the configuration file, CORTEX a
 ```yaml
 cortex_version: 1
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
   channels: 64
   sample_rate_hz: 160
 # No plugins section - auto-detect mode

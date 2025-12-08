@@ -5,9 +5,9 @@ system:
   description: "EEG-first benchmark (real config)"
 
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
   format: "float32"
-  channels: 64 
+  channels: 64
   sample_rate_hz: 160  
 
 realtime:

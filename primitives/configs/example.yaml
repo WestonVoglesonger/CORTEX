@@ -5,8 +5,8 @@ system:
   description: "Example EEG benchmark with fake data"
 
 dataset:
-  path: "datasets/fake/test.raw"
-  format: "raw"
+  path: "primitives/datasets/v1/fake/synthetic.float32"
+  format: "float32"
   channels: 4
   sample_rate_hz: 160
 

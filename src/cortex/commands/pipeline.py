@@ -220,6 +220,7 @@ def execute(args):
         logger=ConsoleLogger()
     )
 
+    # Run all kernels with default config
     results_dir = runner.run_all_kernels(
         run_name=run_name,
         duration=args.duration,

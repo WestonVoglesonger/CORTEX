@@ -149,7 +149,7 @@ To reproduce these exact results:
 
 1. **Platform**: macOS (Darwin 23.x or similar), Apple Silicon recommended
 2. **Install dependencies**: `brew install stress-ng`
-3. **Dataset**: Use `datasets/eegmmidb/converted/S001R03.float32`
+3. **Dataset**: Use `primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32`
 4. **Build kernels**: `make plugins`
 5. **Run experiments** using provided configurations:
 
