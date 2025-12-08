@@ -31,8 +31,7 @@ primitives/
 │   └── v2/            # Version 2 kernels (future)
 │
 └── configs/           # Benchmark configuration templates
-    ├── cortex.yaml    # Production benchmark config
-    └── generated/     # Auto-generated configs (gitignored)
+    └── cortex.yaml    # Production benchmark config
 ```
 
 ## Primitives Categories
@@ -94,7 +93,7 @@ cortex_version: 1
 
 # Dataset configuration
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
   sample_rate_hz: 160
   channels: 64
 

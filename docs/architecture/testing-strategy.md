@@ -461,7 +461,6 @@ make -C tests test-kernel-registry
 
 Basic CLI smoke tests:
 - Kernel discovery from registry
-- YAML config generation
 - Kernel name extraction from paths
 
 **Run:**
@@ -471,7 +470,6 @@ python3 tests/test_cli.py
 
 **Coverage:**
 - CLI entry points functional
-- Config generation doesn't crash
 - Kernel enumeration works
 
 ## Oracle-Based Validation
@@ -625,9 +623,9 @@ Before submitting a pull request:
 **Format:** Float32 raw binary (little-endian)
 - 64 channels
 - 160 Hz sampling rate
-- Converted from EDF using `datasets/tools/convert_edf_to_raw.py`
+- Converted from EDF using `dataset conversion utilities (see docs/guides/adding-datasets.md)`
 
-**Location:** `datasets/eegmmidb/converted/S001R03.float32`
+**Location:** `primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32`
 
 **Used by:**
 - `test_kernel_accuracy` - Real EEG data for validation
@@ -635,9 +633,9 @@ Before submitting a pull request:
 
 **Conversion:**
 ```bash
-python3 datasets/tools/convert_edf_to_raw.py \
-    datasets/eegmmidb/edf/S001R03.edf \
-    datasets/eegmmidb/converted/S001R03.float32
+python3 dataset conversion utilities (see docs/guides/adding-datasets.md) \
+    primitives/datasets/v1/physionet-motor-imagery/edf/S001R03.edf \
+    primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 ```
 
 ## Cross-Platform Testing

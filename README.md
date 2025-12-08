@@ -26,8 +26,8 @@ CORTEX/
 │   └── engine/        # C engine (harness, replayer, scheduler, plugin ABI)
 ├── primitives/        # Composable building blocks (AWS philosophy)
 │   ├── kernels/       # Signal processing kernel implementations
+│   ├── datasets/      # EEG dataset primitives (versioned)
 │   └── configs/       # Configuration templates
-├── datasets/          # EEG datasets for benchmarking
 ├── results/           # Benchmark outputs (generated, gitignored)
 ├── tests/             # Comprehensive test suite
 └── docs/              # Complete documentation
@@ -197,13 +197,13 @@ CORTEX/
 │   │   ├── notch_iir@f32/         # IIR notch filter (60 Hz, configurable f0/Q)
 │   │   ├── welch_psd@f32/         # Welch PSD (configurable FFT/overlap)
 │   │   └── noop@f32/              # No-op kernel (harness overhead baseline)
+│   ├── datasets/v1/               # Dataset primitives (EEG recordings)
+│   │   ├── physionet-motor-imagery/ # PhysioNet Motor Imagery dataset
+│   │   │   ├── spec.yaml          # Metadata (channels, sample_rate, recordings)
+│   │   │   └── converted/*.float32 # Preprocessed binary data
+│   │   └── fake/                  # Synthetic test dataset
 │   └── configs/                   # Configuration templates (YAML)
 │       └── cortex.yaml            # Default benchmark configuration
-│
-├── datasets/                      # EEG datasets for benchmarking
-│   ├── tools/                     # Dataset conversion utilities
-│   │   └── edf_to_float32.py      # EDF → float32 converter
-│   └── *.float32                  # Preprocessed binary datasets (gitignored)
 │
 ├── experiments/                   # Validation studies & measurement methodology
 │   ├── dvfs-validation-2025-11-15/          # Idle Paradox discovery (macOS)
@@ -244,7 +244,7 @@ CORTEX/
 - **Getting Started**: [Quick Start](docs/getting-started/quickstart.md) | [CLI Usage](docs/getting-started/cli-usage.md)
 - **Reference**: [Plugin API](docs/reference/plugin-interface.md) | [Configuration](docs/reference/configuration.md)
 - **Architecture**: [System Overview](docs/architecture/overview.md) | [Benchmarking Methodology](docs/architecture/benchmarking-methodology.md)
-- **Guides**: [Adding Kernels](docs/guides/adding-kernels.md) | [Troubleshooting](docs/guides/troubleshooting.md)
+- **Guides**: [Adding Kernels](docs/guides/adding-kernels.md) | [Adding Datasets](docs/guides/adding-datasets.md) | [Troubleshooting](docs/guides/troubleshooting.md)
 - **Validation**: [DVFS Validation](experiments/dvfs-validation-2025-11-15/) | [Harness Overhead](experiments/noop-overhead-2025-12-05/) | [Linux Governor Study](experiments/linux-governor-validation-2025-12-05/)
 - **Development**: [Roadmap](docs/development/roadmap.md) | [Contributing](CONTRIBUTING.md)
 
@@ -328,7 +328,7 @@ cortex analyze results/run-20250112-143022/
 # Override configuration parameters
 ./src/engine/harness/cortex run primitives/configs/cortex.yaml \
   --kernel primitives/kernels/bandpass_fir/bandpass_fir.dylib \
-  --dataset datasets/S001R01.float32 \
+  --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
   --deadline-us 10000
 ```
 
@@ -338,12 +338,11 @@ cortex analyze results/run-20250112-143022/
 # Browse available kernel implementations
 ls primitives/kernels/
 
+# View dataset primitives
+ls primitives/datasets/v1/
+
 # View configuration templates
 cat primitives/configs/cortex.yaml
-
-# Convert EEG datasets to float32 format
-python datasets/tools/edf_to_float32.py \
-  input.edf output.float32 --channels 64 --duration 60
 ```
 
 ### Analysis and Visualization

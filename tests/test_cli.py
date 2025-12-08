@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-from cortex.utils.config import discover_kernels, generate_config
+from cortex.utils.discovery import discover_kernels
 from cortex.utils.analyzer import TelemetryAnalyzer
 
 def test_discover_kernels():
@@ -19,18 +19,6 @@ def test_discover_kernels():
     assert len(kernels) > 0, "Should find at least one kernel"
     assert 'goertzel' in [k['name'] for k in kernels], "Should find goertzel kernel"
     print("✓ test_discover_kernels passed")
-
-def test_generate_config():
-    """Test YAML config generation"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_path = Path(tmpdir) / "test.yaml"
-        result = generate_config("goertzel", str(output_path))
-        assert result, "Config generation should succeed"
-        assert output_path.exists(), "Config file should be created"
-        content = output_path.read_text()
-        assert "goertzel" in content, "Config should contain kernel name"
-        print("✓ test_generate_config passed")
 
 def test_extract_kernel_name():
     """Test kernel name extraction from paths"""
@@ -49,6 +37,5 @@ def test_extract_kernel_name():
 if __name__ == '__main__':
     print("Running CORTEX CLI smoke tests...")
     test_discover_kernels()
-    test_generate_config()
     test_extract_kernel_name()
     print("\nAll tests passed! ✓")

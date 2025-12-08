@@ -15,12 +15,11 @@ CORTEX/
 ├── primitives/        # Computational kernels and configurations
 │   ├── kernels/       # Kernel implementations organized by version
 │   │   └── v1/        # Version 1 kernels (bandpass_fir@f32/, car@f32/, etc.)
+│   ├── datasets/      # Dataset primitives (versioned EEG recordings)
+│   │   └── v1/        # Version 1 datasets
+│   │       ├── physionet-motor-imagery/ # PhysioNet Motor Imagery dataset
+│   │       └── fake/  # Synthetic test datasets
 │   └── configs/       # Kernel configuration files (YAML)
-├── datasets/          # Dataset management and conversion tools
-│   ├── eegmmidb/      # EEG Motor Movement/Imagery Database
-│   │   └── converted/ # Converted CORTEX binary format
-│   ├── fake/          # Synthetic test datasets
-│   └── tools/         # Dataset conversion scripts
 ├── src/               # All source code
 │   ├── cortex/        # Python CLI application
 │   │   ├── commands/  # CLI command implementations
@@ -60,11 +59,11 @@ Understanding this structure is essential for contributing effectively.
 - `primitives/configs/cortex.yaml` configures which kernels to load
 - Each kernel directory contains: `spec.yaml`, `README.md`, `oracle.py`, `{name}.c`, `Makefile`
 
-**datasets/**
-- `eegmmidb/converted/` stores the EEG Motor Movement/Imagery Database in CORTEX binary format
-- `fake/` contains synthetic test datasets for development
-- `tools/` has Python scripts for dataset conversion (e.g., EDF to CORTEX format)
-- Dataset files are tracked in git (small synthetic datasets) or gitignored (large real datasets)
+**primitives/datasets/**
+- `v1/physionet-motor-imagery/converted/` stores the PhysioNet Motor Imagery dataset in float32 binary format
+- `v1/fake/` contains synthetic test datasets for development
+- Each dataset includes `spec.yaml` metadata file and `converted/*.float32` binary files
+- Dataset binary files are tracked in git (small synthetic datasets) or gitignored (large real datasets)
 
 **src/**
 - All source code organized by component
@@ -124,9 +123,9 @@ cortex validate
 - `src/cortex/` - Python CLI application code
 - `src/engine/harness/` - C benchmark harness
 - `primitives/kernels/v1/` - Kernel implementations
+- `primitives/datasets/v1/` - Dataset primitives
 - `primitives/configs/` - Configuration files
 - `tests/` - Test suites (Python and C)
-- `datasets/tools/` - Dataset conversion scripts
 
 ## How to Contribute
 
@@ -409,7 +408,7 @@ cortex pipeline
 
 1. **Adding a new kernel**: Follow the "Developing Kernels" section above, then validate with `cortex validate --kernel {name}`
 
-2. **Converting datasets**: Use tools in `datasets/tools/` to convert EDF datasets to CORTEX binary format
+2. **Adding datasets**: See `docs/guides/adding-datasets.md` for creating new dataset primitives in `primitives/datasets/v1/`
 
 3. **Modifying the C engine**: Edit code in `src/engine/harness/`, rebuild with `make harness`, and run tests
 

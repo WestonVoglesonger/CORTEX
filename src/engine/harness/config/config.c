@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>       /* for errno */
 #include <dirent.h>      /* for readdir() */
 #include <sys/stat.h>    /* for stat() */
 #include <unistd.h>      /* for access() */
@@ -482,19 +483,6 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             }
         }
 
-            /* Runtime config now loaded from spec.yaml, not YAML */
-            if (starts_with(raw, "- name:")) {
-                plugin_index++;  /* Move to next plugin slot */
-                if (plugin_index >= CORTEX_MAX_PLUGINS) break;
-                memset(&out->plugins[plugin_index], 0, sizeof(out->plugins[plugin_index]));
-                const char *v = raw + strlen("- name:"); while (*v == ' ') v++;
-                char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0'; trim(tmp); unquote(tmp);
-                strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
-                out->plugins[plugin_index].name[sizeof(out->plugins[plugin_index].name)-1] = '\0';
-                st = IN_PLUGIN;  /* Start parsing the new plugin */
-                continue;
-            }
-
         if (st == IN_DATASET) {
             if (starts_with(raw, "path:")) { const char *v = raw + strlen("path:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.path, tmp, sizeof(out->dataset.path)-1); out->dataset.path[sizeof(out->dataset.path)-1] = '\0'; continue; }
             if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.format, tmp, sizeof(out->dataset.format)-1); out->dataset.format[sizeof(out->dataset.format)-1] = '\0'; continue; }
@@ -571,6 +559,52 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
     }
 
+    /* Apply environment variable overrides */
+    const char *duration_override = getenv("CORTEX_DURATION_OVERRIDE");
+    if (duration_override && strlen(duration_override) > 0) {
+        char *endptr;
+        errno = 0;
+        long val = strtol(duration_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val > 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.duration_seconds = (uint32_t)val;
+            printf("[config] Override duration: %u seconds\n", out->benchmark.parameters.duration_seconds);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_DURATION_OVERRIDE '%s' (ignored)\n",
+                    duration_override);
+        }
+    }
+
+    const char *repeats_override = getenv("CORTEX_REPEATS_OVERRIDE");
+    if (repeats_override && strlen(repeats_override) > 0) {
+        char *endptr;
+        errno = 0;
+        long val = strtol(repeats_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val > 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.repeats = (uint32_t)val;
+            printf("[config] Override repeats: %u\n", out->benchmark.parameters.repeats);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_REPEATS_OVERRIDE '%s' (ignored)\n",
+                    repeats_override);
+        }
+    }
+
+    const char *warmup_override = getenv("CORTEX_WARMUP_OVERRIDE");
+    if (warmup_override && strlen(warmup_override) > 0) {
+        char *endptr;
+        errno = 0;
+        long val = strtol(warmup_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val >= 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.warmup_seconds = (uint32_t)val;
+            printf("[config] Override warmup: %u seconds\n", out->benchmark.parameters.warmup_seconds);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_WARMUP_OVERRIDE '%s' (ignored)\n",
+                    warmup_override);
+        }
+    }
+
     fclose(f);
     return 0;
 }
@@ -612,6 +646,70 @@ int cortex_config_validate(const cortex_run_config_t *cfg, char *err, size_t err
             }
         }
     }
+    return 0;
+}
+
+int cortex_apply_kernel_filter(cortex_run_config_t *cfg, const char *filter) {
+    if (!cfg || !filter || strlen(filter) == 0) {
+        return -1;
+    }
+
+    /* Make a copy of filter string for strtok */
+    char filter_copy[256];
+    strncpy(filter_copy, filter, sizeof(filter_copy) - 1);
+    filter_copy[sizeof(filter_copy) - 1] = '\0';
+
+    /* Build filtered list in temporary array */
+    cortex_plugin_entry_cfg_t filtered_plugins[CORTEX_MAX_PLUGINS];
+    size_t filtered_count = 0;
+
+    /* Parse comma-separated filter */
+    char *token = strtok(filter_copy, ",");
+    while (token) {
+        /* Trim leading whitespace */
+        while (*token == ' ' || *token == '\t') token++;
+
+        /* Trim trailing whitespace */
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+
+        if (strlen(token) == 0) {
+            token = strtok(NULL, ",");
+            continue;
+        }
+
+        /* Find matching plugin in current list */
+        int found = 0;
+        for (size_t i = 0; i < cfg->plugin_count; i++) {
+            if (strcmp(cfg->plugins[i].name, token) == 0) {
+                if (filtered_count < CORTEX_MAX_PLUGINS) {
+                    filtered_plugins[filtered_count++] = cfg->plugins[i];
+                    found = 1;
+                }
+                break;
+            }
+        }
+
+        if (!found) {
+            fprintf(stderr, "[harness] warning: kernel '%s' in CORTEX_KERNEL_FILTER not found (skipped)\n", token);
+        }
+
+        token = strtok(NULL, ",");
+    }
+
+    if (filtered_count == 0) {
+        fprintf(stderr, "[harness] error: CORTEX_KERNEL_FILTER resulted in zero kernels\n");
+        return -1;
+    }
+
+    /* Copy filtered list back to config */
+    memcpy(cfg->plugins, filtered_plugins,
+           filtered_count * sizeof(cortex_plugin_entry_cfg_t));
+    cfg->plugin_count = filtered_count;
+
     return 0;
 }
 

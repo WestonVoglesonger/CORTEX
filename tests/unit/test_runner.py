@@ -432,7 +432,6 @@ class TestHarnessRunnerIntegration:
         # Assert
         assert result is not None
         assert "test-run-001" in result
-        config_loader.load_yaml.assert_called_once_with("config.yaml")
         process.popen.assert_called_once()
 
         # Verify command construction

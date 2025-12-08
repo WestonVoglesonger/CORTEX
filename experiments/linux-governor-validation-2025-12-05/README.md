@@ -55,7 +55,7 @@ cd /path/to/CORTEX
 make all
 
 # Verify dataset exists
-ls datasets/eegmmidb/converted/S001R03.float32
+ls primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
 # Check available governors
 cat /sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors

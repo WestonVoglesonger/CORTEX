@@ -23,7 +23,7 @@
 #   - CORTEX built and installed (pip install -e .)
 #   - noop@f32 kernel built (cd primitives/kernels/v1/noop@f32 && make)
 #   - stress-ng installed (brew install stress-ng)
-#   - Dataset: datasets/eegmmidb/converted/S001R03.float32
+#   - Dataset: primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32
 
 set -euo pipefail
 

@@ -379,6 +379,17 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Apply CORTEX_KERNEL_FILTER to final plugin list (works for both sources) */
+    const char *kernel_filter = getenv("CORTEX_KERNEL_FILTER");
+    if (kernel_filter && strlen(kernel_filter) > 0) {
+        printf("[harness] Applying kernel filter: %s\n", kernel_filter);
+        if (cortex_apply_kernel_filter(&ctx.run_cfg, kernel_filter) != 0) {
+            fprintf(stderr, "[harness] Failed to apply kernel filter\n");
+            return 1;
+        }
+        printf("[harness] Filtered to %zu kernel(s)\n", ctx.run_cfg.plugin_count);
+    }
+
     /* Sequential plugin execution */
     for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
         /* Check for shutdown signal before starting next plugin */

@@ -1,0 +1,25 @@
+dataset:
+  name: "physionet-motor-imagery"
+  description: "PhysioNet EEG Motor Movement/Imagery Dataset"
+  source_url: "https://physionet.org/content/eegmmidb/1.0.0/"
+  license: "ODC-PDDL-1.0"
+
+format:
+  type: "float32"
+  channels: 64
+  sample_rate_hz: 160
+  endian: "little"
+  layout: "interleaved"
+
+recordings:
+  - id: "S001R03"
+    description: "Subject 001, Run 03 - Open and close left or right fist"
+    duration_seconds: 125.0
+
+  - id: "S001R07"
+    description: "Subject 001, Run 07 - Imagine opening and closing left or right fist"
+    duration_seconds: 125.0
+
+  - id: "S001R11"
+    description: "Subject 001, Run 11 - Open and close both fists or both feet"
+    duration_seconds: 125.0

@@ -27,7 +27,13 @@ from cortex.utils.paths import (
 HARNESS_BINARY_PATH = 'src/engine/harness/cortex'
 KERNEL_DATA_DIR = 'kernel-data'
 HARNESS_LOG_FILE = 'harness.log'
-GENERATED_CONFIG_DIR = 'primitives/configs/generated'
+
+# Environment variable whitelist (defense-in-depth for subprocess isolation)
+ALLOWED_ENV_VARS = {
+    'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM',
+    'PYTHONUNBUFFERED', 'CORTEX_OUTPUT_DIR', 'CORTEX_NO_INHIBIT'
+}
+ALLOWED_ENV_PREFIXES = ['CORTEX_']
 
 
 class HarnessRunner:
@@ -94,13 +100,14 @@ class HarnessRunner:
             # Don't fail if cleanup fails - just log it
             self.log.warning(f"Could not clean up partial run directory {run_dir}: {e}")
 
-    def run(self, config_path: str, run_name: str, verbose: bool = False) -> Optional[str]:
+    def run(self, config_path: str, run_name: str, verbose: bool = False, env: Optional[dict] = None) -> Optional[str]:
         """Run the CORTEX harness with a given config.
 
         Args:
             config_path: Path to configuration file
             run_name: Name of the run for organizing results
             verbose: Show all output including stress-ng and telemetry
+            env: Optional environment variable overrides (merged with base environment)
 
         Returns:
             Run directory path if successful, None otherwise
@@ -123,16 +130,6 @@ class HarnessRunner:
         if not self.fs.is_file(config_path):
             self.log.error(f"{config_path} exists but is not a file")
             return None
-
-        # Read config to get benchmark parameters for progress tracking
-        try:
-            config_data = self.config.load_yaml(config_path)
-            duration = config_data.get('benchmark', {}).get('parameters', {}).get('duration_seconds', 5)
-            repeats = config_data.get('benchmark', {}).get('parameters', {}).get('repeats', 3)
-            warmup = config_data.get('benchmark', {}).get('parameters', {}).get('warmup_seconds', 5)
-            total_time = warmup + (repeats * duration)
-        except Exception:
-            total_time = None  # Fall back to no progress calculation
 
         # Build command
         cmd = [HARNESS_BINARY_PATH, 'run', config_path]
@@ -167,14 +164,28 @@ class HarnessRunner:
         if self.tools.has_tool('stdbuf'):
             cmd = ['stdbuf', '-o0', '-e0'] + cmd
 
-        # Set environment variables
-        env = self.env.get_environ()
-        env['PYTHONUNBUFFERED'] = '1'
+        # Set environment variables - get base environment from DI provider
+        base_env = self.env.get_environ()
+
+        # Merge caller's env vars (sanitized, caller's values win on conflicts)
+        if env is not None:
+            # Defense-in-depth: whitelist env vars to prevent injection of LD_PRELOAD, etc.
+            sanitized_env = {
+                k: v for k, v in env.items()
+                if k in ALLOWED_ENV_VARS or any(k.startswith(p) for p in ALLOWED_ENV_PREFIXES)
+            }
+            base_env.update(sanitized_env)
+
+        # Set required env vars (always applied, override even caller's values)
+        base_env['PYTHONUNBUFFERED'] = '1'
 
         # Pass run-specific output directory to harness
         # This overrides config's output.directory so kernel-data goes to the right place
         run_dir = get_run_directory(run_name)
-        env['CORTEX_OUTPUT_DIR'] = str(run_dir)
+        base_env['CORTEX_OUTPUT_DIR'] = str(run_dir)
+
+        # Use base_env for all subsequent operations
+        env = base_env
 
         # Notify user of sleep prevention status
         if sleep_prevention_tool:
@@ -268,7 +279,7 @@ class HarnessRunner:
         warmup: Optional[int] = None,
         verbose: bool = False
     ) -> Optional[str]:
-        """Run benchmark for a single kernel.
+        """Run benchmark for a single kernel using environment variable filtering.
 
         Args:
             kernel_name: Name of kernel to benchmark
@@ -281,35 +292,26 @@ class HarnessRunner:
         Returns:
             Run directory path if successful, None otherwise
         """
-        from cortex.utils.config import generate_config
-
         # Create run directory structure
         run_structure = create_run_structure(run_name)
-        kernel_dir = create_kernel_directory(run_name, kernel_name)
 
-        # Generate config
-        config_dir = Path(GENERATED_CONFIG_DIR)
-        self.fs.mkdir(config_dir, parents=True, exist_ok=True)
-        config_path = config_dir / f"{kernel_name}.yaml"
+        # Build environment variable overrides
+        env_overrides = {
+            'CORTEX_KERNEL_FILTER': kernel_name
+        }
 
-        self.log.info(f"Generating config for {kernel_name}...")
-
-        if not generate_config(
-            kernel_name,
-            str(config_path),
-            output_dir=str(kernel_dir),
-            duration=duration,
-            repeats=repeats,
-            warmup=warmup
-        ):
-            # Cleanup: remove partial run directory on config generation failure
-            self._cleanup_partial_run(run_structure['run'])
-            return None
+        if duration is not None:
+            env_overrides['CORTEX_DURATION_OVERRIDE'] = str(duration)
+        if repeats is not None:
+            env_overrides['CORTEX_REPEATS_OVERRIDE'] = str(repeats)
+        if warmup is not None:
+            env_overrides['CORTEX_WARMUP_OVERRIDE'] = str(warmup)
 
         self.log.info(f"Running benchmark for {kernel_name}...")
 
-        # Run harness
-        results_dir = self.run(str(config_path), run_name, verbose=verbose)
+        # Run harness with base config and env var overrides
+        base_config = "primitives/configs/cortex.yaml"
+        results_dir = self.run(base_config, run_name, verbose=verbose, env=env_overrides)
 
         if results_dir:
             self.log.info(f"✓ Benchmark complete: {results_dir}")
@@ -327,7 +329,11 @@ class HarnessRunner:
         warmup: Optional[int] = None,
         verbose: bool = False
     ) -> Optional[str]:
-        """Run benchmarks for all available kernels.
+        """Run benchmarks for all available kernels in a single harness invocation.
+
+        Uses C harness auto-detection to discover all built kernels, then runs them
+        sequentially in one execution. This is more efficient and cleaner than the
+        previous approach of generating N configs and running harness N times.
 
         Args:
             run_name: Name of the run for organizing results
@@ -339,74 +345,35 @@ class HarnessRunner:
         Returns:
             Run directory path if successful, None otherwise
         """
-        from cortex.utils.config import generate_batch_configs
-
         # Create run directory structure
         create_run_structure(run_name)
 
-        # Generate all configs
-        config_dir = Path(GENERATED_CONFIG_DIR)
-        self.fs.mkdir(config_dir, parents=True, exist_ok=True)
+        # Build environment variable overrides (no kernel filter = run all)
+        env_overrides = {}
 
-        self.log.info("Generating configs for all kernels...")
-        configs = generate_batch_configs(
-            str(config_dir),
-            duration=duration,
-            repeats=repeats,
-            warmup=warmup
-        )
+        if duration is not None:
+            env_overrides['CORTEX_DURATION_OVERRIDE'] = str(duration)
+        if repeats is not None:
+            env_overrides['CORTEX_REPEATS_OVERRIDE'] = str(repeats)
+        if warmup is not None:
+            env_overrides['CORTEX_WARMUP_OVERRIDE'] = str(warmup)
 
-        if not configs:
-            self.log.info("No kernels available to benchmark")
-            return None
-
-        self.log.info(f"Found {len(configs)} kernel(s) to benchmark")
+        self.log.info("Running benchmarks for all kernels (auto-detection mode)...")
 
         run_dir = get_run_directory(run_name)
         self.log.info(f"Results will be saved to: {run_dir}")
         self.log.info("")
 
-        # Run each kernel
-        results = []
-        for i, (kernel_name, config_path) in enumerate(configs, 1):
-            self.log.info("=" * 80)
-            self.log.info(f"[{i}/{len(configs)}] Running {kernel_name}")
-            self.log.info("=" * 80)
+        # Single harness invocation with base config (no plugins section = auto-detect all)
+        base_config = "primitives/configs/cortex.yaml"
+        results_dir = self.run(base_config, run_name, verbose=verbose, env=env_overrides)
 
-            # Create kernel directory
-            kernel_dir = create_kernel_directory(run_name, kernel_name)
-
-            # Need to regenerate config with specific output directory
-            from cortex.utils.config import generate_config
-            if not generate_config(
-                kernel_name,
-                config_path,
-                output_dir=str(kernel_dir),
-                duration=duration,
-                repeats=repeats,
-                warmup=warmup
-            ):
-                self.log.info(f"✗ {kernel_name} failed (config generation)")
-                self.log.info("")
-                continue
-
-            # Run harness
-            result = self.run(config_path, run_name, verbose=verbose)
-
-            if result:
-                results.append((kernel_name, result))
-                self.log.info(f"✓ {kernel_name} complete")
-            else:
-                self.log.info(f"✗ {kernel_name} failed")
-
+        if results_dir:
             self.log.info("")
+            self.log.info("=" * 80)
+            self.log.info("Benchmark Complete")
+            self.log.info("=" * 80)
+            self.log.info(f"Results directory: {results_dir}")
+            self.log.info("=" * 80)
 
-        # Summary
-        self.log.info("=" * 80)
-        self.log.info("Benchmark Summary")
-        self.log.info("=" * 80)
-        self.log.info(f"Completed: {len(results)}/{len(configs)} kernels")
-        self.log.info(f"Results directory: {run_dir}")
-        self.log.info("=" * 80)
-
-        return str(run_dir) if results else None
+        return results_dir

@@ -5,7 +5,7 @@ system:
   description: "Linux schedutil + stress-ng boost - tests if background load helps dynamic scaling"
 
 dataset:
-  path: "datasets/eegmmidb/converted/S001R03.float32"
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
   format: "float32"
   channels: 64
   sample_rate_hz: 160
