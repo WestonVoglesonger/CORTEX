@@ -28,6 +28,13 @@ HARNESS_BINARY_PATH = 'src/engine/harness/cortex'
 KERNEL_DATA_DIR = 'kernel-data'
 HARNESS_LOG_FILE = 'harness.log'
 
+# Environment variable whitelist (defense-in-depth for subprocess isolation)
+ALLOWED_ENV_VARS = {
+    'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM',
+    'PYTHONUNBUFFERED', 'CORTEX_OUTPUT_DIR', 'CORTEX_NO_INHIBIT'
+}
+ALLOWED_ENV_PREFIXES = ['CORTEX_']
+
 
 class HarnessRunner:
     """Orchestrates harness execution with dependency injection.
@@ -160,9 +167,14 @@ class HarnessRunner:
         # Set environment variables - get base environment from DI provider
         base_env = self.env.get_environ()
 
-        # Merge caller's env vars (caller's values win on conflicts)
+        # Merge caller's env vars (sanitized, caller's values win on conflicts)
         if env is not None:
-            base_env.update(env)
+            # Defense-in-depth: whitelist env vars to prevent injection of LD_PRELOAD, etc.
+            sanitized_env = {
+                k: v for k, v in env.items()
+                if k in ALLOWED_ENV_VARS or any(k.startswith(p) for p in ALLOWED_ENV_PREFIXES)
+            }
+            base_env.update(sanitized_env)
 
         # Set required env vars (always applied, override even caller's values)
         base_env['PYTHONUNBUFFERED'] = '1'

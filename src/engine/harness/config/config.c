@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>       /* for errno */
 #include <dirent.h>      /* for readdir() */
 #include <sys/stat.h>    /* for stat() */
 #include <unistd.h>      /* for access() */
@@ -482,19 +483,6 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             }
         }
 
-            /* Runtime config now loaded from spec.yaml, not YAML */
-            if (starts_with(raw, "- name:")) {
-                plugin_index++;  /* Move to next plugin slot */
-                if (plugin_index >= CORTEX_MAX_PLUGINS) break;
-                memset(&out->plugins[plugin_index], 0, sizeof(out->plugins[plugin_index]));
-                const char *v = raw + strlen("- name:"); while (*v == ' ') v++;
-                char tmp[64]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0'; trim(tmp); unquote(tmp);
-                strncpy(out->plugins[plugin_index].name, tmp, sizeof(out->plugins[plugin_index].name)-1);
-                out->plugins[plugin_index].name[sizeof(out->plugins[plugin_index].name)-1] = '\0';
-                st = IN_PLUGIN;  /* Start parsing the new plugin */
-                continue;
-            }
-
         if (st == IN_DATASET) {
             if (starts_with(raw, "path:")) { const char *v = raw + strlen("path:"); while (*v==' ') v++; char tmp[512]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.path, tmp, sizeof(out->dataset.path)-1); out->dataset.path[sizeof(out->dataset.path)-1] = '\0'; continue; }
             if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.format, tmp, sizeof(out->dataset.format)-1); out->dataset.format[sizeof(out->dataset.format)-1] = '\0'; continue; }
@@ -574,28 +562,46 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
     /* Apply environment variable overrides */
     const char *duration_override = getenv("CORTEX_DURATION_OVERRIDE");
     if (duration_override && strlen(duration_override) > 0) {
-        int val = atoi(duration_override);
-        if (val > 0) {
-            out->benchmark.parameters.duration_seconds = val;
-            printf("[config] Override duration: %d seconds\n", val);
+        char *endptr;
+        errno = 0;
+        long val = strtol(duration_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val > 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.duration_seconds = (uint32_t)val;
+            printf("[config] Override duration: %u seconds\n", out->benchmark.parameters.duration_seconds);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_DURATION_OVERRIDE '%s' (ignored)\n",
+                    duration_override);
         }
     }
 
     const char *repeats_override = getenv("CORTEX_REPEATS_OVERRIDE");
     if (repeats_override && strlen(repeats_override) > 0) {
-        int val = atoi(repeats_override);
-        if (val > 0) {
-            out->benchmark.parameters.repeats = val;
-            printf("[config] Override repeats: %d\n", val);
+        char *endptr;
+        errno = 0;
+        long val = strtol(repeats_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val > 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.repeats = (uint32_t)val;
+            printf("[config] Override repeats: %u\n", out->benchmark.parameters.repeats);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_REPEATS_OVERRIDE '%s' (ignored)\n",
+                    repeats_override);
         }
     }
 
     const char *warmup_override = getenv("CORTEX_WARMUP_OVERRIDE");
     if (warmup_override && strlen(warmup_override) > 0) {
-        int val = atoi(warmup_override);
-        if (val >= 0) {  /* Allow 0 warmup */
-            out->benchmark.parameters.warmup_seconds = val;
-            printf("[config] Override warmup: %d seconds\n", val);
+        char *endptr;
+        errno = 0;
+        long val = strtol(warmup_override, &endptr, 10);
+
+        if (errno == 0 && *endptr == '\0' && val >= 0 && val <= UINT32_MAX) {
+            out->benchmark.parameters.warmup_seconds = (uint32_t)val;
+            printf("[config] Override warmup: %u seconds\n", out->benchmark.parameters.warmup_seconds);
+        } else {
+            fprintf(stderr, "[config] Warning: Invalid CORTEX_WARMUP_OVERRIDE '%s' (ignored)\n",
+                    warmup_override);
         }
     }
 
