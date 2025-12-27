@@ -453,6 +453,8 @@ static cortex_timestamp_t adapter_now(void *ctx) {
 
 ## Remote Adapter (TCP)
 
+**⚠️ SECURITY WARNING**: This example uses **plain, unauthenticated TCP** for demonstration purposes only. Production deployments **MUST** use encrypted, authenticated transports (TLS 1.3+, SSH tunneling, or VPN) to protect BCI signal data and prevent unauthorized execution. See `PROTOCOL.md` Security Considerations section for detailed guidance.
+
 For running kernels on a different machine:
 
 ```c
@@ -509,9 +511,23 @@ static int32_t tcp_adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     }
 
     /* 5. Calculate and store maximum output buffer size for bounds checking */
-    /* (Remote adapter would send output_channels, output_samples in INIT_RESULT) */
+    /*
+     * IMPORTANT: In a full implementation, the remote adapter sends the actual
+     * output_channels and output_samples fields in the INIT_RESULT message
+     * (see PROTOCOL.md). Those runtime values MUST be used to compute the
+     * maximum output size, because kernels can change output shape:
+     *   - CAR: output_samples = input_samples (same)
+     *   - Goertzel: output_samples = num_bands (different!)
+     *   - Welch PSD: output_samples = n_fft/2 + 1 (different!)
+     *
+     * This example assumes, for simplicity, that output shape equals input shape:
+     *   - output_samples == cfg->window_length_samples
+     *   - output_channels == cfg->channels
+     * This is ONLY safe if the kernel preserves input shape. Production code
+     * must parse INIT_RESULT and use its actual output dimensions.
+     */
     size_t elem_size = cortex_dtype_size_bytes(cfg->dtype);
-    size_t output_samples = cfg->window_length_samples;  /* Simplified: use config */
+    size_t output_samples = cfg->window_length_samples;  /* Simplified - see comment above */
     size_t max_output_bytes;
     if (__builtin_mul_overflow(output_samples, cfg->channels, &max_output_bytes) ||
         __builtin_mul_overflow(max_output_bytes, elem_size, &max_output_bytes)) {
@@ -594,21 +610,30 @@ void test_xor_constraint(void) {
     cortex_adapter_t adapter;
     cortex_adapter_get_v1(&adapter, sizeof(adapter));
 
+    /* Initialize complete config (required fields for init() to proceed) */
     cortex_adapter_config_t cfg = {0};
     cfg.abi_version = CORTEX_ADAPTER_ABI_VERSION;
+    cfg.struct_size = sizeof(cortex_adapter_config_t);
+    cfg.sample_rate_hz = 160.0;
+    cfg.window_length_samples = 160;
+    cfg.hop_samples = 80;
+    cfg.channels = 64;
+    cfg.dtype = CORTEX_DTYPE_FLOAT32;
+    cfg.kernel_params = NULL;
+    cfg.kernel_params_size = 0;
 
-    /* Test 1: Both NULL - should fail early (no cleanup needed) */
+    /* Test 1: Both NULL - should fail early with XOR violation */
     cfg.kernel_path = NULL;
     cfg.kernel_id = NULL;
     assert(adapter.init(adapter.context, &cfg) == -3);
 
-    /* Test 2: Both non-NULL - should fail early (no cleanup needed) */
+    /* Test 2: Both non-NULL - should fail early with XOR violation */
     cfg.kernel_path = "foo.so";
     cfg.kernel_id = "bar";
     assert(adapter.init(adapter.context, &cfg) == -3);
 
     /* Test 3: Exactly one - should succeed (assuming kernel exists) */
-    cfg.kernel_path = "libnoop.so";
+    cfg.kernel_path = "libnoop.dylib";  /* or "libnoop.so" on Linux */
     cfg.kernel_id = NULL;
     assert(adapter.init(adapter.context, &cfg) == 0);
 

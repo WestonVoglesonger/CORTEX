@@ -1,6 +1,11 @@
 # Makefile for CORTEX C tests
 
 CC = gcc
+
+# For standalone test builds (cd tests && make), set include paths if not already
+# exported by top-level Makefile
+CORTEX_PRIMITIVE_INCLUDES ?= -I../primitives/kernels/v1 -I../primitives/adapters/v1
+
 CFLAGS = -Wall -Wextra -g -O0 -std=c11 $(CORTEX_PRIMITIVE_INCLUDES)
 LDFLAGS = -lpthread -lm
 

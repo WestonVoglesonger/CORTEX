@@ -32,6 +32,10 @@ all: $(PLUGIN_LIB)
 $(PLUGIN_OBJ): $(PLUGIN_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Build PARAMS_LIB if it doesn't exist (for standalone builds)
+$(PARAMS_LIB):
+	$(MAKE) -C ../../../../src/engine/params
+
 # Build KERNEL_ABI_OBJ if it doesn't exist (for standalone builds)
 $(KERNEL_ABI_OBJ):
 	$(MAKE) -C ../../../../ primitives/kernels/v1/cortex_plugin_abi.o
