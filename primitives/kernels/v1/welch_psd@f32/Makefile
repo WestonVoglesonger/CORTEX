@@ -1,4 +1,8 @@
 CC = cc
+
+# For standalone builds, set include paths if not already set by top-level Makefile
+CORTEX_PRIMITIVE_INCLUDES ?= -I.. -I../../../../primitives/adapters/v1
+
 CFLAGS = -Wall -Wextra -O2 -g -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -I../../../../src/engine/params -Idependencies
 PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
 KERNEL_ABI_OBJ = ../cortex_plugin_abi.o
@@ -28,9 +32,13 @@ $(TARGET): $(OBJS) $(PARAMS_LIB) $(KERNEL_ABI_OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Build params library if it doesn't exist
+# Build PARAMS_LIB if it doesn't exist (for standalone builds)
 $(PARAMS_LIB):
 	$(MAKE) -C ../../../../src/engine/params
+
+# Build KERNEL_ABI_OBJ if it doesn't exist (for standalone builds)
+$(KERNEL_ABI_OBJ):
+	$(MAKE) -C ../../../../ primitives/kernels/v1/cortex_plugin_abi.o
 
 clean:
 	rm -f $(OBJS) $(TARGET)

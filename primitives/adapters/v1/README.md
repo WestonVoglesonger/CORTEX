@@ -126,15 +126,32 @@ static int32_t adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     adapter->kernel_ctx = init_result.handle;
 
     /* 9. Allocate buffers (ONCE, reused across process_window calls) */
-    size_t input_bytes = cfg->window_length_samples * cfg->channels * elem_size;
-    size_t output_bytes = init_result.output_window_length_samples *
-                          init_result.output_channels * elem_size;
+    /* Check for integer overflow using same pattern as scheduler */
+    size_t input_bytes;
+    if (__builtin_mul_overflow(cfg->window_length_samples, cfg->channels, &input_bytes) ||
+        __builtin_mul_overflow(input_bytes, elem_size, &input_bytes)) {
+        adapter->kernel_teardown(adapter->kernel_ctx);
+        dlclose(adapter->kernel_handle);
+        return -7;  /* Integer overflow */
+    }
+
+    size_t output_bytes;
+    size_t output_samples = init_result.output_window_length_samples;
+    if (__builtin_mul_overflow(output_samples, init_result.output_channels, &output_bytes) ||
+        __builtin_mul_overflow(output_bytes, elem_size, &output_bytes)) {
+        adapter->kernel_teardown(adapter->kernel_ctx);
+        dlclose(adapter->kernel_handle);
+        return -7;  /* Integer overflow */
+    }
 
     adapter->input_buffer = malloc(input_bytes);
     adapter->output_buffer = malloc(output_bytes);
     adapter->output_bytes = output_bytes;
 
     if (!adapter->input_buffer || !adapter->output_buffer) {
+        /* Clean up any successful allocations */
+        free(adapter->input_buffer);
+        free(adapter->output_buffer);
         adapter->kernel_teardown(adapter->kernel_ctx);
         dlclose(adapter->kernel_handle);
         return -7;  /* Allocation failed */
