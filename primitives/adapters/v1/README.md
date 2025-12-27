@@ -126,7 +126,15 @@ static int32_t adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     adapter->kernel_ctx = init_result.handle;
 
     /* 9. Allocate buffers (ONCE, reused across process_window calls) */
-    /* Check for integer overflow using same pattern as scheduler */
+    /*
+     * Check for integer overflow using same pattern as scheduler.
+     *
+     * NOTE: Production adapters should use the portable helper
+     * cortex_mul_size_overflow() from src/engine/harness/util/util.h,
+     * which wraps compiler builtins with version/portability guards
+     * (handles older GCC, MSVC, etc.). This example uses
+     * __builtin_mul_overflow directly for brevity.
+     */
     size_t input_bytes;
     if (__builtin_mul_overflow(cfg->window_length_samples, cfg->channels, &input_bytes) ||
         __builtin_mul_overflow(input_bytes, elem_size, &input_bytes)) {
@@ -464,6 +472,7 @@ For running kernels on a different machine:
 
 typedef struct {
     int sockfd;
+    void *output_buffer;      /* Allocated buffer for receiving remote results */
     size_t max_output_bytes;  /* Buffer capacity for bounds checking */
     /* ... additional fields ... */
 } tcp_adapter_ctx_t;
@@ -536,6 +545,13 @@ static int32_t tcp_adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     }
     adapter->max_output_bytes = max_output_bytes;
 
+    /* 6. Allocate output buffer for receiving remote results */
+    adapter->output_buffer = malloc(max_output_bytes);
+    if (!adapter->output_buffer) {
+        close(adapter->sockfd);
+        return -7;  /* Allocation failed */
+    }
+
     return 0;
 }
 
@@ -566,12 +582,14 @@ static int32_t tcp_adapter_process_window(void *ctx, const void *in, size_t in_b
         return -8;  /* Buffer overflow prevented */
     }
 
-    /* 4. Receive output data with validated size */
-    ssize_t received = recv(adapter->sockfd, out->output, result_msg.output_bytes, MSG_WAITALL);
+    /* 4. Receive output data into adapter's buffer (validated size) */
+    ssize_t received = recv(adapter->sockfd, adapter->output_buffer, result_msg.output_bytes, MSG_WAITALL);
     if (received != (ssize_t)result_msg.output_bytes) {
         return -6;  /* recv() incomplete */
     }
 
+    /* 5. Set output pointer to adapter's buffer (valid until next call) */
+    out->output = adapter->output_buffer;
     out->output_bytes = result_msg.output_bytes;
     out->t_in = result_msg.t_in;
     out->t_start = result_msg.t_start;
@@ -579,6 +597,18 @@ static int32_t tcp_adapter_process_window(void *ctx, const void *in, size_t in_b
     out->deadline = result_msg.deadline;
 
     return 0;
+}
+
+static void tcp_adapter_cleanup(void *ctx) {
+    tcp_adapter_ctx_t *adapter = (tcp_adapter_ctx_t *)ctx;
+
+    /* Free allocated output buffer */
+    free(adapter->output_buffer);
+
+    /* Close network connection */
+    if (adapter->sockfd >= 0) {
+        close(adapter->sockfd);
+    }
 }
 ```
 
