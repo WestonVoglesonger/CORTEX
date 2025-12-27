@@ -204,6 +204,9 @@ static void adapter_cleanup(void *ctx) {
     }
     free(adapter->input_buffer);
     free(adapter->output_buffer);
+
+    /* Free the adapter context itself (allocated in cortex_adapter_get_v1) */
+    free(adapter);
 }
 
 /* Adapter discovery function (REQUIRED export) */
@@ -459,21 +462,30 @@ For running kernels on a different machine:
 
 typedef struct {
     int sockfd;
-    /* ... */
+    size_t max_output_bytes;  /* Buffer capacity for bounds checking */
+    /* ... additional fields ... */
 } tcp_adapter_ctx_t;
 
 static int32_t tcp_adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     tcp_adapter_ctx_t *adapter = (tcp_adapter_ctx_t *)ctx;
 
     /* 1. Connect to remote adapter */
+    /* WARNING: This example uses plain TCP without encryption or authentication.
+     * Production deployments MUST use TLS, SSH tunnel, or VPN to protect
+     * kernel data and prevent unauthorized execution. See PROTOCOL.md Security. */
     adapter->sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (adapter->sockfd < 0) {
+        return -6;  /* socket() failed */
+    }
+
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(9000);
     inet_pton(AF_INET, "192.168.1.100", &addr.sin_addr);
 
     if (connect(adapter->sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        return -6;
+        close(adapter->sockfd);
+        return -6;  /* connect() failed */
     }
 
     /* 2. Receive HELLO message */
@@ -485,13 +497,28 @@ static int32_t tcp_adapter_init(void *ctx, const cortex_adapter_config_t *cfg) {
     /* ... populate from cfg ... */
     send_load_kernel(adapter->sockfd, &load_msg);
 
-    /* 4. Receive init result */
+    /* 4. Receive init result and output buffer size */
     int32_t result;
-    recv(adapter->sockfd, &result, sizeof(result), 0);
+    if (recv(adapter->sockfd, &result, sizeof(result), MSG_WAITALL) != sizeof(result)) {
+        close(adapter->sockfd);
+        return -6;  /* recv() failed */
+    }
     if (result != 0) {
         close(adapter->sockfd);
         return result;
     }
+
+    /* 5. Calculate and store maximum output buffer size for bounds checking */
+    /* (Remote adapter would send output_channels, output_samples in INIT_RESULT) */
+    size_t elem_size = cortex_dtype_size_bytes(cfg->dtype);
+    size_t output_samples = cfg->window_length_samples;  /* Simplified: use config */
+    size_t max_output_bytes;
+    if (__builtin_mul_overflow(output_samples, cfg->channels, &max_output_bytes) ||
+        __builtin_mul_overflow(max_output_bytes, elem_size, &max_output_bytes)) {
+        close(adapter->sockfd);
+        return -7;  /* Integer overflow */
+    }
+    adapter->max_output_bytes = max_output_bytes;
 
     return 0;
 }
@@ -504,13 +531,30 @@ static int32_t tcp_adapter_process_window(void *ctx, const void *in, size_t in_b
     cortex_process_window_msg_t msg;
     msg.t_in = out->t_in;
     msg.input_bytes = (uint32_t)in_bytes;
-    send(adapter->sockfd, &msg, sizeof(msg), 0);
-    send(adapter->sockfd, in, in_bytes, 0);
+    if (send(adapter->sockfd, &msg, sizeof(msg), 0) != sizeof(msg)) {
+        return -6;  /* send() failed */
+    }
+    if (send(adapter->sockfd, in, in_bytes, 0) != (ssize_t)in_bytes) {
+        return -6;  /* send() failed */
+    }
 
     /* 2. Receive RESULT message */
     cortex_result_msg_t result_msg;
-    recv(adapter->sockfd, &result_msg, sizeof(result_msg), 0);
-    recv(adapter->sockfd, out->output, result_msg.output_bytes, 0);
+    if (recv(adapter->sockfd, &result_msg, sizeof(result_msg), MSG_WAITALL) != sizeof(result_msg)) {
+        return -6;  /* recv() failed */
+    }
+
+    /* 3. CRITICAL: Validate output_bytes before receiving into buffer */
+    if (result_msg.output_bytes > adapter->max_output_bytes) {
+        /* Protocol violation: remote sent more data than buffer can hold */
+        return -8;  /* Buffer overflow prevented */
+    }
+
+    /* 4. Receive output data with validated size */
+    ssize_t received = recv(adapter->sockfd, out->output, result_msg.output_bytes, MSG_WAITALL);
+    if (received != (ssize_t)result_msg.output_bytes) {
+        return -6;  /* recv() incomplete */
+    }
 
     out->output_bytes = result_msg.output_bytes;
     out->t_in = result_msg.t_in;
@@ -553,22 +597,27 @@ void test_xor_constraint(void) {
     cortex_adapter_config_t cfg = {0};
     cfg.abi_version = CORTEX_ADAPTER_ABI_VERSION;
 
-    /* Both NULL - should fail */
+    /* Test 1: Both NULL - should fail early (no cleanup needed) */
     cfg.kernel_path = NULL;
     cfg.kernel_id = NULL;
     assert(adapter.init(adapter.context, &cfg) == -3);
 
-    /* Both non-NULL - should fail */
+    /* Test 2: Both non-NULL - should fail early (no cleanup needed) */
     cfg.kernel_path = "foo.so";
     cfg.kernel_id = "bar";
     assert(adapter.init(adapter.context, &cfg) == -3);
 
-    /* Exactly one - should succeed (assuming kernel exists) */
+    /* Test 3: Exactly one - should succeed (assuming kernel exists) */
     cfg.kernel_path = "libnoop.so";
     cfg.kernel_id = NULL;
     assert(adapter.init(adapter.context, &cfg) == 0);
 
+    /* IMPORTANT: Always cleanup after successful init */
     adapter.cleanup(adapter.context);
+
+    /* NOTE: If testing multiple successful scenarios, cleanup is required
+     * between each init() call to prevent resource leaks. Failed init() calls
+     * that return early (before resource allocation) do not require cleanup. */
 }
 ```
 

@@ -4,7 +4,8 @@
 .PHONY: all params harness plugins tests clean help
 
 # Primitive include paths - exported for sub-makes
-export CORTEX_PRIMITIVE_INCLUDES = -I$(PWD)/primitives/kernels/v1 -I$(PWD)/primitives/adapters/v1
+# Use CURDIR (not PWD) to ensure paths work when make is invoked from different directory
+export CORTEX_PRIMITIVE_INCLUDES = -I$(CURDIR)/primitives/kernels/v1 -I$(CURDIR)/primitives/adapters/v1
 
 # Kernel ABI object (compiled once, linked into all kernels)
 KERNEL_ABI_OBJ = primitives/kernels/v1/cortex_plugin_abi.o

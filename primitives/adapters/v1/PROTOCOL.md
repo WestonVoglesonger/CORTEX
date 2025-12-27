@@ -327,7 +327,11 @@ offset = (channel * window_length_samples + sample_idx) * dtype_size
 
 ## Implementation Notes
 
-### Endianness Detection
+### Endianness Handling
+
+The wire protocol uses **little-endian** byte order for all multi-byte integers.
+
+**Endianness detection**:
 ```c
 #include <stdint.h>
 
@@ -335,23 +339,44 @@ int is_little_endian(void) {
     uint32_t x = 1;
     return *(uint8_t*)&x == 1;
 }
+
+/* Byte-swap helpers for big-endian systems */
+uint32_t htole32(uint32_t x) {
+    if (is_little_endian()) return x;
+    return ((x & 0xFF000000) >> 24) |
+           ((x & 0x00FF0000) >>  8) |
+           ((x & 0x0000FF00) <<  8) |
+           ((x & 0x000000FF) << 24);
+}
+
+uint64_t htole64(uint64_t x) {
+    if (is_little_endian()) return x;
+    return ((x & 0xFF00000000000000ULL) >> 56) |
+           ((x & 0x00FF000000000000ULL) >> 40) |
+           ((x & 0x0000FF0000000000ULL) >> 24) |
+           ((x & 0x000000FF00000000ULL) >>  8) |
+           ((x & 0x00000000FF000000ULL) <<  8) |
+           ((x & 0x0000000000FF0000ULL) << 24) |
+           ((x & 0x000000000000FF00ULL) << 40) |
+           ((x & 0x00000000000000FFULL) << 56);
+}
 ```
 
-If target is big-endian, byte-swap all multi-byte integers during serialization.
+**NOTE**: Many systems provide `htole32()` / `le32toh()` in `<endian.h>` (Linux) or `<sys/endian.h>` (BSD/macOS). Use platform builtins when available.
 
 ### String Serialization Example
 ```c
 void write_string(uint8_t **buf, const char *str) {
     if (str == NULL) {
-        uint32_t sentinel = CORTEX_STRING_NULL_SENTINEL;
+        uint32_t sentinel = htole32(CORTEX_STRING_NULL_SENTINEL);
         memcpy(*buf, &sentinel, 4);
         *buf += 4;
     } else {
-        uint32_t len = (uint32_t)strlen(str);
+        uint32_t len = htole32((uint32_t)strlen(str));
         memcpy(*buf, &len, 4);
         *buf += 4;
-        memcpy(*buf, str, len);
-        *buf += len;
+        memcpy(*buf, str, strlen(str));  /* String bytes are endian-agnostic */
+        *buf += strlen(str);
     }
 }
 ```
@@ -359,7 +384,8 @@ void write_string(uint8_t **buf, const char *str) {
 ### Blob Serialization Example
 ```c
 void write_blob(uint8_t **buf, const void *data, uint32_t size) {
-    memcpy(*buf, &size, 4);
+    uint32_t size_le = htole32(size);
+    memcpy(*buf, &size_le, 4);
     *buf += 4;
     memcpy(*buf, data, size);
     *buf += size;
@@ -384,6 +410,7 @@ void write_blob(uint8_t **buf, const void *data, uint32_t size) {
 
 ## Security Considerations
 
+### Memory Safety
 - **Buffer overflows**: Validate `input_bytes` and `output_bytes` against allocated buffer sizes
 - **Integer overflows**: Use checked arithmetic for size calculations (e.g., `channels × samples × dtype_size`)
 - **NULL pointer dereference**: Validate string lengths before accessing data
@@ -393,6 +420,39 @@ void write_blob(uint8_t **buf, const void *data, uint32_t size) {
 - Maximum string length: 4096 bytes
 - Maximum blob size: 1GB (platform-dependent)
 - Maximum channels × samples: 2³² - 1 (uint32_t max)
+
+### Transport Security
+
+**CRITICAL: The wire protocol specification does NOT include encryption or authentication.**
+
+When deploying remote adapters over a network, implementations **MUST** use one of:
+- **TLS/SSL**: Wrap socket communication with TLS 1.3+ for encryption and certificate-based authentication
+- **SSH Tunneling**: Run protocol over SSH tunnel (e.g., `ssh -L 9000:localhost:9000 remote-host`)
+- **VPN**: Use WireGuard, IPSec, or equivalent to encrypt entire network path
+- **Unix Domain Sockets**: For same-machine communication, use UDS instead of TCP
+
+**Threat model for unauthenticated transports**:
+- **Data exposure**: BCI signal data and kernel parameters transmitted in cleartext
+- **Tampering**: Attacker can modify inputs/outputs, inject malicious data
+- **Impersonation**: Attacker can spoof remote adapter or harness
+- **Remote code execution**: Malicious adapter can send oversized buffers to trigger vulnerabilities
+
+**Example: TLS wrapper** (production deployments):
+```c
+/* Use OpenSSL, mbedTLS, or similar to wrap socket communication */
+SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+SSL_CTX_load_verify_locations(ctx, "ca-cert.pem", NULL);
+SSL *ssl = SSL_new(ctx);
+SSL_set_fd(ssl, sockfd);
+SSL_connect(ssl);
+/* Now use SSL_read/SSL_write instead of recv/send */
+```
+
+**Authentication**: Verify remote peer identity using:
+- X.509 certificates (TLS)
+- SSH host keys
+- Pre-shared keys (PSK) for embedded systems
 
 ---
 
