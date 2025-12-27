@@ -170,7 +170,7 @@ jobs:
       - name: Load previous feedback
         id: load-previous
         run: |
-          FEEDBACK_FILE=".github/workflows/review-state/feedback-${{ github.event.pull_request.number }}.json"
+          FEEDBACK_FILE=".github/review-state/feedback-${{ github.event.pull_request.number }}.json"
 
           if [ -f "$FEEDBACK_FILE" ]; then
             echo "Previous feedback found"
@@ -189,15 +189,15 @@ jobs:
 
       - name: Save current feedback for next iteration
         run: |
-          mkdir -p .github/workflows/review-state
+          mkdir -p .github/review-state
           echo '${{ needs.collect-feedback.outputs.feedback_json }}' > \
-            .github/workflows/review-state/feedback-${{ github.event.pull_request.number }}.json
+            .github/review-state/feedback-${{ github.event.pull_request.number }}.json
 
       - name: Commit feedback state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/review-state/
+          git add .github/review-state/
           git commit -m "chore: Update review feedback state [skip ci]" || echo "No changes to commit"
           git push origin ${{ github.event.pull_request.head.ref }}
 
