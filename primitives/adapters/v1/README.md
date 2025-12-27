@@ -579,7 +579,7 @@ static int32_t tcp_adapter_process_window(void *ctx, const void *in, size_t in_b
     /* 3. CRITICAL: Validate output_bytes before receiving into buffer */
     if (result_msg.output_bytes > adapter->max_output_bytes) {
         /* Protocol violation: remote sent more data than buffer can hold */
-        return -8;  /* Buffer overflow prevented */
+        return -100;  /* Adapter-specific: Remote buffer overflow prevented */
     }
 
     /* 4. Receive output data into adapter's buffer (validated size) */
@@ -644,7 +644,7 @@ void test_xor_constraint(void) {
     cortex_adapter_config_t cfg = {0};
     cfg.abi_version = CORTEX_ADAPTER_ABI_VERSION;
     cfg.struct_size = sizeof(cortex_adapter_config_t);
-    cfg.sample_rate_hz = 160.0;
+    cfg.sample_rate_hz = 160;  /* uint32_t - must be integer, not float */
     cfg.window_length_samples = 160;
     cfg.hop_samples = 80;
     cfg.channels = 64;
