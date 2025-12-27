@@ -78,7 +78,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 6. Validation: test against float32 oracles with looser tolerances
 7. Analysis: compare latency/memory/energy across float32/Q15/Q7 on embedded targets
 
-See `src/engine/include/cortex_plugin/cortex_plugin.h` for dtype definitions and `primitives/kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
+See `primitives/kernels/v1/cortex_plugin.h` for dtype definitions and `primitives/kernels/v1/{name}@{dtype}/spec.yaml` for tolerance specifications.
 
 **Kernel Auto-Detection Multi-Dtype Limitations**: The Fall 2025 auto-detection system (`cortex_discover_kernels()`) has known limitations with multi-dtype support that will be addressed during quantization implementation. See `docs/development/future-enhancements.md` "Current Auto-Detection Limitations" section and `src/engine/harness/config/config.c` TODOs for details.
 

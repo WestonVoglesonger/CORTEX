@@ -1,6 +1,7 @@
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -I../../../../src/engine/params -Idependencies
+CFLAGS = -Wall -Wextra -O2 -g -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -I../../../../src/engine/params -Idependencies
 PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
+KERNEL_ABI_OBJ = ../cortex_plugin_abi.o
 LDFLAGS = -lm
 
 # Detect OS for shared library extension and flags
@@ -21,8 +22,8 @@ OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(PARAMS_LIB)
-	$(CC) $(SOFLAGS) $(OBJS) $(PARAMS_LIB) $(LDFLAGS) -o $@
+$(TARGET): $(OBJS) $(PARAMS_LIB) $(KERNEL_ABI_OBJ)
+	$(CC) $(SOFLAGS) $(OBJS) $(KERNEL_ABI_OBJ) $(PARAMS_LIB) $(LDFLAGS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

@@ -3,6 +3,15 @@
 
 .PHONY: all params harness plugins tests clean help
 
+# Primitive include paths - exported for sub-makes
+export CORTEX_PRIMITIVE_INCLUDES = -I$(PWD)/primitives/kernels/v1 -I$(PWD)/primitives/adapters/v1
+
+# Kernel ABI object (compiled once, linked into all kernels)
+KERNEL_ABI_OBJ = primitives/kernels/v1/cortex_plugin_abi.o
+
+# Adapter ABI object (compiled once, linked into all adapters)
+ADAPTER_ABI_OBJ = primitives/adapters/v1/cortex_adapter_abi.o
+
 # Default target: build everything
 all: params harness plugins tests
 
@@ -16,8 +25,18 @@ harness:
 	@echo "Building harness..."
 	$(MAKE) -C src/engine/harness
 
-# Build plugins (kernels from registry) - depends on params
-plugins: params
+# Build kernel ABI object (compiled once, linked by all kernels)
+$(KERNEL_ABI_OBJ): primitives/kernels/v1/cortex_plugin_abi.c primitives/kernels/v1/cortex_plugin.h
+	@echo "Building kernel ABI object..."
+	$(CC) -c -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -o $@ $<
+
+# Build adapter ABI object (compiled once, linked by all adapters)
+$(ADAPTER_ABI_OBJ): primitives/adapters/v1/cortex_adapter_abi.c primitives/adapters/v1/cortex_adapter.h
+	@echo "Building adapter ABI object..."
+	$(CC) -c -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -o $@ $<
+
+# Build plugins (kernels from registry) - depends on params and ABI object
+plugins: params $(KERNEL_ABI_OBJ)
 	@echo "Building kernel plugins from registry..."
 	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
@@ -51,6 +70,8 @@ clean:
 		fi \
 	done
 	$(MAKE) -C tests clean
+	@rm -f $(KERNEL_ABI_OBJ)
+	@rm -f $(ADAPTER_ABI_OBJ)
 
 # Development workflow
 dev: clean all

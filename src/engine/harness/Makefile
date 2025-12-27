@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../include -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -I../telemetry -Iutil -Ireport
+CFLAGS = -Wall -Wextra -g -O2 -std=c11 $(CORTEX_PRIMITIVE_INCLUDES) -I../scheduler -I../replayer -Iapp -Iconfig -Iloader -I../telemetry -Iutil -Ireport
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)

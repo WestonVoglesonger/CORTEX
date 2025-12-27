@@ -155,8 +155,8 @@ cortex validate --kernel mykernel
 ```
 
 **Critical Requirements**:
-- ✅ Makefile include path: `-I../../../../src/engine/include`
-- ✅ Implement all required ABI functions: `init`, `execute`, `destroy`
+- ✅ Makefile include path: Use `$(CORTEX_PRIMITIVE_INCLUDES)` from top-level
+- ✅ Implement all required ABI functions: `cortex_init`, `cortex_process`, `cortex_teardown`
 - ✅ Match spec.yaml dimensions exactly (input_shape, output_shape)
 - ✅ Provide Python oracle for validation
 - ✅ Document algorithm in README.md
@@ -249,7 +249,7 @@ primitives/profiles/
 
 **C Engine Integration**:
 - Harness dynamically loads kernel plugins from `primitives/kernels/v*/`
-- Plugin ABI defined in `src/engine/include/cortex_plugin.h`
+- Plugin ABI defined in `primitives/kernels/v1/cortex_plugin.h`
 - Scheduler coordinates multi-kernel pipelines
 - Replayer streams data to kernel instances
 

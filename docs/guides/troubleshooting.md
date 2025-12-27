@@ -79,8 +79,8 @@ sudo dnf install gcc      # Fedora/RHEL
 
 **Solution**:
 ```makefile
-# Ensure Makefile has correct include path
-CFLAGS = -I../../../../src/engine/include  # From primitives/kernels/v1/{name}@f32/
+# Ensure Makefile uses CORTEX_PRIMITIVE_INCLUDES from top-level
+CFLAGS = -Wall -Wextra -O2 -g -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -I../../../../src/engine/params
 ```
 
 ---

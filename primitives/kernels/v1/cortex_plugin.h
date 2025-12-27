@@ -37,14 +37,25 @@
  #endif
  
  #include <stdint.h>
- 
+ #include <stddef.h>  /* for size_t */
+
  /*
   * ABI version.  Increment this value when making breaking changes to
   * cortex_plugin_config_t or function signatures.  Plugins should refuse
   * initialization if the provided abi_version does not match this constant.
   */
  #define CORTEX_ABI_VERSION 2u
- 
+
+/*
+ * ABI version function - real symbol for dlsym() discovery
+ * Implementation in cortex_plugin_abi.c (compiled once at top level)
+ *
+ * Adapters call this function to verify kernel ABI compatibility.
+ *
+ * Returns: CORTEX_ABI_VERSION (currently 2)
+ */
+uint32_t cortex_plugin_abi_version(void);
+
 /*
  * Numeric data type supported by the plugin. Dtypes are
  * communicated in the config (desired dtype for this run).
@@ -54,6 +65,25 @@ typedef enum {
      CORTEX_DTYPE_Q15     = 1u << 1, /* 16‑bit fixed‑point (signed Q1.15) */
      CORTEX_DTYPE_Q7      = 1u << 2  /* 8‑bit fixed‑point (signed Q0.7) */
  } cortex_dtype_bitmask_t;
+
+/*
+ * Dtype size helper with one-hot enforcement
+ * Used by adapters to compute buffer sizes
+ *
+ * Enforces exactly one dtype bit set (one-hot).
+ * Returns: bytes per element, or 0 if invalid/multiple bits set
+ */
+static inline size_t cortex_dtype_size_bytes(uint32_t dtype) {
+    /* Enforce exactly one dtype bit set (one-hot) */
+    if (__builtin_popcount(dtype) != 1) {
+        return 0; /* Error: must be exactly one dtype */
+    }
+
+    if (dtype == CORTEX_DTYPE_FLOAT32) return 4;
+    if (dtype == CORTEX_DTYPE_Q15) return 2;
+    if (dtype == CORTEX_DTYPE_Q7) return 1;
+    return 0; /* Should never reach */
+}
  
  /*
   * Generic configuration passed to cortex_init().  The harness fills this

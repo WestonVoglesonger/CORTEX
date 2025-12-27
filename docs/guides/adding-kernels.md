@@ -326,9 +326,10 @@ Copy and adapt from existing kernel:
 ```makefile
 # Makefile for your_kernel@f32 plugin
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../src/engine/include -I../../../../src/engine/params -fPIC
+CC = cc
+CFLAGS = -Wall -Wextra -O2 -g -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -I../../../../src/engine/params
 PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
+KERNEL_ABI_OBJ = ../cortex_plugin_abi.o
 LDFLAGS = -lm
 
 # Detect platform for plugin extension
@@ -349,8 +350,8 @@ OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
 
-$(TARGET): $(OBJ) $(PARAMS_LIB)
-	$(CC) $(SOFLAG) -o $@ $(OBJ) $(PARAMS_LIB) $(LDFLAGS)
+$(TARGET): $(OBJ) $(PARAMS_LIB) $(KERNEL_ABI_OBJ)
+	$(CC) $(SOFLAG) -o $@ $(OBJ) $(KERNEL_ABI_OBJ) $(PARAMS_LIB) $(LDFLAGS)
 
 # Build params library if it doesn't exist
 $(PARAMS_LIB):

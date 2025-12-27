@@ -102,7 +102,7 @@ This document consolidates all planned features, deferred implementations, and f
 
 **Documentation:**
 - Overview: `docs/development/roadmap.md` lines 59-80
-- ABI: `src/engine/include/cortex_plugin/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
+- ABI: `primitives/kernels/v1/cortex_plugin.h` lines 52-56 (dtype enums), line 75 (config struct)
 - Tolerances: `primitives/kernels/v1/{name}@{dtype}/spec.yaml`
 
 **Current Auto-Detection Limitations** (Fall 2025):

@@ -1,7 +1,7 @@
 # Makefile for CORTEX C tests
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../src/engine/include
+CFLAGS = -Wall -Wextra -g -O0 -std=c11 $(CORTEX_PRIMITIVE_INCLUDES)
 LDFLAGS = -lpthread -lm
 
 # Source files

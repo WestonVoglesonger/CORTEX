@@ -2,8 +2,9 @@
 # Platform-specific shared library build
 
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -I../../../../src/engine/params
+CFLAGS = -Wall -Wextra -O2 -g -fPIC $(CORTEX_PRIMITIVE_INCLUDES) -I../../../../src/engine/params
 PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
+KERNEL_ABI_OBJ = ../cortex_plugin_abi.o
 
 
 # Detect platform and set extension/flag
@@ -27,8 +28,8 @@ all: $(PLUGIN_LIB)
 $(PLUGIN_OBJ): $(PLUGIN_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB)
-	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(PARAMS_LIB) -lm
+$(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB) $(KERNEL_ABI_OBJ)
+	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(KERNEL_ABI_OBJ) $(PARAMS_LIB) -lm
 
 # Build params library if it doesn't exist
 $(PARAMS_LIB):
