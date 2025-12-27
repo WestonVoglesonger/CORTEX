@@ -19,15 +19,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y gcc make
     
-    - name: Build C tests
-      run: |
-        cd tests
-        make all
-    
-    - name: Run all tests
-      run: |
-        cd tests
-        make test
+    - name: Build and run C tests
+      run: make tests
 
   python-tests:
     name: Python Tests
