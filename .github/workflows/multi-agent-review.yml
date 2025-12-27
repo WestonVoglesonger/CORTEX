@@ -256,6 +256,9 @@ jobs:
       - name: Invoke Claude Code to analyze and fix
         uses: anthropics/claude-code-action@v1
         with:
+          # OAuth token (Pro/Max users): Run `claude setup-token` locally
+          # API key fallback: Add ANTHROPIC_API_KEY secret
+          oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.format-prompt.outputs.prompt }}
