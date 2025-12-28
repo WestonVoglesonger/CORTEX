@@ -75,8 +75,11 @@ static int load_plugin(const char *plugin_name,
     /* Build plugin config */
     cortex_plugin_config_t pc = {0};
 
-    /* Detect kernel ABI version: v3 if calibrate symbol exists, v2 otherwise */
-    /* This ensures backward compatibility - v2 kernels expect abi_version = 2 */
+    /* Detect kernel ABI version via cortex_calibrate symbol presence.
+     * CONSTRAINT: v3 kernels MUST export cortex_calibrate (even if stub).
+     * v3 stateless kernels should define local CORTEX_ABI_VERSION 2u instead.
+     * This ensures backward compatibility - v2 kernels expect abi_version = 2.
+     * TODO(v4): Export cortex_kernel_abi_version symbol for direct detection. */
     uint32_t kernel_abi_version = (out_loaded->api.calibrate != NULL) ? 3 : 2;
     pc.abi_version = kernel_abi_version;
     pc.struct_size = sizeof(cortex_plugin_config_t);
