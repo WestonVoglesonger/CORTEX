@@ -350,12 +350,22 @@ class HarnessRunner:
             duration: Override duration (seconds)
             repeats: Override number of repeats
             warmup: Override warmup duration (seconds)
-            calibration_state: Path to .cortex_state file (applied to all trainable kernels)
+            calibration_state: Not supported in --all mode (must use --kernel)
             verbose: Show verbose output
 
         Returns:
             Run directory path if successful, None otherwise
         """
+        # Reject calibration_state in auto-detect mode (fails silently otherwise)
+        if calibration_state is not None:
+            self.log.error("ERROR: --state cannot be used with --all mode")
+            self.log.info("Reason: Auto-detect runs ALL kernels, but each trainable kernel")
+            self.log.info("        needs its own specific calibration state (ICA ≠ CSP ≠ LDA)")
+            self.log.info("")
+            self.log.info("Solution: Use --kernel to specify which trainable kernel to run:")
+            self.log.info(f"  cortex run --kernel ica --state {calibration_state}")
+            return None
+
         # Create run directory structure
         create_run_structure(run_name)
 

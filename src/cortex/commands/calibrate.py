@@ -108,7 +108,7 @@ def execute(args):
     print(f"\n✓ Calibration successful")
     print(f"  State file: {args.output} ({file_size:,} bytes)")
     print("\nUsage:")
-    print(f"  cortex run --kernel {args.kernel} --calibration-state {args.output}")
+    print(f"  cortex run --kernel {args.kernel} --state {args.output}")
     print(f"  cortex validate --kernel {args.kernel} --calibration-state {args.output}")
     print("=" * 80)
 

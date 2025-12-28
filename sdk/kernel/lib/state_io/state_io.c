@@ -207,8 +207,9 @@ int cortex_state_validate(const char *path) {
         return -1;
     }
 
-    if (state_size == 0 || state_size > 100 * 1024 * 1024) {
-        fprintf(stderr, "[state_io] Invalid state size: %u\n", state_size);
+    if (state_size == 0 || state_size > CORTEX_MAX_STATE_SIZE) {
+        fprintf(stderr, "[state_io] Invalid state size: %u (max %d)\n",
+                state_size, CORTEX_MAX_STATE_SIZE);
         return -1;
     }
 
