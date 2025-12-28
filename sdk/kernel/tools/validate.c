@@ -301,12 +301,13 @@ static int run_python_oracle(const char *kernel_name, const float *input,
 }
 
 /* Build plugin config */
-static cortex_plugin_config_t build_plugin_config(uint32_t Fs, uint32_t W,
+static cortex_plugin_config_t build_plugin_config(uint32_t abi_version,
+                                                  uint32_t Fs, uint32_t W,
                                                   uint32_t H, uint32_t C,
                                                   const void *calibration_state,
                                                   uint32_t calibration_state_size) {
   cortex_plugin_config_t config = {0};
-  config.abi_version = CORTEX_ABI_VERSION;
+  config.abi_version = abi_version;  /* Pass detected plugin ABI version */
   config.struct_size = sizeof(cortex_plugin_config_t);
   config.sample_rate_hz = Fs;
   config.window_length_samples = W;
@@ -441,8 +442,11 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     return -1;
   }
 
+  /* Detect plugin ABI version: v2 (no calibrate) or v3 (has calibrate) */
+  uint32_t plugin_abi_version = (plugin.api.calibrate == NULL) ? 2 : 3;
+
   /* 4. Initialize plugin */
-  cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64,
+  cortex_plugin_config_t cfg = build_plugin_config(plugin_abi_version, 160, W, H, 64,
                                                    calibration_state,
                                                    calibration_state_size);
   cortex_init_result_t init_result = plugin.api.init(&cfg);
