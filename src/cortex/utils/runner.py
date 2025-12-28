@@ -6,6 +6,7 @@ via Protocol interfaces, enabling full unit test coverage without I/O.
 """
 
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 from cortex.core.protocols import (
@@ -22,6 +23,7 @@ from cortex.utils.paths import (
     create_kernel_directory,
     get_run_directory
 )
+from cortex.utils.config import generate_temp_config
 
 # Constants
 HARNESS_BINARY_PATH = 'src/engine/harness/cortex'
@@ -277,9 +279,10 @@ class HarnessRunner:
         duration: Optional[int] = None,
         repeats: Optional[int] = None,
         warmup: Optional[int] = None,
+        calibration_state: Optional[str] = None,
         verbose: bool = False
     ) -> Optional[str]:
-        """Run benchmark for a single kernel using environment variable filtering.
+        """Run benchmark for a single kernel using temp YAML generation.
 
         Args:
             kernel_name: Name of kernel to benchmark
@@ -287,6 +290,7 @@ class HarnessRunner:
             duration: Override duration (seconds)
             repeats: Override number of repeats
             warmup: Override warmup duration (seconds)
+            calibration_state: Path to .cortex_state file for trainable kernels
             verbose: Show verbose output
 
         Returns:
@@ -295,31 +299,36 @@ class HarnessRunner:
         # Create run directory structure
         run_structure = create_run_structure(run_name)
 
-        # Build environment variable overrides
-        env_overrides = {
-            'CORTEX_KERNEL_FILTER': kernel_name
-        }
-
-        if duration is not None:
-            env_overrides['CORTEX_DURATION_OVERRIDE'] = str(duration)
-        if repeats is not None:
-            env_overrides['CORTEX_REPEATS_OVERRIDE'] = str(repeats)
-        if warmup is not None:
-            env_overrides['CORTEX_WARMUP_OVERRIDE'] = str(warmup)
-
         self.log.info(f"Running benchmark for {kernel_name}...")
 
-        # Run harness with base config and env var overrides
+        # Generate temp config with overrides
         base_config = "primitives/configs/cortex.yaml"
-        results_dir = self.run(base_config, run_name, verbose=verbose, env=env_overrides)
+        temp_config = generate_temp_config(
+            base_config_path=base_config,
+            kernel_filter=kernel_name,
+            duration=duration,
+            repeats=repeats,
+            warmup=warmup,
+            calibration_state=calibration_state
+        )
 
-        if results_dir:
-            self.log.info(f"✓ Benchmark complete: {results_dir}")
-        else:
-            # Cleanup: remove partial run directory on harness failure
-            self._cleanup_partial_run(run_structure['run'])
+        try:
+            # Run harness with temp config
+            results_dir = self.run(temp_config, run_name, verbose=verbose, env=None)
 
-        return results_dir
+            if results_dir:
+                self.log.info(f"✓ Benchmark complete: {results_dir}")
+            else:
+                # Cleanup: remove partial run directory on harness failure
+                self._cleanup_partial_run(run_structure['run'])
+
+            return results_dir
+        finally:
+            # Always clean up temp config
+            try:
+                os.unlink(temp_config)
+            except Exception as e:
+                self.log.warning(f"Failed to clean up temp config {temp_config}: {e}")
 
     def run_all_kernels(
         self,
@@ -327,6 +336,7 @@ class HarnessRunner:
         duration: Optional[int] = None,
         repeats: Optional[int] = None,
         warmup: Optional[int] = None,
+        calibration_state: Optional[str] = None,
         verbose: bool = False
     ) -> Optional[str]:
         """Run benchmarks for all available kernels in a single harness invocation.
@@ -340,6 +350,7 @@ class HarnessRunner:
             duration: Override duration (seconds)
             repeats: Override number of repeats
             warmup: Override warmup duration (seconds)
+            calibration_state: Path to .cortex_state file (applied to all trainable kernels)
             verbose: Show verbose output
 
         Returns:
@@ -348,32 +359,39 @@ class HarnessRunner:
         # Create run directory structure
         create_run_structure(run_name)
 
-        # Build environment variable overrides (no kernel filter = run all)
-        env_overrides = {}
-
-        if duration is not None:
-            env_overrides['CORTEX_DURATION_OVERRIDE'] = str(duration)
-        if repeats is not None:
-            env_overrides['CORTEX_REPEATS_OVERRIDE'] = str(repeats)
-        if warmup is not None:
-            env_overrides['CORTEX_WARMUP_OVERRIDE'] = str(warmup)
-
         self.log.info("Running benchmarks for all kernels (auto-detection mode)...")
 
         run_dir = get_run_directory(run_name)
         self.log.info(f"Results will be saved to: {run_dir}")
         self.log.info("")
 
-        # Single harness invocation with base config (no plugins section = auto-detect all)
+        # Generate temp config with overrides (no kernel filter = run all)
         base_config = "primitives/configs/cortex.yaml"
-        results_dir = self.run(base_config, run_name, verbose=verbose, env=env_overrides)
+        temp_config = generate_temp_config(
+            base_config_path=base_config,
+            kernel_filter=None,  # No filter = run all kernels
+            duration=duration,
+            repeats=repeats,
+            warmup=warmup,
+            calibration_state=calibration_state
+        )
 
-        if results_dir:
-            self.log.info("")
-            self.log.info("=" * 80)
-            self.log.info("Benchmark Complete")
-            self.log.info("=" * 80)
-            self.log.info(f"Results directory: {results_dir}")
-            self.log.info("=" * 80)
+        try:
+            # Single harness invocation with temp config
+            results_dir = self.run(temp_config, run_name, verbose=verbose, env=None)
 
-        return results_dir
+            if results_dir:
+                self.log.info("")
+                self.log.info("=" * 80)
+                self.log.info("Benchmark Complete")
+                self.log.info("=" * 80)
+                self.log.info(f"Results directory: {results_dir}")
+                self.log.info("=" * 80)
+
+            return results_dir
+        finally:
+            # Always clean up temp config
+            try:
+                os.unlink(temp_config)
+            except Exception as e:
+                self.log.warning(f"Failed to clean up temp config {temp_config}: {e}")
