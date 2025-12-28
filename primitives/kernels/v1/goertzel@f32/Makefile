@@ -2,18 +2,18 @@
 # Platform-specific shared library build
 
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -I../../../../src/engine/params
-PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
-
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include
 
 # Detect platform and set extension/flag
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
     SOFLAG = -dynamiclib
     LIBEXT = .dylib
+    LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
 else
     SOFLAG = -shared
     LIBEXT = .so
+    LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
 endif
 
 # Kernel name from directory (e.g., "goertzel" from "goertzel@f32/")
@@ -27,12 +27,8 @@ all: $(PLUGIN_LIB)
 $(PLUGIN_OBJ): $(PLUGIN_SRC)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB)
-	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(PARAMS_LIB) -lm
-
-# Build params library if it doesn't exist
-$(PARAMS_LIB):
-	$(MAKE) -C ../../../../src/engine/params
+$(PLUGIN_LIB): $(PLUGIN_OBJ)
+	$(CC) $(SOFLAG) -o $@ $(PLUGIN_OBJ) $(LDFLAGS)
 
 clean:
 	rm -f $(PLUGIN_OBJ) $(PLUGIN_LIB)

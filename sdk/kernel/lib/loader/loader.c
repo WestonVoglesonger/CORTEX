@@ -1,10 +1,8 @@
-#include "loader.h"
+#include "cortex_loader.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <dlfcn.h>
-
-#include "../scheduler/scheduler.h"
 
 static int validate_plugin_name(const char *name) {
     if (!name) return -1;

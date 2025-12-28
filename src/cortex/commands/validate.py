@@ -26,10 +26,11 @@ def execute(args):
     print("=" * 80)
 
     # Check if test binary exists
-    test_binary = Path('tests/test_kernel_accuracy')
+    test_binary = Path('sdk/kernel/tools/cortex_validate')
     if not test_binary.exists():
-        print("\n✗ Test binary not found")
-        print("  Run 'cortex build' first")
+        print("\n✗ Validation binary not found: sdk/kernel/tools/cortex_validate")
+        print("  This binary is part of the CORTEX SDK")
+        print("  Run 'make all' to build it")
         return 1
 
     if args.kernel:

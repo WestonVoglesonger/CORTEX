@@ -1,23 +1,23 @@
 # Top-level Makefile for CORTEX benchmarking pipeline
-# Orchestrates building harness, plugins, and tests
+# Orchestrates building SDK, harness, plugins, and tests
 
-.PHONY: all params harness plugins tests clean help
+.PHONY: all sdk harness plugins tests clean help
 
 # Default target: build everything
-all: params harness plugins tests
+all: sdk harness plugins tests
 
-# Build parameter accessor library
-params:
-	@echo "Building parameter accessor library..."
-	$(MAKE) -C src/engine/params
+# Build SDK (kernel library and tools)
+sdk:
+	@echo "Building CORTEX SDK..."
+	$(MAKE) -C sdk
 
 # Build the harness
-harness:
+harness: sdk
 	@echo "Building harness..."
 	$(MAKE) -C src/engine/harness
 
-# Build plugins (kernels from registry) - depends on params
-plugins: params
+# Build plugins (kernels from registry) - depends on SDK
+plugins: sdk
 	@echo "Building kernel plugins from registry..."
 	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
@@ -39,8 +39,8 @@ tests:
 # Clean everything
 clean:
 	@echo "Cleaning all build artifacts..."
+	$(MAKE) -C sdk clean
 	$(MAKE) -C src/engine/harness clean
-	$(MAKE) -C src/engine/params clean
 	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
 			for dir in $$version_dir*@*/; do \
@@ -61,10 +61,10 @@ help:
 	@echo "CORTEX Build System"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  all      - Build params, harness, plugins, and run tests (default)"
-	@echo "  params   - Build parameter accessor library"
+	@echo "  all      - Build SDK, harness, plugins, and run tests (default)"
+	@echo "  sdk      - Build CORTEX SDK (kernel lib + tools)"
 	@echo "  harness  - Build the benchmarking harness"
-	@echo "  plugins  - Build all plugins"
+	@echo "  plugins  - Build all kernel plugins"
 	@echo "  tests    - Build and run unit tests"
 	@echo "  clean    - Clean all build artifacts"
 	@echo "  dev      - Full clean + rebuild cycle"
@@ -72,6 +72,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make              # Build everything"
+	@echo "  make sdk          # Build only SDK"
 	@echo "  make harness      # Build only harness"
 	@echo "  make plugins      # Build only plugins"
 	@echo "  make clean all    # Clean and rebuild"

@@ -55,10 +55,10 @@ def execute(args):
         return 1
 
     # Check if calibration binary exists
-    calib_binary = Path('src/engine/harness/cortex_calibrate')
+    calib_binary = Path('sdk/kernel/tools/cortex_calibrate')
     if not calib_binary.exists():
-        print("\n✗ Calibration binary not found: src/engine/harness/cortex_calibrate")
-        print("  This binary is part of the ABI v3 harness implementation")
+        print("\n✗ Calibration binary not found: sdk/kernel/tools/cortex_calibrate")
+        print("  This binary is part of the CORTEX SDK")
         print("  Run 'make all' to build it")
         return 1
 
