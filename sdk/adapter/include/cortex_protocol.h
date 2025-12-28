@@ -14,8 +14,9 @@
  * Wire format is defined in lib/protocol/wire_format.h
  */
 
-/* Re-export frame types from wire_format.h */
+/* Re-export wire format definitions and endian helpers */
 #include "../lib/protocol/wire_format.h"
+#include "cortex_endian.h"
 
 /* Protocol error codes (negative, distinct from transport errors) */
 #define CORTEX_EPROTO_MAGIC_NOT_FOUND  -2000  /* MAGIC not found in stream */
