@@ -10,6 +10,10 @@ __pycache__/
 src/engine/harness/cortex
 src/engine/harness/cortex_calibrate
 
+# SDK tool binaries
+sdk/kernel/tools/cortex_calibrate
+sdk/kernel/tools/cortex_validate
+
 # Distribution / packaging
 .Python
 build/
