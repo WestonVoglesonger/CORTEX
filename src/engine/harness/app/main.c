@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "cortex_loader.h"
+#include "cortex_state_io.h"
 #include "signal_handler.h"
 #include "telemetry.h"
 #include "util.h"
@@ -56,7 +57,8 @@ static int load_plugin(const char *plugin_name,
                        const cortex_plugin_entry_cfg_t *plugin_cfg,
                        uint32_t sample_rate_hz,
                        cortex_scheduler_t *scheduler,
-                       cortex_loaded_plugin_t *out_loaded) {
+                       cortex_loaded_plugin_t *out_loaded,
+                       void **out_calibration_state) {
     /* Build plugin path from spec_uri */
     char plugin_path[1024];
     if (cortex_plugin_build_path(plugin_cfg->spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
@@ -90,15 +92,45 @@ static int load_plugin(const char *plugin_name,
         pc.kernel_params_size = 0;
     }
 
+    /* Load calibration state if path provided (v3 trainable kernels) */
+    void *calibration_state_buffer = NULL;
+    uint32_t calibration_state_size = 0;
+
+    if (plugin_cfg->calibration_state[0] != '\0') {
+        uint32_t state_version;
+        int rc = cortex_state_load(plugin_cfg->calibration_state,
+                                   &calibration_state_buffer,
+                                   &calibration_state_size,
+                                   &state_version);
+        if (rc != 0) {
+            /* STRICT ERROR HANDLING - fail fast, don't continue with invalid state */
+            fprintf(stderr, "[harness] ERROR: Failed to load calibration state: %s\n",
+                    plugin_cfg->calibration_state);
+            cortex_plugin_unload(out_loaded);
+            return -1;
+        }
+        fprintf(stderr, "[harness] Loaded calibration state: %s (%u bytes, v%u)\n",
+                plugin_cfg->calibration_state, calibration_state_size, state_version);
+
+        pc.calibration_state = calibration_state_buffer;
+        pc.calibration_state_size = calibration_state_size;
+    } else {
+        pc.calibration_state = NULL;
+        pc.calibration_state_size = 0;
+    }
+
     /* Register plugin with scheduler */
     cortex_plugin_api_t api = out_loaded->api;
 
     if (cortex_scheduler_register_plugin(scheduler, &api, &pc, plugin_name) != 0) {
         fprintf(stderr, "[harness] failed to register plugin '%s' with scheduler\n", plugin_name);
         cortex_plugin_unload(out_loaded);
+        free(calibration_state_buffer);
         return -1;
     }
 
+    /* Return buffer to caller for cleanup after scheduler is destroyed */
+    *out_calibration_state = calibration_state_buffer;
     return 0;
 }
 
@@ -200,7 +232,8 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     
     /* Step 4: Call load_plugin() to load and register, save handle */
     cortex_loaded_plugin_t loaded_plugin;
-    if (load_plugin(plugin_name, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz, scheduler, &loaded_plugin) != 0) {
+    void *calibration_state = NULL;  /* Caller owns memory, frees after scheduler destroy */
+    if (load_plugin(plugin_name, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz, scheduler, &loaded_plugin, &calibration_state) != 0) {
         fprintf(stderr, "[harness] failed to load plugin '%s'\n", plugin_name);
         cortex_scheduler_destroy(scheduler);
         return -1;
@@ -214,8 +247,9 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
         printf("[harness] Warmup phase for plugin '%s' (%u seconds)\n", plugin_name, ctx->run_cfg.benchmark.parameters.warmup_seconds);
         if (run_once(ctx, ctx->run_cfg.benchmark.parameters.warmup_seconds, plugin_cfg) != 0) {
             fprintf(stderr, "[harness] warmup failed for plugin '%s'\n", plugin_name);
-            cortex_plugin_unload(&loaded_plugin);
             cortex_scheduler_destroy(scheduler);
+            free(calibration_state);
+            cortex_plugin_unload(&loaded_plugin);
             ctx->scheduler = NULL;
             return -1;
         }
@@ -241,8 +275,9 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
             }
 
             /* Non-shutdown failure - cleanup and return immediately */
-            cortex_plugin_unload(&loaded_plugin);
             cortex_scheduler_destroy(scheduler);
+            free(calibration_state);
+            cortex_plugin_unload(&loaded_plugin);
             ctx->scheduler = NULL;
             return -1;
         }
@@ -251,6 +286,7 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     /* Step 8: Cleanup */
     cortex_scheduler_destroy(scheduler);  /* Must destroy scheduler before unloading plugin */
     ctx->scheduler = NULL;
+    free(calibration_state);  /* Free state buffer after scheduler destroys kernel's copy */
     cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
 
     /* Step 9: Write this plugin's telemetry to per-plugin output directory */
