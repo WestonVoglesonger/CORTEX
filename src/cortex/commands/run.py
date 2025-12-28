@@ -51,6 +51,10 @@ def setup_parser(parser):
         help='Override warmup duration (seconds)'
     )
     parser.add_argument(
+        '--state',
+        help='Path to calibration state file (.cortex_state) for trainable kernels'
+    )
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Show verbose harness output'
@@ -134,6 +138,7 @@ def execute(args):
             duration=args.duration,
             repeats=args.repeats,
             warmup=args.warmup,
+            calibration_state=args.state,
             verbose=args.verbose
         )
         return 0 if results_dir else 1
@@ -145,6 +150,7 @@ def execute(args):
             duration=args.duration,
             repeats=args.repeats,
             warmup=args.warmup,
+            calibration_state=args.state,
             verbose=args.verbose
         )
         return 0 if results_dir else 1
