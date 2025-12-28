@@ -91,7 +91,7 @@ static int load_plugin(const char *plugin_name,
     }
 
     /* Register plugin with scheduler */
-    cortex_scheduler_plugin_api_t api = out_loaded->api;
+    cortex_plugin_api_t api = out_loaded->api;
 
     if (cortex_scheduler_register_plugin(scheduler, &api, &pc, plugin_name) != 0) {
         fprintf(stderr, "[harness] failed to register plugin '%s' with scheduler\n", plugin_name);
