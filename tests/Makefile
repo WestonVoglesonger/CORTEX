@@ -1,31 +1,35 @@
 # Makefile for CORTEX C tests
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../src/engine/include
-LDFLAGS = -lpthread -lm
+CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../sdk/kernel/include
+
+# Platform-specific linker flags
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    LDFLAGS = -L../sdk/kernel/lib -lcortex -lpthread -lm
+else
+    LDFLAGS = -L../sdk/kernel/lib -lcortex -ldl -lpthread -lm
+endif
 
 # Source files
 REPLAYER_SRC = ../src/engine/replayer/replayer.c
 SCHEDULER_SRC = ../src/engine/scheduler/scheduler.c
 TELEMETRY_SRC = ../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
-LOADER_SRC = ../src/engine/harness/loader/loader.c
 SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
-PARAM_ACCESSOR_LIB = ../src/engine/params/libcortex_params.a
 
 # Test binaries
 TEST_REPLAYER = test_replayer
 TEST_SCHEDULER = test_scheduler
 TEST_TELEMETRY = test_telemetry
 TEST_KERNEL_REGISTRY = test_kernel_registry
-TEST_KERNEL_ACCURACY = test_kernel_accuracy
 TEST_CLOCK_RESOLUTION = test_clock_resolution
 TEST_SIGNAL_HANDLER = test_signal_handler
 TEST_PARAM_ACCESSOR = test_param_accessor
 
-.PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-kernel-accuracy test-clock-resolution test-signal-handler test-param-accessor
+.PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-clock-resolution test-signal-handler test-param-accessor
 
-all: $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
+all: $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
 
 $(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -39,21 +43,14 @@ $(TEST_TELEMETRY): test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
 $(TEST_KERNEL_REGISTRY): test_kernel_registry.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_KERNEL_ACCURACY): test_kernel_accuracy.c $(LOADER_SRC)
-	$(CC) $(CFLAGS) -I../src/engine -I../src/engine/scheduler -I../src/engine/replayer -I../src/engine/telemetry -I../src/engine/harness/config -I../src/engine/harness/util -o $@ $^ $(LDFLAGS) -ldl -lm
-
 $(TEST_CLOCK_RESOLUTION): test_clock_resolution.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(TEST_SIGNAL_HANDLER): test_signal_handler.c $(SIGNAL_HANDLER_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# Build params library if it doesn't exist
-$(PARAM_ACCESSOR_LIB):
-	$(MAKE) -C ../src/engine/params
-
-$(TEST_PARAM_ACCESSOR): test_param_accessor.c $(PARAM_ACCESSOR_LIB)
-	$(CC) $(CFLAGS) -o $@ $< $(PARAM_ACCESSOR_LIB) $(LDFLAGS)
+$(TEST_PARAM_ACCESSOR): test_param_accessor.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 test: test-replayer test-scheduler test-telemetry test-kernel-registry test-signal-handler test-param-accessor
 
@@ -77,10 +74,6 @@ test-kernel-registry: $(TEST_KERNEL_REGISTRY)
 	@echo "Running kernel registry tests..."
 	@cd .. && ./tests/$(TEST_KERNEL_REGISTRY)
 
-test-kernel-accuracy: $(TEST_KERNEL_ACCURACY)
-	@echo "Running kernel accuracy tests..."
-	@./$(TEST_KERNEL_ACCURACY) --kernel notch_iir --windows 5 --verbose
-
 test-signal-handler: $(TEST_SIGNAL_HANDLER)
 	@echo "Running signal handler tests..."
 	@./$(TEST_SIGNAL_HANDLER)
@@ -90,7 +83,7 @@ test-param-accessor: $(TEST_PARAM_ACCESSOR)
 	@./$(TEST_PARAM_ACCESSOR)
 
 clean:
-	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_KERNEL_ACCURACY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
+	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR)
 	rm -f /tmp/cortex_test_*.dat /tmp/test_output.bin /tmp/test_input_* /tmp/cortex_test_telemetry.*
 
 help:
@@ -101,7 +94,6 @@ help:
 	@echo "  test-scheduler       - Run scheduler tests only"
 	@echo "  test-telemetry       - Run telemetry tests only"
 	@echo "  test-kernel-registry - Run kernel registry tests only"
-	@echo "  test-kernel-accuracy - Run kernel accuracy tests only"
 	@echo "  test-clock-resolution - Run clock resolution and timing accuracy tests"
 	@echo "  test-signal-handler  - Run signal handler tests only"
 	@echo "  test-param-accessor  - Run parameter accessor tests only"

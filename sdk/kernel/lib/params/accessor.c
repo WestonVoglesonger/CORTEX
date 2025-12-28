@@ -6,7 +6,7 @@
  *  2. URL-style:  "key1=value1,key2=value2" or "key1=value1&key2=value2"
  */
 
-#include "accessor.h"
+#include "cortex_params.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

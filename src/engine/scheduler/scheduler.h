@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "cortex_plugin.h"
+#include "cortex_loader.h"  /* For cortex_plugin_api_t definition */
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,15 +44,7 @@ typedef struct cortex_scheduler_config {
 /* Opaque scheduler object. */
 typedef struct cortex_scheduler_t cortex_scheduler_t;
 
-/*
- * Wrapper around the plugin ABI entry points.  The harness will typically load
- * these functions from a shared object (dlopen/dlsym) and forward them here.
- */
-typedef struct cortex_scheduler_plugin_api {
-    cortex_init_result_t (*init)(const cortex_plugin_config_t *config);
-    void (*process)(void *handle, const void *input, void *output);
-    void (*teardown)(void *handle);
-} cortex_scheduler_plugin_api_t;
+/* cortex_plugin_api_t is now defined in cortex_loader.h (SDK) */
 
 /*
  * Create a scheduler instance with the provided configuration.  Returns NULL
@@ -71,7 +64,7 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler);
  * errno on failure.
  */
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
-                                     const cortex_scheduler_plugin_api_t *api,
+                                     const cortex_plugin_api_t *api,
                                      const cortex_plugin_config_t *plugin_config,
                                      const char *plugin_name);
 

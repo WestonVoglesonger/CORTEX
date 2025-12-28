@@ -2,7 +2,7 @@
  * Unit tests for CORTEX parameter accessor library
  */
 
-#include "../src/engine/params/accessor.h"
+#include "cortex_params.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>

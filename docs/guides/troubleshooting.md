@@ -80,7 +80,7 @@ sudo dnf install gcc      # Fedora/RHEL
 **Solution**:
 ```makefile
 # Ensure Makefile has correct include path
-CFLAGS = -I../../../../src/engine/include  # From primitives/kernels/v1/{name}@f32/
+CFLAGS = -I../../../../sdk/kernel/include  # From primitives/kernels/v1/{name}@f32/
 ```
 
 ---

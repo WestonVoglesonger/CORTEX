@@ -1,10 +1,8 @@
-#include "loader.h"
+#include "cortex_loader.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <dlfcn.h>
-
-#include "../scheduler/scheduler.h"
 
 static int validate_plugin_name(const char *name) {
     if (!name) return -1;
@@ -63,19 +61,38 @@ int cortex_plugin_load(const char *path, cortex_loaded_plugin_t *out) {
     memset(out, 0, sizeof(*out));
     void *handle = dlopen(path, RTLD_LAZY);
     if (!handle) {
-        fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        fprintf(stderr, "[loader] dlopen failed: %s\n", dlerror());
         return -1;
     }
-    dlerror();
+
+    /* Load required v2/v3 functions */
+    dlerror();  /* Clear any previous error */
     out->api.init = dlsym(handle, "cortex_init");
     out->api.process = dlsym(handle, "cortex_process");
     out->api.teardown = dlsym(handle, "cortex_teardown");
     const char *err = dlerror();
     if (err || !out->api.init || !out->api.process || !out->api.teardown) {
-        fprintf(stderr, "dlsym failed: %s\n", err ? err : "missing required symbols");
+        fprintf(stderr, "[loader] dlsym failed for required symbols: %s\n",
+                err ? err : "missing cortex_init/process/teardown");
         dlclose(handle);
         return -1;
     }
+
+    /* Attempt to load optional v3 calibration function */
+    dlerror();  /* Clear any previous error */
+    out->api.calibrate = dlsym(handle, "cortex_calibrate");
+    err = dlerror();
+    if (err || !out->api.calibrate) {
+        /* Not an error - kernel is v2 compatible (no calibration support) */
+        out->api.calibrate = NULL;
+        out->api.capabilities = 0;
+        fprintf(stderr, "[loader] Plugin is ABI v2 compatible (no calibration support)\n");
+    } else {
+        /* v3 trainable kernel detected */
+        fprintf(stderr, "[loader] Plugin is ABI v3 trainable (calibration supported)\n");
+        /* Capabilities will be set after cortex_init() returns */
+    }
+
     out->so_handle = handle;
     return 0;
 }

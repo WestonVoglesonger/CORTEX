@@ -148,7 +148,7 @@ static int test_window_formation(void) {
     TEST_ASSERT_EQ(16, consumed, "Should consume all samples from first chunk");
     
     /* Register mock plugin to catch windows */
-    cortex_scheduler_plugin_api_t api = {
+    cortex_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
@@ -201,7 +201,7 @@ static int test_overlapping_windows(void) {
     TEST_ASSERT(scheduler != NULL, "Scheduler creation failed");
     
     /* Register plugin first */
-    cortex_scheduler_plugin_api_t api = {
+    cortex_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
@@ -300,7 +300,7 @@ static int test_multiple_plugins(void) {
     TEST_ASSERT(scheduler != NULL, "Scheduler creation failed");
     
     /* Register 3 plugins */
-    cortex_scheduler_plugin_api_t api = {
+    cortex_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
@@ -385,7 +385,7 @@ static int test_flush(void) {
     TEST_ASSERT(scheduler != NULL, "Scheduler creation failed");
     
     /* Register plugin */
-    cortex_scheduler_plugin_api_t api = {
+    cortex_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown
@@ -470,7 +470,7 @@ static int test_sequential_execution(void) {
         TEST_ASSERT(scheduler != NULL, "Scheduler creation failed for plugin");
 
         /* Register a plugin to this scheduler */
-        cortex_scheduler_plugin_api_t api = {
+        cortex_plugin_api_t api = {
             .init = mock_init,
             .process = mock_process,
             .teardown = mock_teardown
@@ -524,7 +524,7 @@ static int test_data_continuity(void) {
     TEST_ASSERT(scheduler != NULL, "Scheduler creation failed");
 
     /* Register plugin */
-    cortex_scheduler_plugin_api_t api = {
+    cortex_plugin_api_t api = {
         .init = mock_init,
         .process = mock_process,
         .teardown = mock_teardown

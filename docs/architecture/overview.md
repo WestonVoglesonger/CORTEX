@@ -83,7 +83,7 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 
 **Key files**:
 - `src/engine/harness/app/main.c` - Entry point and orchestration
-- `src/engine/harness/loader/loader.c` - Dynamic plugin loading
+- `sdk/kernel/lib/loader/loader.c` - Dynamic plugin loading
 - `src/engine/harness/telemetry/telemetry.c` - Metrics collection
 - `src/engine/harness/config/config.c` - YAML parsing
 

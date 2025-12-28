@@ -1,11 +1,13 @@
 #include "cortex_plugin.h"
-#include "accessor.h"
+#include "cortex_params.h"
 #include "kiss_fft.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define CORTEX_ABI_VERSION 2u  /* v2 kernel: no trainable/calibration support */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

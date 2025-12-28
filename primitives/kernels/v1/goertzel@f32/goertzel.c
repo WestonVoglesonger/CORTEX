@@ -7,7 +7,7 @@
  */
 
 #include "cortex_plugin.h"
-#include "accessor.h"
+#include "cortex_params.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
