@@ -470,6 +470,21 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
                 out->plugins[plugin_index].params[sizeof(out->plugins[plugin_index].params) - 1] = '\0';
                 continue;
             }
+            /* calibration_state: path to .cortex_state file (v3 trainable kernels) */
+            if (starts_with(raw, "calibration_state:")) {
+                const char *v = raw + strlen("calibration_state:");
+                while (*v == ' ') v++;
+                char tmp[512];
+                strncpy(tmp, v, sizeof(tmp) - 1);
+                tmp[sizeof(tmp) - 1] = '\0';
+                trim(tmp);
+                unquote(tmp);
+                strncpy(out->plugins[plugin_index].calibration_state, tmp,
+                        sizeof(out->plugins[plugin_index].calibration_state) - 1);
+                out->plugins[plugin_index].calibration_state[
+                    sizeof(out->plugins[plugin_index].calibration_state) - 1] = '\0';
+                continue;
+            }
             /* runtime: no longer parsed - loaded from spec.yaml */
             if (starts_with(raw, "- name:")) { /* next plugin */
                 plugin_index++;
