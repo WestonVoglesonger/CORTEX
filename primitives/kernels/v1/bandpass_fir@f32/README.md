@@ -157,3 +157,14 @@ The oracle (`oracle.py`) uses `scipy.signal.firwin` to generate coefficients and
 - ✅ C implementation complete
 - ✅ Correctness validated (all tests pass)
 
+## ABI v3 Compatibility
+
+This kernel is **fully compatible** with ABI v3 (backward compatible from v2).
+
+- **ABI version**: v2/v3 compatible
+- **Calibration required**: No (stateful FIR filter with fixed coefficients)
+- **Capabilities**: None (non-trainable kernel)
+- **Exports**: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+
+Bandpass FIR is a stateful kernel (maintains tail buffer for convolution) but does not require offline calibration. FIR coefficients are pre-computed for the 8-30Hz passband. Works with both v2 and v3 harnesses without modification.
+

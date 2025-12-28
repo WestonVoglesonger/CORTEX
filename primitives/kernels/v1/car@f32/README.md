@@ -61,3 +61,14 @@ plugins:
 - ✅ Oracle implementation (`oracle.py`)
 - ⏳ C implementation pending
 
+## ABI v3 Compatibility
+
+This kernel is **fully compatible** with ABI v3 (backward compatible from v2).
+
+- **ABI version**: v2/v3 compatible
+- **Calibration required**: No (stateless spatial filter)
+- **Capabilities**: None (non-trainable kernel)
+- **Exports**: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+
+CAR is a stateless kernel that does not require offline calibration. It works with both v2 and v3 harnesses without modification.
+

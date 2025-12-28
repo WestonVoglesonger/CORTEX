@@ -31,6 +31,17 @@ $$P_k = s[N-1]^2 + s[N-2]^2 - 2cos(\frac{2 \pi k}{N})s[N-1]s[N-2]$$
 - `fs`: Sampling rate (Hz). Supports any sample rate (not limited to 160 Hz)
 - Window length `N`: Supports any window length (not limited to 160 samples)
 
+## ABI v3 Compatibility
+
+This kernel is **fully compatible** with ABI v3 (backward compatible from v2).
+
+- **ABI version**: v2/v3 compatible
+- **Calibration required**: No (stateless frequency-domain algorithm)
+- **Capabilities**: None (non-trainable kernel)
+- **Exports**: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+
+Goertzel is a stateless kernel for bandpower extraction that does not require offline calibration. Target frequencies are specified via runtime parameters. Works with both v2 and v3 harnesses without modification.
+
 ## Output Shape
 
 The algorithm outputs [B×C] where:

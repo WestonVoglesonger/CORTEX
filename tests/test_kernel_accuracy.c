@@ -35,12 +35,14 @@
 #include <unistd.h>
 
 #include "../src/engine/harness/loader/loader.h"
+#include "../src/engine/harness/util/state_io.h"
 #include "../src/engine/include/cortex_plugin.h"
 
 /* Test configuration */
 typedef struct {
   char kernel_name[64];
   char data_path[512];
+  char calibration_state_path[512];
   int max_windows;
   int verbose;
   int test_all;
@@ -76,7 +78,8 @@ typedef struct {
 /* Default configuration */
 static test_config_t default_config = {
     .kernel_name = "",
-    .data_path = "datasets/eegmmidb/converted/S001R03.float32",
+    .data_path = "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32",
+    .calibration_state_path = "",
     .max_windows = 10,
     .verbose = 0,
     .test_all = 1};
@@ -299,7 +302,9 @@ static int run_python_oracle(const char *kernel_name, const float *input,
 
 /* Build plugin config */
 static cortex_plugin_config_t build_plugin_config(uint32_t Fs, uint32_t W,
-                                                  uint32_t H, uint32_t C) {
+                                                  uint32_t H, uint32_t C,
+                                                  const void *calibration_state,
+                                                  uint32_t calibration_state_size) {
   cortex_plugin_config_t config = {0};
   config.abi_version = CORTEX_ABI_VERSION;
   config.struct_size = sizeof(cortex_plugin_config_t);
@@ -311,6 +316,8 @@ static cortex_plugin_config_t build_plugin_config(uint32_t Fs, uint32_t W,
   config.allow_in_place = 0;
   config.kernel_params = NULL;
   config.kernel_params_size = 0;
+  config.calibration_state = calibration_state;
+  config.calibration_state_size = calibration_state_size;
   return config;
 }
 
@@ -333,21 +340,43 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   printf("\nTesting kernel: %s\n", kernel_name);
   printf("  Loading data: %s\n", config->data_path);
 
-  /* Create unique state file for this test process */
-  char state_file_template[512];
-  snprintf(state_file_template, sizeof(state_file_template),
-           "/tmp/%s_state_XXXXXX", kernel_name);
-  int state_fd = mkstemp(state_file_template);
-  if (state_fd < 0) {
-    perror("mkstemp failed for state file");
-    return -1;
-  }
-  close(state_fd);             /* Close it, Python will write to .npy version */
-  unlink(state_file_template); /* Remove temp, we'll use .npy extension */
+  /* For trainable kernels, check calibration state */
+  void *calibration_state = NULL;
+  uint32_t calibration_state_size = 0;
+  uint32_t calibration_state_version = 0;
+  char state_file[512] = {0};
 
-  /* Construct .npy filename */
-  char state_file[512];
-  snprintf(state_file, sizeof(state_file), "%s.npy", state_file_template);
+  if (strlen(config->calibration_state_path) > 0) {
+    printf("  Loading calibration state: %s\n", config->calibration_state_path);
+
+    if (cortex_state_load(config->calibration_state_path, &calibration_state,
+                         &calibration_state_size, &calibration_state_version) != 0) {
+      fprintf(stderr, "  Failed to load calibration state from %s\n",
+              config->calibration_state_path);
+      return -1;
+    }
+
+    printf("  Loaded state: %u bytes (version %u)\n",
+           calibration_state_size, calibration_state_version);
+
+    /* Use provided state file for oracle */
+    strncpy(state_file, config->calibration_state_path, sizeof(state_file) - 1);
+  } else {
+    /* Create unique state file for stateless kernels (backward compatibility) */
+    char state_file_template[512];
+    snprintf(state_file_template, sizeof(state_file_template),
+             "/tmp/%s_state_XXXXXX", kernel_name);
+    int state_fd = mkstemp(state_file_template);
+    if (state_fd < 0) {
+      perror("mkstemp failed for state file");
+      return -1;
+    }
+    close(state_fd);             /* Close it, Python will write to .npy version */
+    unlink(state_file_template); /* Remove temp, we'll use .npy extension */
+
+    /* Construct .npy filename */
+    snprintf(state_file, sizeof(state_file), "%s.npy", state_file_template);
+  }
 
   /* 1. Load EEG data */
   eeg_data_t data;
@@ -413,7 +442,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   }
 
   /* 4. Initialize plugin */
-  cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64);
+  cortex_plugin_config_t cfg = build_plugin_config(160, W, H, 64,
+                                                   calibration_state,
+                                                   calibration_state_size);
   cortex_init_result_t init_result = plugin.api.init(&cfg);
 
   if (!init_result.handle) {
@@ -424,6 +455,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     }
     free(windows);
     free(data.data);
+    if (calibration_state) {
+      free(calibration_state);
+    }
     return -1;
   }
 
@@ -485,8 +519,15 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   free(windows);
   free(data.data);
 
-  /* Clean up unique state file */
-  unlink(state_file);
+  /* Clean up calibration state if loaded */
+  if (calibration_state) {
+    free(calibration_state);
+  }
+
+  /* Clean up unique state file (only for stateless kernels) */
+  if (strlen(config->calibration_state_path) == 0) {
+    unlink(state_file);
+  }
 
   /* 8. Report */
   if (failures == 0) {
@@ -508,6 +549,7 @@ static void show_usage(const char *program_name) {
          "\"bandpass_fir\")\n");
   printf("  --all               Test all kernels in registry (default)\n");
   printf("  --data <path>       Path to dataset\n");
+  printf("  --state <path>      Path to calibration state file (for trainable kernels)\n");
   printf("  --windows <N>       Number of windows to test (default: 10)\n");
   printf("  --verbose           Print detailed comparison results\n");
   printf("  --help              Show this help\n");
@@ -520,12 +562,13 @@ int main(int argc, char **argv) {
   struct option long_options[] = {{"kernel", required_argument, 0, 'k'},
                                   {"all", no_argument, 0, 'a'},
                                   {"data", required_argument, 0, 'd'},
+                                  {"state", required_argument, 0, 's'},
                                   {"windows", required_argument, 0, 'w'},
                                   {"verbose", no_argument, 0, 'v'},
                                   {"help", no_argument, 0, 'h'},
                                   {0, 0, 0, 0}};
 
-  while ((opt = getopt_long(argc, argv, "k:ad:w:vh", long_options, NULL)) !=
+  while ((opt = getopt_long(argc, argv, "k:ad:s:w:vh", long_options, NULL)) !=
          -1) {
     switch (opt) {
     case 'k':
@@ -537,6 +580,9 @@ int main(int argc, char **argv) {
       break;
     case 'd':
       strncpy(config.data_path, optarg, sizeof(config.data_path) - 1);
+      break;
+    case 's':
+      strncpy(config.calibration_state_path, optarg, sizeof(config.calibration_state_path) - 1);
       break;
     case 'w':
       config.max_windows = atoi(optarg);

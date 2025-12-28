@@ -10,6 +10,7 @@ SCHEDULER_SRC = ../src/engine/scheduler/scheduler.c
 TELEMETRY_SRC = ../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
 LOADER_SRC = ../src/engine/harness/loader/loader.c
+STATE_IO_SRC = ../src/engine/harness/util/state_io.c
 SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
 PARAM_ACCESSOR_LIB = ../src/engine/params/libcortex_params.a
 
@@ -39,7 +40,7 @@ $(TEST_TELEMETRY): test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
 $(TEST_KERNEL_REGISTRY): test_kernel_registry.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_KERNEL_ACCURACY): test_kernel_accuracy.c $(LOADER_SRC)
+$(TEST_KERNEL_ACCURACY): test_kernel_accuracy.c $(LOADER_SRC) $(STATE_IO_SRC)
 	$(CC) $(CFLAGS) -I../src/engine -I../src/engine/scheduler -I../src/engine/replayer -I../src/engine/telemetry -I../src/engine/harness/config -I../src/engine/harness/util -o $@ $^ $(LDFLAGS) -ldl -lm
 
 $(TEST_CLOCK_RESOLUTION): test_clock_resolution.c

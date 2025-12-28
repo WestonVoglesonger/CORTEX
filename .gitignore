@@ -8,6 +8,7 @@ __pycache__/
 
 # CORTEX executables (only ignore compiled binary, not Python script)
 src/engine/harness/cortex
+src/engine/harness/cortex_calibrate
 
 # Distribution / packaging
 .Python
@@ -173,6 +174,9 @@ cython_debug/
 results/*
 output/
 logs/
+
+# Calibration state files (ABI v3) - generated artifacts
+*.cortex_state
 
 # EXCEPT: Validation runs for publication (frozen, published results)
 !results/validation-*/

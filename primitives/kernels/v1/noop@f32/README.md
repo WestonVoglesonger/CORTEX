@@ -114,6 +114,17 @@ Oracle test: Output matches input (identity function verified)
 Validation: PASS
 ```
 
+## ABI v3 Compatibility
+
+This kernel is **fully compatible** with ABI v3 (backward compatible from v2).
+
+- **ABI version**: v2/v3 compatible
+- **Calibration required**: No (trivial identity function)
+- **Capabilities**: None (non-trainable kernel)
+- **Exports**: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+
+Noop is a trivial baseline kernel (identity function) used for measuring harness overhead. It does not require calibration. Works with both v2 and v3 harnesses without modification.
+
 ## Use Case
 
 **Primary use**: Empirical measurement of harness overhead for academic paper Section 6.2 (Measurement Validity).

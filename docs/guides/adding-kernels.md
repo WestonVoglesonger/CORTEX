@@ -6,7 +6,13 @@ This guide walks through the complete process of adding a new signal processing 
 
 A kernel in CORTEX is a signal processing algorithm (like filtering, feature extraction, or transformation) that operates on windowed EEG data. Each kernel is implemented as a dynamic plugin that the harness loads at runtime.
 
-**Time estimate**: 4-8 hours for a simple kernel (like CAR or notch filter)
+**Kernel Types**:
+- **Stateless/Stateful Kernels** (ABI v2/v3): Fixed-parameter algorithms like filters, spatial processing, frequency analysis
+- **Trainable Kernels** (ABI v3 only): Algorithms requiring calibration phase like ICA, CSP, LDA
+
+**Time estimate**:
+- 4-8 hours for simple stateless/stateful kernels (CAR, notch filter)
+- 12-20 hours for trainable kernels (ICA, CSP, LDA)
 
 ## Prerequisites
 
@@ -265,7 +271,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     // 8. Return handle and output dimensions
     return (cortex_init_result_t){
         .handle = state,
-        .output_window_length = state->W,  // Adjust if output differs
+        .output_window_length_samples = state->W,  // Adjust if output differs
         .output_channels = state->C
     };
 }
@@ -431,6 +437,623 @@ plugins:
     spec_version: "1.0.0"
 ```
 
+## Part 2: Trainable Kernels (ABI v3)
+
+Trainable kernels require a **calibration phase** where the algorithm learns from batch data before processing live windows. Examples include ICA (artifact removal), CSP (motor imagery), and LDA (classification).
+
+**When to use trainable kernels**:
+- Algorithm requires batch training (FastICA, eigendecomposition, supervised learning)
+- Parameters cannot be set a priori (ICA unmixing matrix, CSP spatial filters, classifier weights)
+- Performance depends on subject-specific calibration
+
+**Time estimate**: 12-20 hours (includes calibration script, oracle, C implementation)
+
+### Overview of Two-Phase Workflow
+
+```
+PHASE 1: Calibration (offline, one-time)
+├─ Load calibration dataset (N windows)
+├─ cortex_calibrate() trains model
+├─ Returns calibration_state (serialized model)
+└─ Save to .cortex_state file
+
+PHASE 2: Inference (online, per-window)
+├─ cortex_init() loads pre-trained state
+├─ cortex_process() applies trained model
+└─ No re-training during inference
+```
+
+### Additional Prerequisites
+
+- Calibration dataset with sufficient windows (typically 100-1000 depending on algorithm)
+- Understanding of batch training algorithm (FastICA, CSP, LDA, etc.)
+- NumPy/SciPy libraries for oracle calibration reference
+
+### Step 1: Design State Format
+
+Define your kernel's calibration state structure:
+
+```c
+// Example: ICA kernel state (unmixing matrix W)
+typedef struct {
+    uint32_t C;              // Number of channels
+    float *W;                // Unmixing matrix [C×C]
+} ica_calibration_state_t;
+
+// Serialization format:
+// Bytes 0-3:   C (uint32_t, little-endian)
+// Bytes 4-end: W (C*C floats, row-major, little-endian)
+```
+
+**Design principles**:
+- Use simple binary layout (raw floats/ints, little-endian)
+- Include version field if state format may evolve
+- Document byte layout in README.md
+- Keep state minimal (only trained parameters, not runtime buffers)
+
+### Step 2: Implement cortex_calibrate()
+
+Add calibration function to your kernel:
+
+```c
+#include "cortex_plugin.h"
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+// Calibration function (exports via symbol table)
+cortex_calibration_result_t cortex_calibrate(
+    const cortex_plugin_config_t *config,
+    const void *calibration_data,
+    uint32_t num_windows
+) {
+    // 1. Validate ABI version
+    if (config->abi_version != CORTEX_ABI_VERSION) {
+        fprintf(stderr, "[your_kernel] ABI v3 required for calibration\n");
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    // 2. Extract configuration
+    const int W = config->window_length_samples;
+    const int C = config->channels;
+    const float *data = (const float *)calibration_data;  // Shape: [num_windows, W, C]
+
+    // 3. Allocate working memory for batch training
+    //    (This is allowed in calibrate(), but NOT in process())
+    float *X = malloc(num_windows * W * C * sizeof(float));
+    if (!X) {
+        fprintf(stderr, "[your_kernel] Calibration memory allocation failed\n");
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    // 4. Preprocess data (concatenate windows, remove mean, etc.)
+    memcpy(X, data, num_windows * W * C * sizeof(float));
+    // ... preprocessing ...
+
+    // 5. Run batch training algorithm
+    //    Example: FastICA, CSP eigendecomposition, LDA fit
+    float *W_unmix = malloc(C * C * sizeof(float));
+    if (!W_unmix) {
+        free(X);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    // YOUR TRAINING ALGORITHM HERE
+    // (e.g., FastICA iterations, eigendecomposition, gradient descent)
+    // Populate W_unmix with trained parameters
+
+    // 6. Serialize state to binary format
+    uint32_t state_size = sizeof(uint32_t) + C * C * sizeof(float);
+    uint8_t *state_bytes = malloc(state_size);
+    if (!state_bytes) {
+        free(X);
+        free(W_unmix);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    // Write header (C as uint32_t)
+    memcpy(state_bytes, &C, sizeof(uint32_t));
+
+    // Write unmixing matrix (C*C floats)
+    memcpy(state_bytes + sizeof(uint32_t), W_unmix, C * C * sizeof(float));
+
+    // 7. Clean up temporary allocations
+    free(X);
+    free(W_unmix);
+
+    // 8. Return calibration result
+    return (cortex_calibration_result_t){
+        .calibration_state = state_bytes,
+        .state_size_bytes = state_size,
+        .state_version = 1  // Increment if state format changes
+    };
+}
+```
+
+**Critical constraints**:
+- **MAY** allocate memory (one-time operation)
+- **MAY** perform expensive computation (iterative convergence)
+- **MUST** be deterministic (same input → same output)
+- **MUST** handle NaN inputs gracefully
+- **MUST** free temporary allocations before returning
+- State memory will be freed by harness (do NOT free it yourself)
+
+### Step 3: Modify cortex_init() for Calibration State
+
+Update initialization to accept pre-trained state:
+
+```c
+// Runtime state (includes loaded calibration state + processing buffers)
+typedef struct {
+    int W, C;
+    float *W_unmix;      // Loaded from calibration_state
+    float *work_buffer;  // Allocated for per-window processing
+} your_kernel_runtime_t;
+
+cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    // 1. Validate ABI version (accept v2 for testing, v3 for production)
+    if (config->abi_version < 2 || config->abi_version > CORTEX_ABI_VERSION) {
+        fprintf(stderr, "[your_kernel] Unsupported ABI version %u\n", config->abi_version);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    const int W = config->window_length_samples;
+    const int C = config->channels;
+
+    // 2. Allocate runtime state
+    your_kernel_runtime_t *state = calloc(1, sizeof(your_kernel_runtime_t));
+    if (!state) {
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    state->W = W;
+    state->C = C;
+
+    // 3. Load calibration state (REQUIRED for trainable kernels)
+    if (config->calibration_state == NULL || config->calibration_state_size == 0) {
+        fprintf(stderr, "[your_kernel] ERROR: Calibration state required but not provided\n");
+        fprintf(stderr, "  Run: cortex calibrate --kernel your_kernel --dataset path/to/data.float32\n");
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    // 4. Deserialize calibration state
+    const uint8_t *state_bytes = (const uint8_t *)config->calibration_state;
+
+    // Read header
+    uint32_t C_stored;
+    memcpy(&C_stored, state_bytes, sizeof(uint32_t));
+
+    if (C_stored != C) {
+        fprintf(stderr, "[your_kernel] Channel count mismatch: state has %u, config has %d\n",
+                C_stored, C);
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    // Allocate and load unmixing matrix
+    state->W_unmix = malloc(C * C * sizeof(float));
+    if (!state->W_unmix) {
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+    memcpy(state->W_unmix, state_bytes + sizeof(uint32_t), C * C * sizeof(float));
+
+    // 5. Allocate per-window work buffers
+    state->work_buffer = malloc(W * C * sizeof(float));
+    if (!state->work_buffer) {
+        free(state->W_unmix);
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    // 6. Return handle with capabilities flag
+    return (cortex_init_result_t){
+        .handle = state,
+        .output_window_length_samples = W,
+        .output_channels = C,
+        .capabilities = CORTEX_CAP_OFFLINE_CALIB  // Advertise calibration support
+    };
+}
+```
+
+**Key differences from stateless/stateful kernels**:
+- **MUST** check for `calibration_state != NULL`
+- **MUST** deserialize state and validate compatibility
+- **MUST** set `capabilities = CORTEX_CAP_OFFLINE_CALIB`
+- Return error if calibration state missing (trainable kernels cannot run without it)
+
+### Step 4: Implement cortex_process() Using Trained State
+
+Standard processing function, using loaded calibration state:
+
+```c
+void cortex_process(void *handle, const void *input, void *output) {
+    your_kernel_runtime_t *state = (your_kernel_runtime_t *)handle;
+    const float *x = (const float *)input;  // [W×C]
+    float *y = (float *)output;
+
+    const int W = state->W;
+    const int C = state->C;
+
+    // Apply trained model (e.g., ICA unmixing: y = W * x)
+    for (int t = 0; t < W; t++) {
+        for (int out_c = 0; out_c < C; out_c++) {
+            float sum = 0.0f;
+            for (int in_c = 0; in_c < C; in_c++) {
+                float x_val = x[t * C + in_c];
+                if (isnan(x_val)) x_val = 0.0f;  // Handle NaN
+
+                sum += state->W_unmix[out_c * C + in_c] * x_val;
+            }
+            y[t * C + out_c] = sum;
+        }
+    }
+}
+```
+
+**Same constraints as non-trainable kernels**:
+- **NO** allocations (use pre-allocated `work_buffer` if needed)
+- **NO** blocking I/O or syscalls
+- Handle NaNs gracefully
+
+### Step 5: Implement Calibration Oracle
+
+Create Python calibration reference:
+
+```python
+#!/usr/bin/env python3
+"""
+Calibration oracle for your_kernel.
+Trains model on batch data using gold-standard library (sklearn/MNE/scipy).
+"""
+
+import numpy as np
+from sklearn.decomposition import FastICA  # Example
+
+def calibrate_your_kernel(calibration_data, **params):
+    """
+    Train model on calibration data.
+
+    Args:
+        calibration_data: Shape (num_windows, W, C) float32 array
+        params: Algorithm hyperparameters
+
+    Returns:
+        state_dict: Dictionary with trained parameters
+            - 'W': Unmixing matrix [C, C]
+            - 'version': State version (for evolution tracking)
+    """
+    num_windows, W, C = calibration_data.shape
+
+    # 1. Concatenate windows into [num_windows*W, C]
+    X = calibration_data.reshape(-1, C)
+
+    # 2. Run batch training (example: FastICA)
+    ica = FastICA(n_components=C, random_state=0, max_iter=200)
+    ica.fit(X)
+
+    # 3. Extract trained parameters
+    W_unmix = ica.components_  # Shape: [C, C]
+
+    # 4. Return state dictionary
+    return {
+        'W': W_unmix.astype(np.float32),
+        'version': 1
+    }
+
+def apply_your_kernel(x, state):
+    """
+    Apply trained model to single window.
+
+    Args:
+        x: Input window, shape (W, C)
+        state: State dict from calibrate_your_kernel()
+
+    Returns:
+        y: Output window, shape (W, C)
+    """
+    W_unmix = state['W']  # [C, C]
+
+    # Apply unmixing: y = x @ W_unmix.T
+    y = x @ W_unmix.T
+
+    return y
+
+def main():
+    """Test calibration oracle"""
+    # Generate synthetic calibration data
+    num_windows, W, C = 100, 160, 64
+    calibration_data = np.random.randn(num_windows, W, C).astype(np.float32)
+
+    # Train model
+    state = calibrate_your_kernel(calibration_data)
+
+    print(f"✓ Calibration successful")
+    print(f"  Windows: {num_windows}, Shape: ({W}, {C})")
+    print(f"  Unmixing matrix: {state['W'].shape}")
+    print(f"  State version: {state['version']}")
+
+    # Test on single window
+    x_test = np.random.randn(W, C).astype(np.float32)
+    y_test = apply_your_kernel(x_test, state)
+
+    assert y_test.shape == (W, C)
+    print(f"✓ Inference test passed: ({W}, {C}) → {y_test.shape}")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Step 6: Update spec.yaml
+
+Add calibration requirements:
+
+```yaml
+kernel:
+  name: "your_kernel"
+  version: "v1"
+  dtype: "float32"
+  description: "Brief description"
+  trainable: true  # NEW: Indicates calibration required
+
+abi:
+  version: 3  # Requires ABI v3
+  capabilities:
+    - offline_calibration  # Uses cortex_calibrate()
+  input_shape:
+    window_length: 160
+    channels: 64
+  output_shape:
+    window_length: 160
+    channels: 64
+  stateful: false  # Trainable kernels can be stateless at runtime
+
+calibration:  # NEW section
+  min_windows: 100        # Minimum calibration data
+  recommended_windows: 500
+  max_duration_sec: 300   # 5 minutes typical
+
+numerical:
+  tolerance:
+    rtol: 1.0e-4  # Looser for iterative algorithms
+    atol: 1.0e-5
+
+oracle:
+  calibrate_function: "calibrate_your_kernel"
+  apply_function: "apply_your_kernel"
+  path: "oracle.py"
+  dependencies: ["numpy", "scipy", "sklearn"]
+```
+
+### Step 7: CLI Calibration Workflow
+
+Users interact with trainable kernels via CLI:
+
+```bash
+# 1. Calibrate kernel on dataset
+cortex calibrate \
+  --kernel your_kernel \
+  --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R01.float32 \
+  --windows 500 \
+  --output your_kernel_S001.cortex_state
+
+# Output:
+# [harness] Loading kernel: your_kernel
+# [harness] Calibration data: 500 windows (160 samples × 64 channels)
+# [your_kernel] Running FastICA (max_iter=200)...
+# [your_kernel] Converged in 127 iterations
+# [harness] Calibration state: 16388 bytes
+# [harness] Saved: your_kernel_S001.cortex_state
+# ✓ Calibration complete
+
+# 2. Run benchmarks with calibrated state
+cortex run \
+  --kernel your_kernel \
+  --calibration-state your_kernel_S001.cortex_state \
+  --config primitives/configs/cortex.yaml
+
+# 3. Validate against oracle
+cortex validate \
+  --kernel your_kernel \
+  --calibration-state your_kernel_S001.cortex_state \
+  --verbose
+```
+
+**State file format** (`.cortex_state`):
+```
+Offset  Size  Field
+------  ----  -----
+0x00    4     Magic number (0x434F5254 = "CORT")
+0x04    4     ABI version (3)
+0x08    4     State version (kernel-specific)
+0x0C    4     State size (bytes, excluding header)
+0x10    N     Calibration state (kernel-specific binary)
+```
+
+Harness automatically handles header; kernel only sees state payload.
+
+### Step 8: Update README.md
+
+Document calibration workflow:
+
+````markdown
+# Your Kernel (Trainable)
+
+## Overview
+
+[Description emphasizing batch training requirement]
+
+**Calibration**: This kernel requires offline batch training before inference. See Calibration Workflow below.
+
+## Signal Model
+
+[Standard signal model documentation]
+
+## Calibration Workflow
+
+### Step 1: Prepare Calibration Data
+
+```bash
+# Use sufficient data (recommended: 500+ windows)
+CALIB_DATA="primitives/datasets/v1/physionet-motor-imagery/converted/S001R01.float32"
+```
+
+### Step 2: Run Calibration
+
+```bash
+cortex calibrate \
+  --kernel your_kernel \
+  --dataset $CALIB_DATA \
+  --windows 500 \
+  --output your_kernel_trained.cortex_state
+```
+
+### Step 3: Benchmark or Validate
+
+```bash
+# Benchmark
+cortex run --kernel your_kernel --calibration-state your_kernel_trained.cortex_state
+
+# Validate against oracle
+cortex validate --kernel your_kernel --calibration-state your_kernel_trained.cortex_state
+```
+
+## Calibration State Format
+
+Binary layout (little-endian):
+- Bytes 0-3: C (uint32_t) - number of channels
+- Bytes 4+: W (C×C float32) - unmixing matrix, row-major
+
+Version: 1 (increment if format changes)
+
+## Training Algorithm
+
+[Describe batch training method: FastICA, CSP eigendecomposition, LDA fit, etc.]
+
+Convergence criteria: [...]
+Typical iterations: [...]
+
+## Edge Cases
+
+- **Insufficient calibration data**: Returns error if < 100 windows
+- **Singular matrix**: [How does algorithm handle non-invertible cases?]
+- **Missing calibration state**: cortex_init() fails with clear error message
+
+## Acceptance Criteria
+
+- Calibration completes without errors on 500 windows
+- Float32 vs oracle within rtol=1e-4, atol=1e-5 (after same calibration data)
+- State file loads correctly across runs
+
+## Real-time Budget
+
+- **Calibration time**: [Expected training duration]
+- **Inference latency**: [Per-window processing time]
+- **Memory footprint**: [State size + runtime buffers]
+
+## ABI v3 Compatibility
+
+- Exports: `cortex_calibrate()`, `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+- Capabilities: `CORTEX_CAP_OFFLINE_CALIB`
+- Requires: ABI v3 harness (backward incompatible with v2)
+````
+
+### Step 9: Testing Trainable Kernels
+
+Additional test coverage needed:
+
+```bash
+# 1. Test calibration oracle
+python oracle.py
+# Should output: ✓ Calibration successful
+
+# 2. Calibrate C kernel
+cortex calibrate --kernel your_kernel --dataset test_data.float32 --windows 100
+
+# 3. Validate C vs oracle (using SAME calibration data)
+cortex validate --kernel your_kernel --calibration-state your_kernel.cortex_state
+
+# 4. Test missing calibration state (should fail gracefully)
+cortex run --kernel your_kernel  # No --calibration-state
+# Expected: ERROR: Calibration state required but not provided
+
+# 5. Test state file portability (save on one machine, load on another)
+scp your_kernel.cortex_state remote:~/
+ssh remote "cortex run --kernel your_kernel --calibration-state your_kernel.cortex_state"
+```
+
+### Step 10: Backward Compatibility Notes
+
+**v2 kernels with v3 harness**: ✅ Fully supported
+- Harness detects missing `cortex_calibrate()` symbol via `dlsym()`
+- `capabilities = 0` indicates no calibration needed
+
+**v3 trainable kernels with v2 harness**: ❌ Not supported
+- v2 harness doesn't know how to call `cortex_calibrate()`
+- v2 harness cannot pass `calibration_state` to `cortex_init()`
+- Error: "ABI version mismatch"
+
+**Recommendation**: Document minimum harness version in kernel README.
+
+### Trainable Kernel Checklist
+
+Before submitting:
+
+- [ ] `cortex_calibrate()` implemented and deterministic
+- [ ] `cortex_init()` checks for calibration_state != NULL
+- [ ] `capabilities = CORTEX_CAP_OFFLINE_CALIB` set in init result
+- [ ] State serialization format documented in README.md
+- [ ] Python calibration oracle implemented and tested
+- [ ] spec.yaml includes `trainable: true` and calibration section
+- [ ] CLI calibration workflow tested end-to-end
+- [ ] Validation passes with same calibration data for C and oracle
+- [ ] Handles missing calibration state gracefully (clear error message)
+- [ ] State file loads correctly across multiple runs
+
+### Common Pitfalls (Trainable Kernels)
+
+**1. Non-deterministic calibration**
+```c
+// WRONG: Random seed not fixed
+srand(time(NULL));  // Different results each run
+
+// CORRECT: Fixed seed for reproducibility
+srand(12345);  // Or use deterministic algorithm (eigendecomposition)
+```
+
+**2. Forgetting to free calibration state**
+```c
+// WRONG: Kernel frees state returned by cortex_calibrate()
+free(result.calibration_state);  // Harness owns this memory!
+
+// CORRECT: Return state, harness will free it
+return result;  // Harness handles cleanup
+```
+
+**3. Calibration data shape mismatch**
+```c
+// Data is [num_windows, W, C] NOT [num_windows, C, W]
+const float *data = (const float *)calibration_data;
+for (int w = 0; w < num_windows; w++) {
+    for (int t = 0; t < W; t++) {
+        for (int c = 0; c < C; c++) {
+            int idx = w * (W * C) + t * C + c;  // Correct indexing
+            // ...
+        }
+    }
+}
+```
+
+**4. Missing capability flag**
+```c
+// WRONG: Forgot to set capabilities
+return (cortex_init_result_t){state, W, C, 0};
+
+// CORRECT: Advertise calibration support
+return (cortex_init_result_t){state, W, C, CORTEX_CAP_OFFLINE_CALIB};
+```
+
 ## File Checklist
 
 After completing all steps, your kernel directory should contain:
@@ -528,10 +1151,14 @@ Before submitting your kernel:
 
 Good reference implementations:
 
+**Stateless/Stateful (ABI v2/v3 compatible)**:
 - **Simple (stateless)**: `primitives/kernels/v1/car@f32/` - Common Average Reference
 - **IIR (stateful)**: `primitives/kernels/v1/notch_iir@f32/` - Biquad filter
 - **FIR (stateful)**: `primitives/kernels/v1/bandpass_fir@f32/` - Bandpass filter
 - **Frequency domain**: `primitives/kernels/v1/goertzel@f32/` - Bandpower extraction
+
+**Trainable (ABI v3 only)**:
+- **ICA (artifact removal)**: `primitives/kernels/v1/ica@f32/` - FastICA with calibration workflow
 
 ## Getting Help
 
