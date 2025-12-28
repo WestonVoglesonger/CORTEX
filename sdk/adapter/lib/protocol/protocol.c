@@ -255,3 +255,259 @@ int cortex_protocol_send_frame(
 
     return 0;
 }
+
+/*
+ * cortex_protocol_send_window_chunked - Send window as multiple WINDOW_CHUNK frames
+ *
+ * Implementation:
+ *   1. Calculate total_bytes = window_samples × channels × sizeof(float)
+ *   2. Loop over window in CORTEX_CHUNK_SIZE chunks
+ *   3. For each chunk:
+ *      - Build cortex_wire_window_chunk_t header (sequence, total_bytes, offset, chunk_len, flags)
+ *      - Convert float samples to little-endian
+ *      - Send WINDOW_CHUNK frame
+ *   4. Mark last chunk with CORTEX_CHUNK_FLAG_LAST
+ */
+int cortex_protocol_send_window_chunked(
+    cortex_transport_t *transport,
+    uint32_t sequence,
+    const float *samples,
+    uint32_t window_samples,
+    uint32_t channels
+)
+{
+    uint32_t total_bytes = window_samples * channels * sizeof(float);
+    uint32_t offset = 0;
+
+    /* Allocate buffer for chunk payload (header + data) */
+    uint8_t *chunk_buf = (uint8_t *)malloc(sizeof(cortex_wire_window_chunk_t) + CORTEX_CHUNK_SIZE);
+    if (!chunk_buf) {
+        return -1;
+    }
+
+    int ret = 0;
+
+    while (offset < total_bytes) {
+        /* Calculate chunk length (last chunk may be smaller) */
+        uint32_t remaining = total_bytes - offset;
+        uint32_t chunk_len = (remaining > CORTEX_CHUNK_SIZE) ? CORTEX_CHUNK_SIZE : remaining;
+
+        /* Determine flags */
+        uint32_t flags = 0;
+        if (offset + chunk_len >= total_bytes) {
+            flags |= CORTEX_CHUNK_FLAG_LAST;
+        }
+
+        /* Build chunk header (in little-endian wire format) */
+        cortex_write_u32_le(chunk_buf + 0, sequence);
+        cortex_write_u32_le(chunk_buf + 4, total_bytes);
+        cortex_write_u32_le(chunk_buf + 8, offset);
+        cortex_write_u32_le(chunk_buf + 12, chunk_len);
+        cortex_write_u32_le(chunk_buf + 16, flags);
+
+        /* Convert float samples to little-endian and copy to chunk buffer */
+        uint8_t *chunk_data = chunk_buf + sizeof(cortex_wire_window_chunk_t);
+        const uint8_t *sample_bytes = (const uint8_t *)samples + offset;
+
+        for (uint32_t i = 0; i < chunk_len; i += sizeof(float)) {
+            float sample;
+            memcpy(&sample, sample_bytes + i, sizeof(sample));
+            cortex_write_f32_le(chunk_data + i, sample);
+        }
+
+        /* Send WINDOW_CHUNK frame */
+        ret = cortex_protocol_send_frame(
+            transport,
+            CORTEX_FRAME_WINDOW_CHUNK,
+            chunk_buf,
+            sizeof(cortex_wire_window_chunk_t) + chunk_len
+        );
+
+        if (ret < 0) {
+            break;
+        }
+
+        offset += chunk_len;
+    }
+
+    free(chunk_buf);
+    return ret;
+}
+
+/*
+ * cortex_protocol_recv_window_chunked - Receive and reassemble WINDOW_CHUNK frames
+ *
+ * Implementation:
+ *   1. Allocate temporary buffer for complete window
+ *   2. Loop receiving WINDOW_CHUNK frames until CORTEX_CHUNK_FLAG_LAST
+ *   3. For each chunk:
+ *      - Validate sequence matches expected
+ *      - Validate offset + chunk_len <= total_bytes
+ *      - Copy chunk data to window buffer at offset
+ *      - Track bytes received
+ *   4. Validate completeness (all bytes received, no gaps)
+ *   5. Convert window from little-endian to host format
+ *   6. Return window to caller
+ */
+int cortex_protocol_recv_window_chunked(
+    cortex_transport_t *transport,
+    uint32_t expected_sequence,
+    float *out_samples,
+    size_t samples_buf_size,
+    uint32_t *out_window_samples,
+    uint32_t *out_channels,
+    uint32_t timeout_ms
+)
+{
+    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
+    uint32_t total_bytes = 0;
+    uint32_t bytes_received = 0;
+    int got_last_chunk = 0;
+    int ret;
+
+    /* Track which bytes we've received (for gap detection) */
+    uint8_t *received_mask = NULL;
+
+    /* Allocate temporary buffer for assembling window (little-endian format) */
+    uint8_t *window_buf = NULL;
+
+    while (!got_last_chunk) {
+        /* Receive one WINDOW_CHUNK frame */
+        cortex_frame_type_t frame_type;
+        size_t payload_len;
+
+        ret = cortex_protocol_recv_frame(
+            transport,
+            &frame_type,
+            frame_buf,
+            sizeof(frame_buf),
+            &payload_len,
+            timeout_ms
+        );
+
+        if (ret < 0) {
+            free(window_buf);
+            free(received_mask);
+            return ret;
+        }
+
+        /* Validate frame type */
+        if (frame_type != CORTEX_FRAME_WINDOW_CHUNK) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        /* Parse chunk header (convert from little-endian) */
+        if (payload_len < sizeof(cortex_wire_window_chunk_t)) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        uint32_t sequence = cortex_read_u32_le(frame_buf + 0);
+        uint32_t chunk_total_bytes = cortex_read_u32_le(frame_buf + 4);
+        uint32_t offset = cortex_read_u32_le(frame_buf + 8);
+        uint32_t chunk_len = cortex_read_u32_le(frame_buf + 12);
+        uint32_t flags = cortex_read_u32_le(frame_buf + 16);
+
+        /* Validate sequence */
+        if (sequence != expected_sequence) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_ECHUNK_SEQUENCE_MISMATCH;
+        }
+
+        /* First chunk: allocate buffers */
+        if (total_bytes == 0) {
+            total_bytes = chunk_total_bytes;
+
+            /* Validate buffer size */
+            if (total_bytes > samples_buf_size) {
+                return CORTEX_ECHUNK_BUFFER_TOO_SMALL;
+            }
+
+            /* Allocate window buffer */
+            window_buf = (uint8_t *)malloc(total_bytes);
+            if (!window_buf) {
+                return -1;
+            }
+
+            /* Allocate received mask (1 byte per byte) */
+            received_mask = (uint8_t *)calloc(total_bytes, 1);
+            if (!received_mask) {
+                free(window_buf);
+                return -1;
+            }
+        } else {
+            /* Validate total_bytes matches across chunks */
+            if (chunk_total_bytes != total_bytes) {
+                free(window_buf);
+                free(received_mask);
+                return CORTEX_EPROTO_INVALID_FRAME;
+            }
+        }
+
+        /* Validate chunk bounds */
+        if (offset + chunk_len > total_bytes) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        /* Validate payload contains chunk header + data */
+        if (payload_len != sizeof(cortex_wire_window_chunk_t) + chunk_len) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        /* Copy chunk data to window buffer */
+        memcpy(window_buf + offset, frame_buf + sizeof(cortex_wire_window_chunk_t), chunk_len);
+
+        /* Mark bytes as received */
+        memset(received_mask + offset, 1, chunk_len);
+        bytes_received += chunk_len;
+
+        /* Check for LAST flag */
+        if (flags & CORTEX_CHUNK_FLAG_LAST) {
+            got_last_chunk = 1;
+        }
+    }
+
+    /* Validate completeness (all bytes received, no gaps) */
+    if (bytes_received != total_bytes) {
+        free(window_buf);
+        free(received_mask);
+        return CORTEX_ECHUNK_INCOMPLETE;
+    }
+
+    /* Check for gaps in received_mask */
+    for (uint32_t i = 0; i < total_bytes; i++) {
+        if (received_mask[i] == 0) {
+            free(window_buf);
+            free(received_mask);
+            return CORTEX_ECHUNK_INCOMPLETE;
+        }
+    }
+
+    /* Convert window from little-endian to host format */
+    uint32_t num_samples = total_bytes / sizeof(float);
+    for (uint32_t i = 0; i < num_samples; i++) {
+        out_samples[i] = cortex_read_f32_le(window_buf + (i * sizeof(float)));
+    }
+
+    /* Derive window dimensions (assuming row-major: W×C floats) */
+    /* Note: This requires knowing either W or C. For now, return total samples. */
+    /* Caller must know dimensions from CONFIG handshake. */
+    if (out_window_samples && out_channels) {
+        /* This is a placeholder - actual dimensions come from CONFIG */
+        *out_window_samples = 0;  /* Caller must set based on CONFIG */
+        *out_channels = 0;
+    }
+
+    free(window_buf);
+    free(received_mask);
+
+    return 0;
+}
