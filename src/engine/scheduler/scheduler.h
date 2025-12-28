@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #include "cortex_plugin.h"
-#include "cortex_loader.h"  /* For cortex_scheduler_plugin_api_t definition */
+#include "cortex_loader.h"  /* For cortex_plugin_api_t definition */
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,7 +44,7 @@ typedef struct cortex_scheduler_config {
 /* Opaque scheduler object. */
 typedef struct cortex_scheduler_t cortex_scheduler_t;
 
-/* cortex_scheduler_plugin_api_t is now defined in cortex_loader.h (SDK) */
+/* cortex_plugin_api_t is now defined in cortex_loader.h (SDK) */
 
 /*
  * Create a scheduler instance with the provided configuration.  Returns NULL
@@ -64,7 +64,7 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler);
  * errno on failure.
  */
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
-                                     const cortex_scheduler_plugin_api_t *api,
+                                     const cortex_plugin_api_t *api,
                                      const cortex_plugin_config_t *plugin_config,
                                      const char *plugin_name);
 

@@ -8,13 +8,13 @@
 #include "cortex_plugin.h"
 
 /*
- * Plugin API structure - mirrors cortex_scheduler_plugin_api_t
+ * Plugin API structure
  * Contains function pointers loaded from shared library via dlsym.
  *
  * ABI v3 extension: calibrate function pointer is optional (NULL for v2 kernels).
  * Loader detects calibration support via dlsym("cortex_calibrate").
  */
-typedef struct cortex_scheduler_plugin_api {
+typedef struct cortex_plugin_api {
     cortex_init_result_t (*init)(const cortex_plugin_config_t *config);
     void (*process)(void *handle, const void *input, void *output);
     void (*teardown)(void *handle);
@@ -22,11 +22,11 @@ typedef struct cortex_scheduler_plugin_api {
                                              const void *calibration_data,
                                              uint32_t num_windows);  /* ABI v3+, NULL if not supported */
     uint32_t capabilities;  /* Capability flags from cortex_init_result_t (v3+), 0 for v2 kernels */
-} cortex_scheduler_plugin_api_t;
+} cortex_plugin_api_t;
 
 typedef struct cortex_loaded_plugin {
     void *so_handle;
-    cortex_scheduler_plugin_api_t api;
+    cortex_plugin_api_t api;
 } cortex_loaded_plugin_t;
 
 /* Build a platform-specific plugin path from spec_uri (e.g., "primitives/kernels/v1/car@f32" → "primitives/kernels/v1/car@f32/libcar.dylib"). */

@@ -25,7 +25,7 @@
 #define NSEC_PER_SEC 1000000000LL
 
 typedef struct cortex_scheduler_plugin_entry {
-    cortex_scheduler_plugin_api_t api;
+    cortex_plugin_api_t api;
     const char *plugin_name;  /* For logging/telemetry */
     void *handle;
     void *output_buffer;
@@ -165,7 +165,7 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
 }
 
 int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
-                                     const cortex_scheduler_plugin_api_t *api,
+                                     const cortex_plugin_api_t *api,
                                      const cortex_plugin_config_t *plugin_config,
                                      const char *plugin_name) {
     if (!scheduler || !api || !api->init || !api->process || !api->teardown || !plugin_config) {
