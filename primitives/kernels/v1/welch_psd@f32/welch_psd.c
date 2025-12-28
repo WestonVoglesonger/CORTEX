@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define CORTEX_ABI_VERSION 2u  /* v2 kernel: no trainable/calibration support */
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
