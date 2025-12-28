@@ -1,6 +1,6 @@
 # CORTEX
 
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![CI](https://github.com/WestonVoglesonger/CORTEX/actions/workflows/ci.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8+-blue)
@@ -23,7 +23,9 @@ CORTEX follows a **clean, modular architecture** inspired by AWS primitives phil
 CORTEX/
 ├── src/               # Unified source code
 │   ├── cortex/        # Python CLI & analysis tools
-│   └── engine/        # C engine (harness, replayer, scheduler, plugin ABI)
+│   └── engine/        # C engine (harness, replayer, scheduler, telemetry)
+├── sdk/               # Kernel development kit
+│   └── kernel/        # Headers, libraries, tools (ABI v3)
 ├── primitives/        # Composable building blocks (AWS philosophy)
 │   ├── kernels/       # Signal processing kernel implementations
 │   ├── datasets/      # EEG dataset primitives (versioned)
@@ -59,7 +61,8 @@ cat results/run-*/analysis/SUMMARY.md
 
 ### Core Capabilities
 - ✅ **Automated CLI Pipeline** - Build, validate, benchmark, and analyze with one command
-- ✅ **Plugin Architecture** - Dynamically loadable signal processing kernels (ABI v2)
+- ✅ **Plugin Architecture** - Dynamically loadable signal processing kernels (ABI v3)
+- ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP, LDA)
 - ✅ **Runtime Parameters** - Type-safe configuration API for kernel customization
 - ✅ **Real-Time Scheduling** - Deadline enforcement with SCHED_FIFO/RR support (Linux)
 - ✅ **Comprehensive Telemetry** - Latency, jitter, throughput, memory, deadline tracking
@@ -81,6 +84,7 @@ cat results/run-*/analysis/SUMMARY.md
 - Bandpass FIR (8-30 Hz) - 129-tap filter
 - Goertzel (Alpha/Beta bandpower) - Configurable frequency bands
 - Welch PSD (Power spectral density) - Configurable FFT/overlap
+- ICA (Independent Component Analysis) - Artifact removal (trainable, ABI v3)
 - No-op (Identity function) - Harness overhead baseline
 
 ## Installation
@@ -180,20 +184,27 @@ CORTEX follows a **production-grade architecture** with clean separation of conc
 CORTEX/
 ├── src/                           # Unified source code (PEP 517/518)
 │   ├── cortex/                    # Python CLI & analysis toolkit
-│   │   ├── commands/              # CLI subcommands (pipeline, build, validate, run, analyze)
+│   │   ├── commands/              # CLI subcommands (pipeline, build, validate, run, analyze, calibrate)
 │   │   ├── utils/                 # Analysis, plotting, file I/O utilities
 │   │   └── ui/                    # Terminal output formatting
 │   └── engine/                    # C benchmarking engine
 │       ├── harness/               # Main execution harness
 │       ├── replayer/              # Dataset streaming engine
 │       ├── scheduler/             # Real-time scheduling & deadline enforcement
-│       └── include/               # Plugin ABI v2 headers
+│       └── telemetry/             # Performance data collection
+│
+├── sdk/                           # Kernel development kit (ABI v3)
+│   └── kernel/                    # SDK for kernel developers
+│       ├── include/               # Plugin ABI v3 headers (cortex_plugin.h)
+│       ├── lib/                   # Reusable libraries (state I/O, loader, params)
+│       └── tools/                 # Development tools (cortex_validate, cortex_calibrate)
 │
 ├── primitives/                    # Composable building blocks (AWS philosophy)
-│   ├── kernels/v1/                # Signal processing kernel implementations (6 kernels)
+│   ├── kernels/v1/                # Signal processing kernel implementations (7 kernels)
 │   │   ├── bandpass_fir@f32/      # FIR bandpass filter (8-30 Hz)
 │   │   ├── car@f32/               # Common Average Reference
 │   │   ├── goertzel@f32/          # Goertzel bandpower (alpha/beta)
+│   │   ├── ica@f32/               # Independent Component Analysis (trainable, ABI v3)
 │   │   ├── notch_iir@f32/         # IIR notch filter (60 Hz, configurable f0/Q)
 │   │   ├── welch_psd@f32/         # Welch PSD (configurable FFT/overlap)
 │   │   └── noop@f32/              # No-op kernel (harness overhead baseline)
@@ -312,8 +323,15 @@ cortex build
 # Validate kernel correctness against oracles
 cortex validate
 
+# Calibrate trainable kernels (ABI v3)
+cortex calibrate --kernel ica --data primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
+  --output ica_S001.cortex_state
+
 # Run benchmarks with custom config
 cortex run primitives/configs/cortex.yaml
+
+# Run trainable kernel with calibration state
+cortex run --kernel ica --state ica_S001.cortex_state --duration 10
 
 # Analyze existing results
 cortex analyze results/run-20250112-143022/
@@ -368,7 +386,7 @@ If you use CORTEX in your research, please cite:
   author = {Voglesonger, Weston and Kumar, Avi},
   year = {2025},
   url = {https://github.com/WestonVoglesonger/CORTEX},
-  version = {0.2.0}
+  version = {0.3.0}
 }
 ```
 
@@ -390,11 +408,18 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 
 ## Project Status
 
-**Current Version**: 0.2.0 (Fall 2025)
+**Current Version**: 0.3.0 (Winter 2025)
+
+**Latest Release**: ABI v3 with trainable kernel support
+- Offline calibration workflow for ML-based algorithms
+- ICA kernel reference implementation
+- SDK restructure for kernel development
+- Complete backward compatibility with v2 kernels
 
 **Roadmap**: See [docs/development/roadmap.md](docs/development/roadmap.md) for implementation timeline and future plans.
 
 **Future Work** (Spring 2026):
+- Additional trainable kernels (CSP, LDA)
 - Quantization support (Q15/Q7 fixed-point kernels)
 - Energy measurement (RAPL on x86, INA226 on embedded)
 - Hardware-in-the-Loop testing on embedded targets (STM32H7, Jetson)
