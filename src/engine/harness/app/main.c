@@ -74,7 +74,11 @@ static int load_plugin(const char *plugin_name,
 
     /* Build plugin config */
     cortex_plugin_config_t pc = {0};
-    pc.abi_version = CORTEX_ABI_VERSION;
+
+    /* Detect kernel ABI version: v3 if calibrate symbol exists, v2 otherwise */
+    /* This ensures backward compatibility - v2 kernels expect abi_version = 2 */
+    uint32_t kernel_abi_version = (out_loaded->api.calibrate != NULL) ? 3 : 2;
+    pc.abi_version = kernel_abi_version;
     pc.struct_size = sizeof(cortex_plugin_config_t);
     pc.sample_rate_hz = sample_rate_hz;
     pc.window_length_samples = plugin_cfg->runtime.window_length_samples;
