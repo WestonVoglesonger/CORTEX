@@ -402,7 +402,19 @@ cortex_calibration_result_t cortex_calibrate(
             num_windows, W, C);
 
     /* Concatenate windows into [num_windows*W, C] matrix */
+    /* Check for overflow: num_windows * W */
+    if (num_windows > 0 && W > UINT32_MAX / num_windows) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in total_samples calculation\n");
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
     const uint32_t total_samples = num_windows * W;
+
+    /* Check for overflow: total_samples * C * sizeof(float) */
+    if (C > 0 && total_samples > SIZE_MAX / C / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in allocation size\n");
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
     float *X = malloc(total_samples * C * sizeof(float));
     if (!X) {
         fprintf(stderr, "[ica] ERROR: Memory allocation failed\n");
@@ -465,7 +477,25 @@ cortex_calibration_result_t cortex_calibrate(
     free(X);
 
     /* Serialize state: [C (uint32) | mean (C×float32) | W (C×C×float32)] */
-    const uint32_t state_size = sizeof(uint32_t) + C * sizeof(float) + C * C * sizeof(float);
+    /* Check for overflow: C * C */
+    if (C > 0 && C > SIZE_MAX / C) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in C*C calculation\n");
+        free(mean);
+        free(W_unmix);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    /* Check for overflow: state_size calculation */
+    size_t mean_size = (size_t)C * sizeof(float);
+    size_t matrix_size = (size_t)C * C * sizeof(float);
+    if (matrix_size > SIZE_MAX - mean_size - sizeof(uint32_t)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in state_size calculation\n");
+        free(mean);
+        free(W_unmix);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
+    const uint32_t state_size = sizeof(uint32_t) + mean_size + matrix_size;
     uint8_t *state_bytes = malloc(state_size);
     if (!state_bytes) {
         free(mean);
@@ -544,6 +574,12 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 }
 
 void cortex_process(void *handle, const void *input, void *output) {
+    /* Validate parameters */
+    if (!handle || !input || !output) {
+        fprintf(stderr, "[ica] ERROR: NULL pointer in cortex_process\n");
+        return;
+    }
+
     ica_runtime_state_t *state = (ica_runtime_state_t *)handle;
     const float *x = (const float *)input;
     float *y = (float *)output;

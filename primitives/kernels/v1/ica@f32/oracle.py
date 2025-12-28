@@ -105,7 +105,7 @@ def apply_ica(x, state):
     W_unmix = state['W']  # [C, C]
     mean = state['mean']  # [C]
 
-    W, C = x.shape
+    _, C = x.shape
 
     # Center data (subtract channel means from calibration)
     x_centered = x - mean[np.newaxis, :]

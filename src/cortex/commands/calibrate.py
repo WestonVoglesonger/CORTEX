@@ -1,6 +1,5 @@
 """Calibrate trainable kernels command (ABI v3)"""
 import subprocess
-import sys
 from pathlib import Path
 
 def setup_parser(parser):

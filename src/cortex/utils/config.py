@@ -91,10 +91,15 @@ def generate_temp_config(
         # Resolve to absolute path for harness
         state_path = str(Path(calibration_state).resolve())
 
-        # Apply to all plugins (usually just one in single-kernel mode)
-        if 'plugins' in config and config['plugins']:
-            for plugin in config['plugins']:
+        # Apply to all plugins in explicit list
+        if 'plugins' in config:
+            for plugin in config.get('plugins', []):
                 plugin['calibration_state'] = state_path
+
+        # NOTE: For auto-detect mode (empty plugins list), calibration_state cannot be
+        # applied globally. User must specify --kernel to use trainable kernels with state.
+        # This is by design: auto-detect runs ALL kernels, but only specific kernels
+        # should use specific calibration states.
 
     # Write to temp file
     with tempfile.NamedTemporaryFile(

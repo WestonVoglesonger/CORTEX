@@ -4,17 +4,42 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
 
 #include "cortex_plugin.h"  /* For CORTEX_ABI_VERSION */
 
+#define CORTEX_MAX_STATE_SIZE (256 * 1024 * 1024)  /* 256 MB limit */
+
+/* Validate path to prevent directory traversal attacks */
+static int validate_path(const char *path) {
+    if (!path || strlen(path) == 0) {
+        return -1;
+    }
+
+    /* Check for directory traversal attempts (../) */
+    const char *p = path;
+    while (*p) {
+        if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\\' || p[2] == '\0')) {
+            fprintf(stderr, "[state_io] ERROR: Path contains directory traversal (..)\n");
+            return -1;
+        }
+        p++;
+    }
+
+    return 0;
+}
+
 /* Write uint32_t in little-endian format */
-static void write_le32(FILE *f, uint32_t val) {
+static int write_le32(FILE *f, uint32_t val) {
     uint8_t bytes[4];
     bytes[0] = (val >> 0) & 0xFF;
     bytes[1] = (val >> 8) & 0xFF;
     bytes[2] = (val >> 16) & 0xFF;
     bytes[3] = (val >> 24) & 0xFF;
-    fwrite(bytes, 1, 4, f);
+    if (fwrite(bytes, 1, 4, f) != 4) {
+        return -1;  /* Write failed (disk full, I/O error, etc.) */
+    }
+    return 0;
 }
 
 /* Read uint32_t in little-endian format */
@@ -36,6 +61,18 @@ int cortex_state_save(const char *path,
         return -1;
     }
 
+    /* Validate path for security */
+    if (validate_path(path) < 0) {
+        return -1;
+    }
+
+    /* Enforce maximum state size */
+    if (state_size > CORTEX_MAX_STATE_SIZE) {
+        fprintf(stderr, "[state_io] State size %u exceeds maximum %d bytes\n",
+                state_size, CORTEX_MAX_STATE_SIZE);
+        return -1;
+    }
+
     FILE *f = fopen(path, "wb");
     if (!f) {
         fprintf(stderr, "[state_io] Failed to open %s for writing\n", path);
@@ -43,10 +80,14 @@ int cortex_state_save(const char *path,
     }
 
     /* Write header (16 bytes, little-endian) */
-    write_le32(f, CORTEX_STATE_MAGIC);
-    write_le32(f, CORTEX_ABI_VERSION);  /* Current ABI version (3) */
-    write_le32(f, state_version);
-    write_le32(f, state_size);
+    if (write_le32(f, CORTEX_STATE_MAGIC) < 0 ||
+        write_le32(f, CORTEX_ABI_VERSION) < 0 ||  /* Current ABI version (3) */
+        write_le32(f, state_version) < 0 ||
+        write_le32(f, state_size) < 0) {
+        fprintf(stderr, "[state_io] Failed to write header\n");
+        fclose(f);
+        return -1;
+    }
 
     /* Write payload */
     size_t written = fwrite(state_payload, 1, state_size, f);
@@ -69,6 +110,11 @@ int cortex_state_load(const char *path,
                      uint32_t *out_version) {
     if (!path || !out_payload || !out_size) {
         fprintf(stderr, "[state_io] Invalid parameters for load\n");
+        return -1;
+    }
+
+    /* Validate path for security */
+    if (validate_path(path) < 0) {
         return -1;
     }
 
@@ -98,8 +144,9 @@ int cortex_state_load(const char *path,
         return -1;
     }
 
-    if (state_size == 0 || state_size > 100 * 1024 * 1024) {  /* Sanity: max 100MB */
-        fprintf(stderr, "[state_io] Invalid state size: %u bytes\n", state_size);
+    if (state_size == 0 || state_size > CORTEX_MAX_STATE_SIZE) {
+        fprintf(stderr, "[state_io] Invalid state size: %u bytes (max %d)\n",
+                state_size, CORTEX_MAX_STATE_SIZE);
         fclose(f);
         return -1;
     }
