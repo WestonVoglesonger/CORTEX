@@ -35,7 +35,7 @@ def execute(args):
     if args.kernel:
         print(f"\nValidating kernel: {args.kernel}")
         cmd = [str(test_binary), '--kernel', args.kernel, '--windows', '10']
-        if args.calibration_state:
+        if getattr(args, 'calibration_state', None):
             cmd.extend(['--state', args.calibration_state])
         if args.verbose:
             cmd.append('--verbose')
