@@ -101,8 +101,14 @@ static void compute_covariance(const float *X, int rows, int cols, float *C) {
  * Returns eigenvalues in D[n] and eigenvectors in V[n×n] (columns)
  * Platform-agnostic, numerically stable, no external deps */
 static int jacobi_eigen(const float *A, int n, float *D, float *V) {
+    /* Check for overflow: n * n * sizeof(float) */
+    if (n > 0 && (size_t)n > SIZE_MAX / n / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in jacobi_eigen allocation (n=%d)\n", n);
+        return -1;
+    }
+
     /* Copy A to working matrix (will be diagonalized in-place) */
-    float *B = malloc(n * n * sizeof(float));
+    float *B = malloc((size_t)n * n * sizeof(float));
     if (!B) return -1;
     memcpy(B, A, n * n * sizeof(float));
 
@@ -176,10 +182,16 @@ static int jacobi_eigen(const float *A, int n, float *D, float *V) {
  * X[rows × cols], Z[rows × cols], eigenvectors V[cols × cols], eigenvalues D[cols] */
 static int whiten_data(const float *X, int rows, int cols,
                       const float *V, const float *D, float *Z, float *K_out) {
+    /* Check for overflow: cols * cols * sizeof(float) */
+    if (cols > 0 && (size_t)cols > SIZE_MAX / cols / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in whiten_data allocation (cols=%d)\n", cols);
+        return -1;
+    }
+
     /* Compute whitening matrix K = V * D^(-1/2) * V^T */
-    float *D_inv_sqrt = malloc(cols * cols * sizeof(float));
-    float *K = malloc(cols * cols * sizeof(float));
-    float *tmp = malloc(cols * cols * sizeof(float));
+    float *D_inv_sqrt = malloc((size_t)cols * cols * sizeof(float));
+    float *K = malloc((size_t)cols * cols * sizeof(float));
+    float *tmp = malloc((size_t)cols * cols * sizeof(float));
 
     if (!D_inv_sqrt || !K || !tmp) {
         free(D_inv_sqrt); free(K); free(tmp);
@@ -222,10 +234,16 @@ static inline float g_logcosh_deriv(float u) {
 /* Symmetric decorrelation: W_new = (W * W^T)^(-1/2) * W
  * Uses power iteration to approximate (W * W^T)^(-1/2) */
 static void symmetric_decorrelation(float *W, int n) {
-    float *WWT = malloc(n * n * sizeof(float));
-    float *WWT_inv_sqrt = malloc(n * n * sizeof(float));
-    float *D = malloc(n * sizeof(float));
-    float *V = malloc(n * n * sizeof(float));
+    /* Check for overflow: n * n * sizeof(float) */
+    if (n > 0 && (size_t)n > SIZE_MAX / n / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in symmetric_decorrelation allocation (n=%d)\n", n);
+        return;  /* Graceful degradation - W unchanged */
+    }
+
+    float *WWT = malloc((size_t)n * n * sizeof(float));
+    float *WWT_inv_sqrt = malloc((size_t)n * n * sizeof(float));
+    float *D = malloc((size_t)n * sizeof(float));
+    float *V = malloc((size_t)n * n * sizeof(float));
 
     if (!WWT || !WWT_inv_sqrt || !D || !V) goto cleanup;
 
@@ -267,16 +285,27 @@ static int fastica_full(const float *X, int rows, int cols, float *W_unmix_out) 
     fprintf(stderr, "[ica] Running full FastICA (rows=%d, cols=%d, max_iter=%d)\n",
             rows, cols, MAX_FASTICA_ITER);
 
+    /* Check for overflow: cols * cols * sizeof(float) */
+    if (cols > 0 && (size_t)cols > SIZE_MAX / cols / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in fastica_full allocation (cols=%d)\n", cols);
+        return -1;
+    }
+    /* Check for overflow: rows * cols * sizeof(float) */
+    if (rows > 0 && cols > 0 && (size_t)rows > SIZE_MAX / cols / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in fastica_full allocation (rows=%d, cols=%d)\n", rows, cols);
+        return -1;
+    }
+
     /* Allocate working memory */
-    float *C = malloc(cols * cols * sizeof(float));
-    float *D = malloc(cols * sizeof(float));
-    float *V = malloc(cols * cols * sizeof(float));
-    float *K = malloc(cols * cols * sizeof(float));
-    float *Z = malloc(rows * cols * sizeof(float));
-    float *W = malloc(cols * cols * sizeof(float));
-    float *W_old = malloc(cols * cols * sizeof(float));
-    float *gZ = malloc(rows * sizeof(float));
-    float *dgZ = malloc(rows * sizeof(float));
+    float *C = malloc((size_t)cols * cols * sizeof(float));
+    float *D = malloc((size_t)cols * sizeof(float));
+    float *V = malloc((size_t)cols * cols * sizeof(float));
+    float *K = malloc((size_t)cols * cols * sizeof(float));
+    float *Z = malloc((size_t)rows * cols * sizeof(float));
+    float *W = malloc((size_t)cols * cols * sizeof(float));
+    float *W_old = malloc((size_t)cols * cols * sizeof(float));
+    float *gZ = malloc((size_t)rows * sizeof(float));
+    float *dgZ = malloc((size_t)rows * sizeof(float));
 
     if (!C || !D || !V || !K || !Z || !W || !W_old || !gZ || !dgZ) {
         fprintf(stderr, "[ica] ERROR: Memory allocation failed\n");
@@ -433,8 +462,15 @@ cortex_calibration_result_t cortex_calibrate(
         }
     }
 
+    /* Check for overflow: C * sizeof(float) */
+    if (C > SIZE_MAX / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in mean allocation (C=%u)\n", C);
+        free(X);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
     /* Compute channel means */
-    float *mean = malloc(C * sizeof(float));
+    float *mean = malloc((size_t)C * sizeof(float));
     if (!mean) {
         free(X);
         return (cortex_calibration_result_t){NULL, 0, 0};
@@ -458,8 +494,16 @@ cortex_calibration_result_t cortex_calibrate(
         }
     }
 
+    /* Check for overflow: C * C * sizeof(float) */
+    if (C > 0 && C > SIZE_MAX / C / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in W_unmix allocation (C=%u)\n", C);
+        free(X);
+        free(mean);
+        return (cortex_calibration_result_t){NULL, 0, 0};
+    }
+
     /* Run FastICA */
-    float *W_unmix = malloc(C * C * sizeof(float));
+    float *W_unmix = malloc((size_t)C * C * sizeof(float));
     if (!W_unmix) {
         free(X);
         free(mean);
@@ -549,8 +593,21 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     state->W = W;
     state->C = C;
 
-    state->mean = malloc(C * sizeof(float));
-    state->W_unmix = malloc(C * C * sizeof(float));
+    /* Check for overflow: C * sizeof(float) */
+    if (C > SIZE_MAX / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in state->mean allocation (C=%u)\n", C);
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+    /* Check for overflow: C * C * sizeof(float) */
+    if (C > 0 && C > SIZE_MAX / C / sizeof(float)) {
+        fprintf(stderr, "[ica] ERROR: Integer overflow in state->W_unmix allocation (C=%u)\n", C);
+        free(state);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
+    state->mean = malloc((size_t)C * sizeof(float));
+    state->W_unmix = malloc((size_t)C * C * sizeof(float));
 
     if (!state->mean || !state->W_unmix) {
         free(state->mean);
