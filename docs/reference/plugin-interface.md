@@ -166,7 +166,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 }
 ```
 
-**Accessor Functions** (defined in `src/engine/params/accessor.h`):
+**Accessor Functions** (defined in `sdk/kernel/include/cortex_params.h`):
 - `double cortex_param_float(const char *params, const char *key, double default_val)`
 - `int64_t cortex_param_int(const char *params, const char *key, int64_t default_val)`
 - `void cortex_param_string(const char *params, const char *key, char *out_buf, size_t buf_size, const char *default_val)`
@@ -174,7 +174,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
 **Supported Formats**: YAML-style (`"f0_hz: 60.0, Q: 30.0"`) or URL-style (`"f0_hz=60.0&Q=30.0"`)
 
-See `src/engine/params/README.md` for complete API documentation.
+See `sdk/kernel/lib/params/README.md` for complete API documentation.
 
 ### Init Result
 
@@ -552,7 +552,7 @@ $(CC) $(CFLAGS) -shared -fPIC -o libmyplugin.so myplugin.c
 
 ```makefile
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -621,8 +621,8 @@ Current kernel implementations use:
 
 ## References
 
-- **ABI Header**: `src/engine/include/cortex_plugin.h`
-- **Parameter API**: `src/engine/params/README.md`
+- **ABI Header**: `sdk/kernel/include/cortex_plugin.h`
+- **Parameter API**: `sdk/kernel/lib/params/README.md`
 - **Architecture**: `docs/architecture/overview.md`
 - **Platform Compatibility**: `docs/architecture/platform-compatibility.md`
 - **ABI Evolution**: `docs/architecture/abi_evolution.md`

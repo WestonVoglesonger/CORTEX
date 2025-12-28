@@ -853,7 +853,7 @@ print('PASS: Calibration oracle validation')
 
 ## 11. References
 
-- **ABI v2 Specification**: `src/engine/include/cortex_plugin.h` (v2)
+- **ABI v2 Specification**: `sdk/kernel/include/cortex_plugin.h` (v2)
 - **Plugin Interface**: `docs/reference/plugin-interface.md`
 - **ABI Evolution**: `docs/architecture/abi_evolution.md`
 - **State Serialization**: Section 4 of this document

@@ -23,7 +23,7 @@ for plugins. Plugins never read YAML.
 - `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see replayer.c)
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
-- `plugins[].params` - Kernel-specific runtime parameters (✅ fully implemented with accessor API; see src/engine/params/README.md)
+- `plugins[].params` - Kernel-specific runtime parameters (✅ fully implemented with accessor API; see sdk/kernel/lib/params/README.md)
 
 See [docs/development/roadmap.md](../development/roadmap.md) for implementation timeline.
 

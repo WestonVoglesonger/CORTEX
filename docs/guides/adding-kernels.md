@@ -252,7 +252,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     // const char *params = (const char *)config->kernel_params;
     // double my_param = cortex_param_float(params, "my_param", 1.0);  // default: 1.0
     // int order = cortex_param_int(params, "order", 4);  // default: 4
-    // See src/engine/params/README.md for full accessor API
+    // See sdk/kernel/lib/params/README.md for full accessor API
 
     // 5. Store configuration
     state->W = config->window_length_samples;
@@ -333,8 +333,8 @@ Copy and adapt from existing kernel:
 # Makefile for your_kernel@f32 plugin
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../src/engine/include -I../../../../src/engine/params -fPIC
-PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
+CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../../sdk/kernel/include -fPIC
+PARAMS_LIB = ../../../../sdk/kernel/lib/libcortex.a
 LDFLAGS = -lm
 
 # Detect platform for plugin extension
