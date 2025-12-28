@@ -1,5 +1,5 @@
 #include "cortex_plugin.h"
-#include "accessor.h"
+#include "cortex_params.h"
 #include "kiss_fft.h"
 #include <math.h>
 #include <stdint.h>

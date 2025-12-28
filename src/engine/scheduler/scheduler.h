@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "cortex_plugin.h"
+#include "cortex_loader.h"  /* For cortex_scheduler_plugin_api_t definition */
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,22 +44,7 @@ typedef struct cortex_scheduler_config {
 /* Opaque scheduler object. */
 typedef struct cortex_scheduler_t cortex_scheduler_t;
 
-/*
- * Wrapper around the plugin ABI entry points.  The harness will typically load
- * these functions from a shared object (dlopen/dlsym) and forward them here.
- *
- * ABI v3 extension: calibrate function pointer is optional (NULL for v2 kernels).
- * Loader detects calibration support via dlsym("cortex_calibrate").
- */
-typedef struct cortex_scheduler_plugin_api {
-    cortex_init_result_t (*init)(const cortex_plugin_config_t *config);
-    void (*process)(void *handle, const void *input, void *output);
-    void (*teardown)(void *handle);
-    cortex_calibration_result_t (*calibrate)(const cortex_plugin_config_t *config,
-                                             const void *calibration_data,
-                                             uint32_t num_windows);  /* ABI v3+, NULL if not supported */
-    uint32_t capabilities;  /* Capability flags from cortex_init_result_t (v3+), 0 for v2 kernels */
-} cortex_scheduler_plugin_api_t;
+/* cortex_scheduler_plugin_api_t is now defined in cortex_loader.h (SDK) */
 
 /*
  * Create a scheduler instance with the provided configuration.  Returns NULL

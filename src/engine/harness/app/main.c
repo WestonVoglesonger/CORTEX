@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "config.h"
-#include "loader.h"
+#include "cortex_loader.h"
 #include "signal_handler.h"
 #include "telemetry.h"
 #include "util.h"
@@ -13,7 +13,7 @@
 
 #include "../scheduler/scheduler.h"
 #include "../replayer/replayer.h"
-#include "../include/cortex_plugin.h"
+#include "cortex_plugin.h"
 
 typedef struct harness_context {
     cortex_run_config_t run_cfg;

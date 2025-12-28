@@ -17,8 +17,8 @@
 #include <getopt.h>
 
 #include "cortex_plugin.h"
-#include "../loader/loader.h"
-#include "../util/state_io.h"
+#include "cortex_loader.h"
+#include "cortex_state_io.h"
 
 #define DEFAULT_SAMPLE_RATE 160
 #define DEFAULT_WINDOW_LENGTH 160

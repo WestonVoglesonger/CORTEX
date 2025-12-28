@@ -34,9 +34,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../src/engine/harness/loader/loader.h"
-#include "../src/engine/harness/util/state_io.h"
-#include "../src/engine/include/cortex_plugin.h"
+#include "cortex_loader.h"
+#include "cortex_state_io.h"
+#include "cortex_plugin.h"
 
 /* Test configuration */
 typedef struct {
