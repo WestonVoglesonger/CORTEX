@@ -6,12 +6,14 @@ These instructions guide Copilot's automated code reviews for the CORTEX real-ti
 
 ## Critical Constraints - Reject PRs That Violate These
 
-### 1. ABI Stability (v2 - Frozen)
-- **REQUIRED**: Exactly 3 functions: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+### 1. ABI Stability (v3 - Current)
+- **REQUIRED**: Core 3 functions for all kernels: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+- **OPTIONAL**: Trainable kernels may export `cortex_calibrate()` for offline batch training
 - **REJECT**: Any changes to function signatures, parameter lists, or return types
-- **REJECT**: Adding new ABI functions or renaming existing ones
-- **REJECT**: Changes to `cortex_plugin.h` that modify the public API
-- **VERIFY**: All plugins check `config->abi_version == 2` in `cortex_init()`
+- **REJECT**: Renaming existing ABI functions
+- **REJECT**: Changes to `cortex_plugin.h` that break backward compatibility
+- **VERIFY**: v3 kernels check `config->abi_version == 3`, v2 kernels check `== 2`
+- **VERIFY**: Harness detects kernel version and sends correct `abi_version` (v2 backward compatible)
 
 ### 2. Hermetic Kernel Execution
 - **REJECT**: Heap allocation (`malloc`, `calloc`, `realloc`) inside `cortex_process()`
@@ -142,11 +144,11 @@ These instructions guide Copilot's automated code reviews for the CORTEX real-ti
 ## Common Mistakes to Flag
 
 1. **Function naming**: Flag `cortex_cleanup()` → Correct is `cortex_teardown()`
-2. **ABI version**: Flag version 1 references → Current is version 2
+2. **ABI version**: Flag version 1 or 2 references → Current is version 3 (v2 backward compatible)
 3. **Test command**: Flag `make test` → Correct is `make tests` (plural)
 4. **Header location**: Flag `plugin_abi.h` → Correct is `cortex_plugin.h`
 5. **Directory naming**: Flag `run-configs/` → Correct is `primitives/configs/`
-6. **Kernel count**: Flag claims of "4 kernels" → Correct is 6 (includes welch_psd, noop)
+6. **Kernel count**: Flag claims of "4 kernels" → Correct is 7 (car, notch_iir, bandpass_fir, goertzel, welch_psd, noop, ica)
 7. **Parallel execution**: Flag kernel parallelization → Must be sequential
 8. **Primitive modification**: Flag edits to `v1/` → Must create `v2/`
 9. **Benchmark-first**: Flag performance work without oracle validation
@@ -260,7 +262,7 @@ This code looks a bit messy. Consider refactoring for readability.
 - **Measurement rigor**: Scientifically valid benchmarking is the primary goal
 - **Simplicity over cleverness**: Follow Lampson's STEADY principles
 - **Platform support**: macOS (arm64, x86_64) and Linux (x86_64, arm64)
-- **Current kernels**: car, notch_iir, bandpass_fir, goertzel, welch_psd, noop
+- **Current kernels**: car, notch_iir, bandpass_fir, goertzel, welch_psd, noop, ica (7 total: 6 v2, 1 v3 trainable)
 - **Test coverage**: 21+ C unit tests across 7 suites
 
 For full context, reference `/Users/westonvoglesonger/Projects/CORTEX/CLAUDE.md` in the repository.
