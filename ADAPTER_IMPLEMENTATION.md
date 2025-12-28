@@ -56,6 +56,151 @@ These corrections were made after initial plan review:
 
 ---
 
+## Development Workflow & PR Strategy
+
+### Pull Request Structure
+
+**Strategy**: **One PR per Phase** with structured commits
+
+Following CORTEX pattern (e.g., ABI v3 shipped as single commit `bfd9412`), each phase is a **complete, shippable feature** with all gating criteria validated before merge.
+
+#### PR Lifecycle
+
+**Phase 1 Example Timeline**:
+```
+Day 0: Open draft PR "feat: Phase 1 - Device Adapter Loopback Foundation"
+       Push commit "feat: Add transport API and mock implementation [Step 1]"
+Day 1: Push commit "feat: Add protocol frame I/O with recv_frame [Step 2]"
+       Push commit "feat: Add WINDOW chunking and reassembly [Step 3]"
+Day 2: Push commit "feat: Add x86@loopback adapter binary [Step 4]"
+       Push commit "feat: Add device_comm spawning layer [Step 5]"
+Day 3: Push commit "test: Add critical adapter tests [Step 6]"
+       Push commit "feat: Integrate scheduler with device_comm [Step 7]"
+       Push commit "test: Validate all 6 kernels through adapter [Step 8]"
+       Push commit "docs: Update ADAPTER_IMPLEMENTATION.md - Phase 1 gates passed"
+Day 3: Convert draft to "Ready for Review"
+Day 4: Merge to main (after all 12 gating criteria pass)
+```
+
+**Branch**: `feature/device-adapter-infrastructure` (lives entire project, 3 phases)
+
+**PRs**:
+1. **Phase 1**: "feat: Phase 1 - Device Adapter Loopback Foundation" (~8-10 commits, 3-4 days)
+2. **Phase 2**: "feat: Phase 2 - TCP Transport for Jetson Nano" (~5-6 commits, 1-2 days)
+3. **Phase 3**: "feat: Phase 3 - STM32 UART Bare-Metal Adapter" (~6-8 commits, 3-4 days)
+
+#### Commit Message Format
+
+**Template**:
+```
+<type>: <description> [Step N]
+
+<detailed explanation>
+
+Implements Phase X Step N from ADAPTER_IMPLEMENTATION.md:
+- <bullet point 1>
+- <bullet point 2>
+
+Checkpoint: ⬜ Step N | Remaining: Steps N+1 to M
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Examples**:
+```
+feat: Add transport API and mock implementation [Step 1]
+
+Implements timeout-based transport layer for adapter communication.
+
+Implements Phase 1 Step 1 from ADAPTER_IMPLEMENTATION.md:
+- cortex_transport_api_t with recv() timeout parameter
+- mock transport using poll() for POSIX timeout handling
+- FD-based creation (socketpair + fork/exec support)
+- Test: Basic send/recv with timeout validation
+
+Checkpoint: ✅ Step 1 | Remaining: Steps 2-8
+```
+
+```
+test: Add critical adapter tests [Step 6]
+
+Validates protocol robustness against fragmentation, timeouts, corruption.
+
+Implements Phase 1 Step 6 from ADAPTER_IMPLEMENTATION.md:
+- Fragmentation test (1-byte writes)
+- Timeout test (dead adapter detection)
+- Chunking integrity (40KB window reassembly)
+- CRC corruption detection
+- Session ID mismatch rejection
+- Calibration state overflow validation
+
+Checkpoint: ✅ Steps 1-6 | Remaining: Steps 7-8
+```
+
+#### Parallel Review Integration
+
+**Launch review agents at key checkpoints** (within draft PR):
+
+**After Step 3 complete** (Foundation solid):
+```bash
+# Launch agent with prompt:
+"Review commits [Step 1-3] in PR #XXX for:
+- Endianness bugs (ARM safety - check memcpy usage, no direct casts)
+- Timeout edge cases (ETIMEDOUT handling, poll() correctness)
+- CRC correctness (excludes CRC field, covers header + payload)
+- Memory leaks (valgrind validation)
+- Fragmentation handling (recv_frame() with 1-byte writes)"
+```
+
+**After Step 5 complete** (Integration ready):
+```bash
+# Launch agent with prompt:
+"Review commits [Step 4-5] in PR #XXX for:
+- Session ID validation (CONFIG → RESULT matching)
+- Boot ID tracking (adapter restart detection)
+- Adapter death handling (timeout, no hangs)
+- fork/exec safety (FD leaks, zombie processes)
+- socketpair cleanup (close on both sides)"
+```
+
+**Before converting to Ready** (Final validation):
+```bash
+# Launch agent with prompt:
+"Validate PR #XXX against all 12 Phase 1 gating criteria:
+1. Wire format fixed-width (no size_t, no pointers)
+2. Header 16-byte aligned
+3. CRC computed correctly
+... [all 12 criteria]
+12. Adapter death detected (no hangs)
+
+Run full test suite, check telemetry output, validate oracle correctness."
+```
+
+#### Why One PR Per Phase?
+
+**Rationale**:
+1. **Matches CORTEX velocity**: High-speed iteration, don't need incremental safety
+2. **Integration is what matters**: Individual steps have no user value in isolation
+3. **Gating criteria align**: All 12 gates = one cohesive, shippable feature
+4. **Clean main history**: 3 phases = 3 features, not 24 sub-components
+5. **Parallel reviews work**: Agents review commits within draft PR incrementally
+6. **Bisectable**: Each commit is focused, can bisect bugs to specific step
+7. **Follows CORTEX pattern**: ABI v3 was one massive, validated commit
+
+**Merge criteria** (STRICT):
+- ✅ ALL gating criteria pass (12 for Phase 1, 5 each for Phases 2-3)
+- ✅ `make clean && make all && make tests` passes
+- ✅ Telemetry output validated (no NaN, timing sane)
+- ✅ Oracle validation passes for all kernels
+- ✅ No known blockers or TODOs in code
+- ✅ ADAPTER_IMPLEMENTATION.md updated (checkboxes, notes)
+
+**No exceptions**: If even one gating criterion fails, PR stays in draft.
+
+---
+
 ## Wire Format Specification
 
 ### Endianness and Encoding
