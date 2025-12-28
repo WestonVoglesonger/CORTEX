@@ -400,8 +400,9 @@ make -C tests test-signal-handler
 
 ### Integration Tests
 
-#### test_kernel_accuracy - Numerical Validation
-**Location:** `tests/test_kernel_accuracy.c`
+#### cortex_validate - Kernel Numerical Validation
+**Location:** `sdk/kernel/tools/cortex_validate` (built from `validate.c`)
+**Source:** `sdk/kernel/tools/validate.c`
 
 Validates C kernel implementations against Python reference implementations (oracles):
 - Loads real EEG data from PhysioNet dataset
@@ -414,13 +415,13 @@ Validates C kernel implementations against Python reference implementations (ora
 **Run:**
 ```bash
 # Test specific kernel
-./tests/test_kernel_accuracy --kernel notch_iir --windows 10
+./sdk/kernel/tools/cortex_validate --kernel notch_iir --windows 10
 
 # Verbose output with per-sample errors
-./tests/test_kernel_accuracy --kernel bandpass_fir --windows 5 --verbose
+./sdk/kernel/tools/cortex_validate --kernel bandpass_fir --windows 5 --verbose
 
 # Custom dataset
-./tests/test_kernel_accuracy --kernel goertzel --data datasets/custom.float32
+./sdk/kernel/tools/cortex_validate --kernel goertzel --data datasets/custom.float32
 ```
 
 **Coverage:**
@@ -539,7 +540,7 @@ cortex validate --kernel notch_iir
 cortex validate --kernel bandpass_fir --verbose
 
 # Direct test binary
-./tests/test_kernel_accuracy --kernel notch_iir --windows 10 --verbose
+./sdk/kernel/tools/cortex_validate --kernel notch_iir --windows 10 --verbose
 ```
 
 ### Clean Test Artifacts
@@ -581,7 +582,7 @@ TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
 
 1. Implement `primitives/kernels/v1/{name}@{dtype}/oracle.py`
 2. Add kernel to `tests/test_kernel_registry.c` expected list
-3. Run `./tests/test_kernel_accuracy --kernel {name}`
+3. Run `./sdk/kernel/tools/cortex_validate --kernel {name}`
 
 ## PR Requirements
 

@@ -174,7 +174,7 @@ return (cortex_init_result_t){
 
 **Utilities:**
 ```c
-#include "src/engine/harness/util/state_io.h"
+#include "cortex_state_io.h"
 
 // Save state
 cortex_state_save("ica_model.cortex_state", state_payload, state_size, state_version);
@@ -275,7 +275,7 @@ cortex calibrate \
     --output ica_test.cortex_state
 
 # Validate (C kernel vs Python oracle)
-tests/test_kernel_accuracy \
+sdk/kernel/tools/cortex_validate \
     --kernel ica \
     --data primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
     --state ica_test.cortex_state \
@@ -394,7 +394,8 @@ cortex run --kernel ica --calibration-state model.cortex_state
 - **Adding Trainable Kernels:** `docs/guides/adding-kernels.md#trainable-kernels-abi-v3`
 - **Plugin Interface Reference:** `docs/reference/plugin-interface.md`
 - **ICA Example:** `primitives/kernels/v1/ica@f32/README.md`
-- **State I/O Utilities:** `src/engine/harness/util/state_io.h`
+- **State I/O Utilities:** `sdk/kernel/include/cortex_state_io.h`
+- **SDK Documentation:** `sdk/README.md`
 
 ---
 

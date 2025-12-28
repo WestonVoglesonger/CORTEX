@@ -18,7 +18,7 @@
 
 | File | Current State | Update Required | Priority |
 |------|---------------|-----------------|----------|
-| `src/engine/include/cortex_plugin.h` | ABI v2 definition | **BREAKING**: Increment to v3, add `cortex_calibrate()`, extend structs | **P0** |
+| `sdk/kernel/include/cortex_plugin.h` | ABI v2 definition | **BREAKING**: Increment to v3, add `cortex_calibrate()`, extend structs | **P0** |
 
 ---
 
@@ -51,7 +51,7 @@
 |------|---------------|-----------------|----------|
 | `src/engine/harness/app/main.c` | v2 init flow | Add `calibrate` subcommand, state loading | **P0** |
 | `src/engine/harness/config/config.c` | v2 config schema | Parse `calibration_state` field from YAML | **P1** |
-| `src/engine/harness/loader/` | (Need to find loader code) | Add `dlsym("cortex_calibrate")` detection, v2/v3 version negotiation | **P0** |
+| `sdk/kernel/lib/loader/` | (Need to find loader code) | Add `dlsym("cortex_calibrate")` detection, v2/v3 version negotiation | **P0** |
 
 ### Scheduler
 
@@ -64,8 +64,8 @@
 
 | File | Purpose | Priority |
 |------|---------|----------|
-| `src/engine/harness/util/state_io.c` | **NEW**: Serialize/deserialize calibration state | **P0** |
-| `src/engine/harness/util/state_io.h` | **NEW**: Header for state I/O | **P0** |
+| `sdk/kernel/lib/state_io/state_io.c` | **NEW**: Serialize/deserialize calibration state | **P0** |
+| `sdk/kernel/include/cortex_state_io.h` | **NEW**: Header for state I/O | **P0** |
 
 ---
 
@@ -208,7 +208,7 @@
 ## Update Strategy
 
 ### Phase 1: Core ABI (P0)
-1. `src/engine/include/cortex_plugin.h` - Define v3 structs/functions
+1. `sdk/kernel/include/cortex_plugin.h` - Define v3 structs/functions
 2. `docs/reference/plugin-interface.md` - Document v3 specification
 3. `docs/architecture/abi_evolution.md` - History and rationale
 

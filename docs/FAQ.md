@@ -201,8 +201,8 @@ Defined in `primitives/kernels/v1/{name}@f32/spec.yaml`
 cortex validate --kernel notch_iir
 cortex validate --kernel goertzel --verbose
 
-# Or use test binary directly
-./tests/test_kernel_accuracy --kernel goertzel --windows 10 --verbose
+# Or use SDK validation tool directly
+./sdk/kernel/tools/cortex_validate --kernel goertzel --windows 10 --verbose
 ```
 
 ---
