@@ -10,6 +10,10 @@ def setup_parser(parser):
         help='Validate specific kernel only'
     )
     parser.add_argument(
+        '--calibration-state',
+        help='Path to calibration state file (for trainable kernels)'
+    )
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Show verbose test output'
@@ -31,6 +35,8 @@ def execute(args):
     if args.kernel:
         print(f"\nValidating kernel: {args.kernel}")
         cmd = [str(test_binary), '--kernel', args.kernel, '--windows', '10']
+        if args.calibration_state:
+            cmd.extend(['--state', args.calibration_state])
         if args.verbose:
             cmd.append('--verbose')
     else:

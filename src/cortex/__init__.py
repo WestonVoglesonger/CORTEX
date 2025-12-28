@@ -14,7 +14,7 @@ def main():
     """Main CLI entry point"""
     from cortex.commands import (
         build, run, analyze, pipeline,
-        list_kernels, validate, clean, check_system
+        list_kernels, validate, clean, check_system, calibrate
     )
 
     parser = argparse.ArgumentParser(
@@ -30,6 +30,7 @@ Examples:
   cortex pipeline                   # Full pipeline (build+run+analyze)
   cortex list                       # Show available kernels
   cortex validate                   # Test kernels against oracles
+  cortex calibrate --kernel ica --dataset data.float32 --output state.cortex_state
   cortex check-system               # Check system configuration
 
 For more info: https://github.com/WestonVoglesonger/CORTEX
@@ -66,6 +67,10 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     clean_parser = subparsers.add_parser('clean', help='Clean build/results')
     clean.setup_parser(clean_parser)
 
+    # Calibrate command (ABI v3)
+    calibrate_parser = subparsers.add_parser('calibrate', help='Calibrate trainable kernels (ABI v3)')
+    calibrate.setup_parser(calibrate_parser)
+
     # Check-system command
     check_system_parser = subparsers.add_parser('check-system', help='Check system configuration for benchmarking')
     check_system.setup_parser(check_system_parser)
@@ -90,6 +95,8 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(list_kernels.execute(args))
         elif args.command == 'validate':
             sys.exit(validate.execute(args))
+        elif args.command == 'calibrate':
+            sys.exit(calibrate.execute(args))
         elif args.command == 'clean':
             sys.exit(clean.execute(args))
         elif args.command == 'check-system':

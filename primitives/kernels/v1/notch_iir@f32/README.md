@@ -72,3 +72,14 @@ plugins:
 - ✅ C implementation complete
 - ✅ Parameterization support (fully implemented via accessor API)
 
+## ABI v3 Compatibility
+
+This kernel is **fully compatible** with ABI v3 (backward compatible from v2).
+
+- **ABI version**: v2/v3 compatible
+- **Calibration required**: No (stateful IIR filter with fixed coefficients)
+- **Capabilities**: None (non-trainable kernel)
+- **Exports**: `cortex_init()`, `cortex_process()`, `cortex_teardown()`
+
+Notch IIR is a stateful kernel (maintains filter delay history) but does not require offline calibration. Filter coefficients are computed at initialization time from runtime parameters (f0_hz, Q). Works with both v2 and v3 harnesses without modification.
+

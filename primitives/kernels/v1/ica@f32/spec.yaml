@@ -1,0 +1,45 @@
+kernel:
+  name: "ica"
+  version: "v1"
+  dtype: "float32"
+  description: "Independent Component Analysis for artifact removal (ABI v3 trainable)"
+  trainable: true  # Requires offline calibration
+
+abi:
+  version: 3  # Requires ABI v3
+  capabilities:
+    - offline_calibration  # Uses cortex_calibrate()
+  input_shape:
+    window_length: 160
+    channels: 64
+  output_shape:
+    window_length: 160
+    channels: 64  # Same as input (unmixing is square matrix)
+  stateful: false  # Stateless at runtime (trained weights applied per-window)
+
+calibration:
+  min_windows: 100        # Minimum for convergence
+  recommended_windows: 500
+  max_duration_sec: 300   # 5 minutes typical for FastICA
+
+algorithm:
+  family: "Independent Component Analysis"
+  variant: "FastICA (symmetric decorrelation)"
+  nonlinearity: "tanh"
+  max_iterations: 200
+  tolerance: 1.0e-4
+
+numerical:
+  tolerance:
+    rtol: 1.0e-4  # Looser for iterative algorithm
+    atol: 1.0e-5
+
+oracle:
+  calibrate_function: "calibrate_ica"
+  apply_function: "apply_ica"
+  path: "oracle.py"
+  dependencies: ["numpy", "scipy", "sklearn"]
+
+references:
+  - "Hyvärinen, A., & Oja, E. (2000). Independent component analysis: algorithms and applications. Neural networks, 13(4-5), 411-430."
+  - "Makeig, S., et al. (1996). Independent component analysis of electroencephalographic data. NIPS."
