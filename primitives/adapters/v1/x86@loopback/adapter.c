@@ -250,9 +250,12 @@ int main(void)
     /* 2. Receive CONFIG */
     uint32_t sample_rate_hz, window_samples, hop_samples, channels;
     char plugin_name[64], plugin_params[256];
+    void *calibration_state = NULL;
+    uint32_t calibration_state_size = 0;
 
     if (cortex_adapter_recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
-                                    &hop_samples, &channels, plugin_name, plugin_params) < 0) {
+                                    &hop_samples, &channels, plugin_name, plugin_params,
+                                    &calibration_state, &calibration_state_size) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
         transport.close(transport.ctx);
         free(tp);
@@ -262,8 +265,9 @@ int main(void)
     /* 3. Load kernel plugin */
     kernel_plugin_t kernel_plugin = {0};
     if (load_kernel_plugin(plugin_name, sample_rate_hz, window_samples, hop_samples,
-                           channels, plugin_params, NULL, 0, &kernel_plugin) < 0) {
+                           channels, plugin_params, calibration_state, calibration_state_size, &kernel_plugin) < 0) {
         fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
+        free(calibration_state);  /* Free calibration state on error */
         transport.close(transport.ctx);
         free(tp);
         return 1;
@@ -356,6 +360,7 @@ int main(void)
 
     free(window_buf);
     free(output_buf);
+    free(calibration_state);  /* Free calibration state if it was allocated */
     unload_kernel_plugin(&kernel_plugin);
     transport.close(transport.ctx);
     free(tp);

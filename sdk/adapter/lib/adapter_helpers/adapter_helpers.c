@@ -44,7 +44,9 @@ int cortex_adapter_recv_config(
     uint32_t *out_hop_samples,
     uint32_t *out_channels,
     char *out_plugin_name,
-    char *out_plugin_params
+    char *out_plugin_params,
+    void **out_calibration_state,
+    uint32_t *out_calibration_state_size
 )
 {
     uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
@@ -85,7 +87,38 @@ int cortex_adapter_recv_config(
     memcpy(out_plugin_params, frame_buf + 84, 256);
     out_plugin_params[255] = '\0';  /* Ensure null termination */
 
-    /* NOTE: Calibration state extraction not implemented yet (Phase 2) */
+    /* Extract calibration state size */
+    uint32_t calib_size = cortex_read_u32_le(frame_buf + 340);
+    *out_calibration_state_size = calib_size;
+
+    /* Extract calibration state data if present */
+    if (calib_size > 0) {
+        /* Validate size */
+        if (calib_size > CORTEX_MAX_CALIBRATION_STATE) {
+            fprintf(stderr, "[adapter_recv_config] Calibration state too large: %u bytes (max %lu)\n",
+                    calib_size, (unsigned long)CORTEX_MAX_CALIBRATION_STATE);
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        /* Verify payload contains the calibration state */
+        if (payload_len < sizeof(cortex_wire_config_t) + calib_size) {
+            fprintf(stderr, "[adapter_recv_config] Payload too small for calibration state\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        /* Allocate buffer for calibration state */
+        void *calib_buffer = malloc(calib_size);
+        if (!calib_buffer) {
+            fprintf(stderr, "[adapter_recv_config] Failed to allocate calibration state buffer\n");
+            return -1;
+        }
+
+        /* Copy calibration state data (starts after cortex_wire_config_t) */
+        memcpy(calib_buffer, frame_buf + sizeof(cortex_wire_config_t), calib_size);
+        *out_calibration_state = calib_buffer;
+    } else {
+        *out_calibration_state = NULL;
+    }
 
     return 0;
 }

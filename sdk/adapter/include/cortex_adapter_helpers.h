@@ -51,18 +51,23 @@ int cortex_adapter_send_hello(
  * in the handshake sequence.
  *
  * Args:
- *   transport:           Transport to receive from
- *   out_session_id:      Pointer to store session ID
- *   out_sample_rate_hz:  Pointer to store sample rate (Hz)
- *   out_window_samples:  Pointer to store window length (W)
- *   out_hop_samples:     Pointer to store hop size (H)
- *   out_channels:        Pointer to store channel count (C)
- *   out_plugin_name:     Buffer to store plugin name (must be [32] bytes)
- *   out_plugin_params:   Buffer to store plugin params (must be [256] bytes)
+ *   transport:                   Transport to receive from
+ *   out_session_id:              Pointer to store session ID
+ *   out_sample_rate_hz:          Pointer to store sample rate (Hz)
+ *   out_window_samples:          Pointer to store window length (W)
+ *   out_hop_samples:             Pointer to store hop size (H)
+ *   out_channels:                Pointer to store channel count (C)
+ *   out_plugin_name:             Buffer to store plugin name (must be [64] bytes)
+ *   out_plugin_params:           Buffer to store plugin params (must be [256] bytes)
+ *   out_calibration_state:       Pointer to store calibration state buffer (caller must free)
+ *   out_calibration_state_size:  Pointer to store calibration state size in bytes
  *
  * Returns:
  *    0: Success (CONFIG received and parsed)
  *   <0: Error (timeout, protocol error, invalid frame)
+ *
+ * NOTE: If calibration state is present, this function allocates memory for it.
+ *       The caller is responsible for freeing *out_calibration_state.
  */
 int cortex_adapter_recv_config(
     cortex_transport_t *transport,
@@ -71,8 +76,10 @@ int cortex_adapter_recv_config(
     uint32_t *out_window_samples,
     uint32_t *out_hop_samples,
     uint32_t *out_channels,
-    char *out_plugin_name,     /* [32] */
-    char *out_plugin_params    /* [256] */
+    char *out_plugin_name,              /* [64] */
+    char *out_plugin_params,            /* [256] */
+    void **out_calibration_state,       /* Caller must free */
+    uint32_t *out_calibration_state_size
 );
 
 /*
