@@ -201,11 +201,16 @@ static int send_config(
 /*
  * recv_ack - Receive ACK frame from adapter
  *
+ * Extracts optional output dimensions from ACK frame.
+ * If dimensions are 0, caller should use config dimensions.
+ *
  * Returns:
  *    0: Success
  *   <0: Error
  */
-static int recv_ack(cortex_transport_t *transport)
+static int recv_ack(cortex_transport_t *transport,
+                    uint32_t *out_output_window_length,
+                    uint32_t *out_output_channels)
 {
     uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
     cortex_frame_type_t frame_type;
@@ -232,13 +237,23 @@ static int recv_ack(cortex_transport_t *transport)
         return CORTEX_EPROTO_INVALID_FRAME;
     }
 
+    /* Parse ACK payload */
+    cortex_wire_ack_t *ack = (cortex_wire_ack_t *)frame_buf;
+
+    /* Extract output dimensions (0 = use config) */
+    *out_output_window_length = cortex_read_u32_le((uint8_t *)&ack->output_window_length_samples);
+    *out_output_channels = cortex_read_u32_le((uint8_t *)&ack->output_channels);
+
     /* TODO: Validate ack_type */
 
     return 0;
 }
 
 /*
- * device_comm_init - Spawn adapter and perform handshake
+ * device_comm_init - Spawn adapter and perform complete handshake
+ *
+ * This is ATOMIC and SYNCHRONOUS - all handshake frames sent/received
+ * before return. Caller may free calib_state immediately after return.
  */
 int device_comm_init(
     const char *adapter_path,
@@ -250,9 +265,13 @@ int device_comm_init(
     uint32_t channels,
     const void *calib_state,
     size_t calib_state_size,
-    cortex_device_handle_t **out_handle
+    cortex_device_init_result_t *out_result
 )
 {
+    if (!out_result) {
+        return -EINVAL;
+    }
+
     /* Allocate device handle */
     cortex_device_handle_t *handle = (cortex_device_handle_t *)calloc(1, sizeof(*handle));
     if (!handle) {
@@ -288,7 +307,7 @@ int device_comm_init(
     /* Generate session ID */
     handle->session_id = (uint32_t)rand();
 
-    /* Send CONFIG */
+    /* Send CONFIG (serializes calib_state into wire format) */
     ret = send_config(
         handle->transport,
         handle->session_id,
@@ -307,14 +326,22 @@ int device_comm_init(
         return ret;
     }
 
-    /* Receive ACK */
-    ret = recv_ack(handle->transport);
+    /* Receive ACK (with optional output dimension override) */
+    uint32_t output_window_length = 0;
+    uint32_t output_channels = 0;
+    ret = recv_ack(handle->transport, &output_window_length, &output_channels);
     if (ret < 0) {
         device_comm_teardown(handle);
         return ret;
     }
 
-    *out_handle = handle;
+    /* Populate result struct */
+    out_result->handle = handle;
+    out_result->output_window_length_samples = output_window_length;  /* 0 = use config */
+    out_result->output_channels = output_channels;                     /* 0 = use config */
+    strncpy(out_result->adapter_name, handle->adapter_name, sizeof(out_result->adapter_name) - 1);
+    out_result->adapter_name[sizeof(out_result->adapter_name) - 1] = '\0';
+
     return 0;
 }
 

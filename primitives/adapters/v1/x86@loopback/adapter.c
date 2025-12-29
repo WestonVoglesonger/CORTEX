@@ -253,8 +253,11 @@ int main(void)
         return 1;
     }
 
-    /* 4. Send ACK (kernel ready) */
-    if (cortex_adapter_send_ack(&transport) < 0) {
+    /* 4. Send ACK (kernel ready, with output dimensions) */
+    /* Send actual output dimensions from kernel init result */
+    if (cortex_adapter_send_ack_with_dims(&transport,
+                                         kernel_plugin.output_window_length_samples,
+                                         kernel_plugin.output_channels) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
         unload_kernel_plugin(&kernel_plugin);
         transport.close(transport.ctx);

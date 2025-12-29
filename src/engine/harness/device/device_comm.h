@@ -25,6 +25,19 @@
 typedef struct cortex_device_handle cortex_device_handle_t;
 
 /*
+ * Device initialization result
+ *
+ * Returned by device_comm_init() after successful handshake.
+ * Contains device handle and output dimensions from ACK frame.
+ */
+typedef struct cortex_device_init_result {
+    cortex_device_handle_t *handle;        /* Device handle (caller must teardown) */
+    uint32_t output_window_length_samples; /* Output W from ACK (0 = use config) */
+    uint32_t output_channels;              /* Output C from ACK (0 = use config) */
+    char adapter_name[32];                 /* Adapter name from HELLO frame */
+} cortex_device_init_result_t;
+
+/*
  * Device timing (nanoseconds, device clock)
  *
  * Captured from RESULT frame. Allows measuring:
@@ -42,14 +55,20 @@ typedef struct {
 } cortex_device_timing_t;
 
 /*
- * device_comm_init - Spawn adapter and perform handshake
+ * device_comm_init - Spawn adapter and perform complete handshake
  *
- * Steps:
+ * This function is ATOMIC and SYNCHRONOUS:
  *   1. Spawn adapter process (fork + exec)
  *   2. Create socketpair for bidirectional communication
- *   3. Receive HELLO (adapter capabilities)
- *   4. Send CONFIG (kernel selection, window params)
- *   5. Receive ACK (adapter ready)
+ *   3. Receive HELLO frame (adapter capabilities)
+ *   4. Send CONFIG frame (serializes calib_state into wire format)
+ *   5. Receive ACK frame (with output dimensions)
+ *
+ * When this function returns successfully, all handshake frames have been
+ * sent/received. Caller may safely free calib_state immediately after return.
+ *
+ * CONSTRAINT: Output dimensions are constant for the lifetime of this
+ * device_handle. Dimensions cannot change per-window.
  *
  * Args:
  *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback")
@@ -59,17 +78,18 @@ typedef struct {
  *   window_samples:  Window length W (e.g., 160)
  *   hop_samples:     Hop length H (e.g., 80)
  *   channels:        Channel count C (e.g., 64)
- *   calib_state:     Calibration state bytes (NULL if not trainable)
+ *   calib_state:     Calibration state bytes (NULL if not trainable) - COPIED by device_comm
  *   calib_state_size: Calibration state size (0 if not trainable)
- *   out_handle:      Pointer to store device handle
+ *   out_result:      Pointer to store init result (handle + output dims + adapter name)
  *
  * Returns:
  *    0: Success (adapter spawned and ready)
- *   <0: Error (spawn failed, handshake timeout, etc.)
+ *   <0: cortex_error_code_t (spawn failed, handshake timeout, etc.)
  *
  * IMPORTANT:
- *   - Caller must call device_comm_teardown() to cleanup
+ *   - Caller must call device_comm_teardown() to cleanup handle
  *   - Adapter process runs until teardown or death
+ *   - device_comm COPIES calib_state (caller owns and frees original)
  */
 int device_comm_init(
     const char *adapter_path,
@@ -81,7 +101,7 @@ int device_comm_init(
     uint32_t channels,
     const void *calib_state,
     size_t calib_state_size,
-    cortex_device_handle_t **out_handle
+    cortex_device_init_result_t *out_result
 );
 
 /*

@@ -119,10 +119,13 @@ typedef struct __attribute__((packed)) {
 /*
  * ACK Frame Payload (Adapter → Harness)
  *
- * Simple acknowledgment.
+ * Acknowledgment with optional output dimension override.
+ * If output dimensions are 0, harness uses config dimensions (backward compat).
  */
 typedef struct __attribute__((packed)) {
-    uint32_t ack_type;  /* What is being ACKed (0 = CONFIG) */
+    uint32_t ack_type;                     /* What is being ACKed (0 = CONFIG) */
+    uint32_t output_window_length_samples; /* Output W (0 = use config) */
+    uint32_t output_channels;              /* Output C (0 = use config) */
 } cortex_wire_ack_t;
 
 /*

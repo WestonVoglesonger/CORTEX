@@ -92,8 +92,18 @@ int cortex_adapter_recv_config(
 
 int cortex_adapter_send_ack(cortex_transport_t *transport)
 {
-    uint8_t payload[4];
-    cortex_write_u32_le(payload, 0);  /* ack_type = 0 (CONFIG) */
+    /* Backward compat: send zeros for output dimensions */
+    return cortex_adapter_send_ack_with_dims(transport, 0, 0);
+}
+
+int cortex_adapter_send_ack_with_dims(cortex_transport_t *transport,
+                                      uint32_t output_window_length,
+                                      uint32_t output_channels)
+{
+    uint8_t payload[12];  /* ack_type (4) + output_window_length (4) + output_channels (4) */
+    cortex_write_u32_le(payload + 0, 0);  /* ack_type = 0 (CONFIG) */
+    cortex_write_u32_le(payload + 4, output_window_length);
+    cortex_write_u32_le(payload + 8, output_channels);
 
     return cortex_protocol_send_frame(transport, CORTEX_FRAME_ACK, payload, sizeof(payload));
 }
