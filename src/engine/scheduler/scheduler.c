@@ -561,7 +561,19 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         rec.Fs = scheduler->config.sample_rate_hz;
         rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
         rec.repeat = scheduler->config.current_repeat;
-        
+
+        /* Populate device-side timing if adapter was used */
+        rec.device_tin_ns = device_tin_ns;
+        rec.device_tstart_ns = device_tstart_ns;
+        rec.device_tend_ns = device_tend_ns;
+        rec.device_tfirst_tx_ns = device_tfirst_tx_ns;
+        rec.device_tlast_tx_ns = device_tlast_tx_ns;
+        if (entry->device_handle) {
+            strncpy(rec.adapter_name, "x86@loopback", sizeof(rec.adapter_name)-1);
+        } else {
+            rec.adapter_name[0] = '\0';  /* Direct execution - no adapter */
+        }
+
         cortex_telemetry_add(buffer, &rec);
     }
 
