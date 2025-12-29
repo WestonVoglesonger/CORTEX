@@ -444,12 +444,12 @@ static void generate_histogram_svg(FILE *f, double *latencies_us, size_t count,
     
     /* Histogram bar legend */
     fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#4a90e2\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
-            legend_x, legend_y, 12, 12);
+            legend_x, legend_y);
     fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Main distribution</text>\n",
             legend_x + 15, legend_y + 10);
 
     fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"12\" height=\"12\" fill=\"#e74c3c\" stroke=\"#2e5c8a\" stroke-width=\"1\"/>\n",
-            legend_x, legend_y + 15, 12, 12);
+            legend_x, legend_y + 15);
     fprintf(f, "<text x=\"%d\" y=\"%d\" fill=\"#333\" font-size=\"10\">Outliers (>%.0f µs)</text>\n",
             legend_x + 15, legend_y + 25, p99_us);
 

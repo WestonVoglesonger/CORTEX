@@ -45,7 +45,12 @@ int cortex_plugin_build_path(const char *spec_uri, char *out_path, size_t out_sz
         i++;
     }
     kernel_name[i] = '\0';
-    
+
+    /* Validate kernel name for security (prevent path traversal) */
+    if (validate_plugin_name(kernel_name) < 0) {
+        return -1;
+    }
+
     /* Build full path: {spec_uri}/lib{name}.{ext} */
 #ifdef __APPLE__
     snprintf(out_path, out_sz, "%s/lib%s.dylib", spec_uri, kernel_name);

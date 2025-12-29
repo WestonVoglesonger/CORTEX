@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 
-
+#undef CORTEX_ABI_VERSION
 #define CORTEX_ABI_VERSION 2u
 
 typedef struct {

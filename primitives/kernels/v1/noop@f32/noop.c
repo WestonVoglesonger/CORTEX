@@ -14,6 +14,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#undef CORTEX_ABI_VERSION
 #define CORTEX_ABI_VERSION 2u
 
 typedef struct {

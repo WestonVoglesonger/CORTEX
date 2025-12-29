@@ -463,7 +463,7 @@ cortex_calibration_result_t cortex_calibrate(
     }
 
     /* Check for overflow: C * sizeof(float) */
-    if (C > SIZE_MAX / sizeof(float)) {
+    if ((size_t)C > SIZE_MAX / sizeof(float)) {
         fprintf(stderr, "[ica] ERROR: Integer overflow in mean allocation (C=%u)\n", C);
         free(X);
         return (cortex_calibration_result_t){NULL, 0, 0};
@@ -594,7 +594,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     state->C = C;
 
     /* Check for overflow: C * sizeof(float) */
-    if (C > SIZE_MAX / sizeof(float)) {
+    if ((size_t)C > SIZE_MAX / sizeof(float)) {
         fprintf(stderr, "[ica] ERROR: Integer overflow in state->mean allocation (C=%u)\n", C);
         free(state);
         return (cortex_init_result_t){NULL, 0, 0, 0};

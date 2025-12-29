@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <alloca.h>
 
+#undef CORTEX_ABI_VERSION
 #define CORTEX_ABI_VERSION 2u
 #define CORTEX_DTYPE_FLOAT32_MASK (1u << 0)
 

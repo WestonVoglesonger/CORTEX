@@ -23,7 +23,9 @@
 #include <mach/mach_time.h>
 #endif
 
+#ifndef NSEC_PER_SEC
 #define NSEC_PER_SEC 1000000000LL
+#endif
 
 typedef struct cortex_scheduler_plugin_entry {
     const char *plugin_name;  /* For logging/telemetry */
@@ -391,12 +393,12 @@ static int apply_realtime_attributes(cortex_scheduler_t *scheduler) {
 }
 
 static void normalize_timespec(struct timespec *ts) {
-    while (ts->tv_nsec >= NSEC_PER_SEC) {
-        ts->tv_nsec -= NSEC_PER_SEC;
+    while (ts->tv_nsec >= (long)NSEC_PER_SEC) {
+        ts->tv_nsec -= (long)NSEC_PER_SEC;
         ts->tv_sec += 1;
     }
     while (ts->tv_nsec < 0) {
-        ts->tv_nsec += NSEC_PER_SEC;
+        ts->tv_nsec += (long)NSEC_PER_SEC;
         ts->tv_sec -= 1;
     }
 }
