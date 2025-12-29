@@ -11,11 +11,11 @@
  * Provides frame-based communication over byte-stream transports.
  * Handles framing, CRC validation, MAGIC hunting, and timeout management.
  *
- * Wire format is defined in lib/protocol/wire_format.h
+ * Wire format is defined in cortex_wire.h
  */
 
 /* Re-export wire format definitions and endian helpers */
-#include "../lib/protocol/wire_format.h"
+#include "cortex_wire.h"
 #include "cortex_endian.h"
 
 /* Protocol error codes (negative, distinct from transport errors) */

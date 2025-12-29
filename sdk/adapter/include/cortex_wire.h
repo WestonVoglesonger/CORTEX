@@ -1,5 +1,5 @@
-#ifndef CORTEX_WIRE_FORMAT_H
-#define CORTEX_WIRE_FORMAT_H
+#ifndef CORTEX_WIRE_H
+#define CORTEX_WIRE_H
 
 #include <stdint.h>
 
@@ -189,4 +189,4 @@ typedef struct __attribute__((packed)) {
 #define CORTEX_ERROR_KERNEL_EXEC_FAILED 5
 #define CORTEX_ERROR_SESSION_MISMATCH   6
 
-#endif /* CORTEX_WIRE_FORMAT_H */
+#endif /* CORTEX_WIRE_H */

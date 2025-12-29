@@ -15,6 +15,7 @@
 
 #include "cortex_transport.h"
 #include "cortex_protocol.h"
+#include "cortex_adapter_helpers.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -79,139 +80,6 @@ static uint64_t get_timestamp_ns(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-}
-
-/* Send HELLO frame advertising noop kernel */
-static int send_hello(cortex_transport_t *transport, uint32_t boot_id)
-{
-    /* Build HELLO payload */
-    uint8_t payload[sizeof(cortex_wire_hello_t) + 32];  /* header + 1 kernel name */
-
-    /* cortex_wire_hello_t fields (little-endian) */
-    cortex_write_u32_le(payload + 0, boot_id);
-    memset(payload + 4, 0, 32);  /* adapter_name[32] */
-    snprintf((char *)(payload + 4), 32, "x86@loopback");
-    payload[36] = 1;  /* adapter_abi_version */
-    payload[37] = 1;  /* num_kernels */
-    cortex_write_u16_le(payload + 38, 0);  /* reserved */
-    cortex_write_u32_le(payload + 40, 1024);  /* max_window_samples (arbitrary) */
-    cortex_write_u32_le(payload + 44, 64);    /* max_channels */
-
-    /* Kernel name: "noop@f32" */
-    memset(payload + sizeof(cortex_wire_hello_t), 0, 32);
-    snprintf((char *)(payload + sizeof(cortex_wire_hello_t)), 32, "noop@f32");
-
-    return cortex_protocol_send_frame(transport, CORTEX_FRAME_HELLO, payload, sizeof(payload));
-}
-
-/* Receive CONFIG frame */
-static int recv_config(
-    cortex_transport_t *transport,
-    uint32_t *out_session_id,
-    uint32_t *out_sample_rate_hz,
-    uint32_t *out_window_samples,
-    uint32_t *out_hop_samples,
-    uint32_t *out_channels,
-    char *out_plugin_name,
-    char *out_plugin_params
-)
-{
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
-    cortex_frame_type_t frame_type;
-    size_t payload_len;
-
-    int ret = cortex_protocol_recv_frame(
-        transport,
-        &frame_type,
-        frame_buf,
-        sizeof(frame_buf),
-        &payload_len,
-        CORTEX_HANDSHAKE_TIMEOUT_MS
-    );
-
-    if (ret < 0) {
-        return ret;
-    }
-
-    if (frame_type != CORTEX_FRAME_CONFIG) {
-        return CORTEX_EPROTO_INVALID_FRAME;
-    }
-
-    if (payload_len < sizeof(cortex_wire_config_t)) {
-        return CORTEX_EPROTO_INVALID_FRAME;
-    }
-
-    /* Parse CONFIG payload (convert from little-endian) */
-    *out_session_id = cortex_read_u32_le(frame_buf + 0);
-    *out_sample_rate_hz = cortex_read_u32_le(frame_buf + 4);
-    *out_window_samples = cortex_read_u32_le(frame_buf + 8);
-    *out_hop_samples = cortex_read_u32_le(frame_buf + 12);
-    *out_channels = cortex_read_u32_le(frame_buf + 16);
-
-    memcpy(out_plugin_name, frame_buf + 20, 32);
-    out_plugin_name[31] = '\0';  /* Ensure null termination */
-
-    memcpy(out_plugin_params, frame_buf + 52, 256);
-    out_plugin_params[255] = '\0';  /* Ensure null termination */
-
-    /* Calibration state ignored for noop */
-
-    return 0;
-}
-
-/* Send ACK frame */
-static int send_ack(cortex_transport_t *transport)
-{
-    uint8_t payload[4];
-    cortex_write_u32_le(payload, 0);  /* ack_type = 0 (CONFIG) */
-
-    return cortex_protocol_send_frame(transport, CORTEX_FRAME_ACK, payload, sizeof(payload));
-}
-
-/* Send RESULT frame */
-static int send_result(
-    cortex_transport_t *transport,
-    uint32_t session_id,
-    uint32_t sequence,
-    uint64_t tin,
-    uint64_t tstart,
-    uint64_t tend,
-    uint64_t tfirst_tx,
-    uint64_t tlast_tx,
-    const float *output_samples,
-    uint32_t output_length,
-    uint32_t output_channels
-)
-{
-    size_t output_bytes = output_length * output_channels * sizeof(float);
-    size_t payload_len = sizeof(cortex_wire_result_t) + output_bytes;
-
-    uint8_t *payload = (uint8_t *)malloc(payload_len);
-    if (!payload) {
-        return -1;
-    }
-
-    /* Build RESULT header (little-endian) */
-    cortex_write_u32_le(payload + 0, session_id);
-    cortex_write_u32_le(payload + 4, sequence);
-    cortex_write_u64_le(payload + 8, tin);
-    cortex_write_u64_le(payload + 16, tstart);
-    cortex_write_u64_le(payload + 24, tend);
-    cortex_write_u64_le(payload + 32, tfirst_tx);
-    cortex_write_u64_le(payload + 40, tlast_tx);
-    cortex_write_u32_le(payload + 48, output_length);
-    cortex_write_u32_le(payload + 52, output_channels);
-
-    /* Convert output samples to little-endian */
-    uint8_t *sample_buf = payload + sizeof(cortex_wire_result_t);
-    for (size_t i = 0; i < output_length * output_channels; i++) {
-        cortex_write_f32_le(sample_buf + (i * sizeof(float)), output_samples[i]);
-    }
-
-    int ret = cortex_protocol_send_frame(transport, CORTEX_FRAME_RESULT, payload, payload_len);
-
-    free(payload);
-    return ret;
 }
 
 /* Load kernel plugin via dlopen */
@@ -356,7 +224,7 @@ int main(void)
     transport = *tp;  /* Copy transport */
 
     /* 1. Send HELLO */
-    if (send_hello(&transport, boot_id) < 0) {
+    if (cortex_adapter_send_hello(&transport, boot_id, "x86@loopback", "noop@f32", 1024, 64) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
         transport.close(transport.ctx);
         free(tp);
@@ -367,8 +235,8 @@ int main(void)
     uint32_t sample_rate_hz, window_samples, hop_samples, channels;
     char plugin_name[32], plugin_params[256];
 
-    if (recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
-                    &hop_samples, &channels, plugin_name, plugin_params) < 0) {
+    if (cortex_adapter_recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
+                                    &hop_samples, &channels, plugin_name, plugin_params) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
         transport.close(transport.ctx);
         free(tp);
@@ -386,7 +254,7 @@ int main(void)
     }
 
     /* 4. Send ACK (kernel ready) */
-    if (send_ack(&transport) < 0) {
+    if (cortex_adapter_send_ack(&transport) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
         unload_kernel_plugin(&kernel_plugin);
         transport.close(transport.ctx);
@@ -442,7 +310,7 @@ int main(void)
 
         /* Send RESULT with actual output shape */
         uint64_t tfirst_tx = get_timestamp_ns();
-        ret = send_result(
+        ret = cortex_adapter_send_result(
             &transport,
             session_id,
             sequence,
@@ -457,7 +325,7 @@ int main(void)
         );
         uint64_t tlast_tx = get_timestamp_ns();
 
-        (void)tlast_tx;  /* TODO: Update send_result to capture actual tlast_tx */
+        (void)tlast_tx;  /* TODO: Update cortex_adapter_send_result to capture actual tlast_tx */
 
         if (ret < 0) {
             fprintf(stderr, "Failed to send RESULT\n");

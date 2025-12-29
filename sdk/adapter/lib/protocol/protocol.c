@@ -2,7 +2,6 @@
 
 #include "cortex_protocol.h"
 #include "crc32.h"
-#include "endian.h"
 
 #include <string.h>
 #include <stdlib.h>
