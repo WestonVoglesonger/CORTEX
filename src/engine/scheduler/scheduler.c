@@ -26,14 +26,13 @@
 #define NSEC_PER_SEC 1000000000LL
 
 typedef struct cortex_scheduler_plugin_entry {
-    cortex_plugin_api_t api;
     const char *plugin_name;  /* For logging/telemetry */
-    void *handle;
-    void *output_buffer;
-    size_t output_bytes;
-    void *config_blob;
-    size_t config_size;
-    void *device_handle;  /* Device adapter handle (NULL = direct execution) */
+    char adapter_name[32];    /* Adapter name from HELLO */
+    void *device_handle;      /* Device adapter handle (borrowed from harness) */
+    void *output_buffer;      /* Output buffer for kernel results */
+    size_t output_bytes;      /* Size of output buffer */
+    uint32_t output_window_length_samples;  /* Output W (from ACK or config) */
+    uint32_t output_channels;               /* Output C (from ACK or config) */
 } cortex_scheduler_plugin_entry_t;
 
 struct cortex_scheduler_t {
@@ -76,7 +75,9 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tstart_ns,
                                   uint64_t device_tend_ns,
                                   uint64_t device_tfirst_tx_ns,
-                                  uint64_t device_tlast_tx_ns);
+                                  uint64_t device_tlast_tx_ns,
+                                  uint8_t window_failed,
+                                  int32_t error_code);
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry);
 
 cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *config) {
@@ -171,15 +172,15 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
     free(scheduler);
 }
 
-int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
-                                     const cortex_plugin_api_t *api,
-                                     const cortex_plugin_config_t *plugin_config,
-                                     const char *plugin_name) {
-    if (!scheduler || !api || !api->init || !api->process || !api->teardown || !plugin_config) {
+int cortex_scheduler_register_device(cortex_scheduler_t *scheduler,
+                                     const cortex_scheduler_device_info_t *device_info,
+                                     uint32_t config_window_length,
+                                     uint32_t config_channels) {
+    if (!scheduler || !device_info || !device_info->device_handle) {
         return -EINVAL;
     }
 
-    /* Ensure we have capacity for the new plugin (may return -EOVERFLOW or -ENOMEM) */
+    /* Ensure we have capacity for the new device (may return -EOVERFLOW or -ENOMEM) */
     int capacity_rc = ensure_plugin_capacity(scheduler);
     if (capacity_rc != 0) {
         return capacity_rc;  /* Propagate the actual error (-EOVERFLOW or -ENOMEM) */
@@ -188,64 +189,46 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
     cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[scheduler->plugin_count];
     memset(entry, 0, sizeof(*entry));
 
-    entry->api = *api;
     /* Store plugin name (duplicate string to avoid lifetime issues) */
-    entry->plugin_name = plugin_name ? strdup(plugin_name) : strdup("(unnamed)");
+    entry->plugin_name = strdup(device_info->plugin_name);
     if (!entry->plugin_name) {
-        /* Both strdup calls failed - out of memory */
         return -ENOMEM;
     }
 
-    entry->config_size = plugin_config->struct_size;
-    entry->config_blob = calloc(1, entry->config_size);
-    if (!entry->config_blob) {
-        free((char*)entry->plugin_name);
-        entry->plugin_name = NULL;
-        return -ENOMEM;
-    }
-    memcpy(entry->config_blob, plugin_config, entry->config_size);
+    /* Copy adapter name */
+    strncpy(entry->adapter_name, device_info->adapter_name, sizeof(entry->adapter_name) - 1);
+    entry->adapter_name[sizeof(entry->adapter_name) - 1] = '\0';
 
-    /* Call init() - it validates dtype and returns handle + output dimensions */
-    cortex_init_result_t init_result = entry->api.init((const cortex_plugin_config_t *)entry->config_blob);
-    if (!init_result.handle) {
-        fprintf(stderr, "[scheduler] plugin '%s' failed init()\n",
-                entry->plugin_name ? entry->plugin_name : "(unnamed)");
-        free((char*)entry->plugin_name);
-        entry->plugin_name = NULL;
-        free(entry->config_blob);
-        entry->config_blob = NULL;
-        return -EINVAL;
-    }
+    /* Borrow device handle (harness owns lifecycle) */
+    entry->device_handle = device_info->device_handle;
 
-    entry->handle = init_result.handle;
+    /* Determine output dimensions (ACK override or config) */
+    entry->output_window_length_samples = (device_info->output_window_length_samples > 0)
+        ? device_info->output_window_length_samples
+        : config_window_length;
+    entry->output_channels = (device_info->output_channels > 0)
+        ? device_info->output_channels
+        : config_channels;
 
-    /* Allocate output buffer using dimensions from init() */
+    /* Allocate output buffer */
     const size_t element_size = sizeof(float); /* TODO: support Q15/Q7 */
 
-    /* Check for overflow in output buffer size calculation (chained multiplication) */
+    /* Check for overflow in output buffer size calculation */
     size_t temp, output_bytes;
-    if (cortex_mul_size_overflow(init_result.output_window_length_samples,
-                                 init_result.output_channels, &temp)) {
+    if (cortex_mul_size_overflow(entry->output_window_length_samples,
+                                 entry->output_channels, &temp)) {
         fprintf(stderr, "[scheduler] Integer overflow: output dimensions %u * %u exceed SIZE_MAX\n",
-                init_result.output_window_length_samples, init_result.output_channels);
-        entry->api.teardown(entry->handle);
+                entry->output_window_length_samples, entry->output_channels);
         free((char*)entry->plugin_name);
         entry->plugin_name = NULL;
-        free(entry->config_blob);
-        entry->config_blob = NULL;
-        entry->handle = NULL;
         errno = EOVERFLOW;
         return -EOVERFLOW;
     }
     if (cortex_mul_size_overflow(temp, element_size, &output_bytes)) {
         fprintf(stderr, "[scheduler] Integer overflow: output size %zu * %zu exceeds SIZE_MAX\n",
                 temp, element_size);
-        entry->api.teardown(entry->handle);
         free((char*)entry->plugin_name);
         entry->plugin_name = NULL;
-        free(entry->config_blob);
-        entry->config_blob = NULL;
-        entry->handle = NULL;
         errno = EOVERFLOW;
         return -EOVERFLOW;
     }
@@ -253,12 +236,8 @@ int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
 
     entry->output_buffer = calloc(1, entry->output_bytes);
     if (!entry->output_buffer) {
-        entry->api.teardown(entry->handle);
         free((char*)entry->plugin_name);
         entry->plugin_name = NULL;
-        free(entry->config_blob);
-        entry->config_blob = NULL;
-        entry->handle = NULL;
         return -ENOMEM;
     }
 
@@ -448,45 +427,46 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
         struct timespec start_ts;
         struct timespec end_ts;
 
-        /* Device timing (0 if direct execution) */
+        /* Device timing */
         uint64_t device_tin_ns = 0;
         uint64_t device_tstart_ns = 0;
         uint64_t device_tend_ns = 0;
         uint64_t device_tfirst_tx_ns = 0;
         uint64_t device_tlast_tx_ns = 0;
 
+        /* Window failure tracking */
+        uint8_t window_failed = 0;
+        int32_t error_code = 0;
+
         clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
-        /* Route through device adapter if configured */
-        if (entry->device_handle) {
-            cortex_device_handle_t *device = (cortex_device_handle_t *)entry->device_handle;
-            cortex_device_timing_t device_timing;
+        /* Execute via device adapter (universal adapter model) */
+        cortex_device_handle_t *device = (cortex_device_handle_t *)entry->device_handle;
+        cortex_device_timing_t device_timing;
 
-            int ret = device_comm_execute_window(
-                device,
-                (uint32_t)scheduler->window_count,  /* sequence */
-                input,
-                (uint32_t)scheduler->config.window_length_samples,
-                (uint32_t)scheduler->config.channels,
-                (float *)output,
-                entry->output_bytes,
-                &device_timing
-            );
+        int ret = device_comm_execute_window(
+            device,
+            (uint32_t)scheduler->window_count,  /* sequence */
+            input,
+            (uint32_t)scheduler->config.window_length_samples,
+            (uint32_t)scheduler->config.channels,
+            (float *)output,
+            entry->output_bytes,
+            &device_timing
+        );
 
-            if (ret < 0) {
-                fprintf(stderr, "ERROR: device_comm_execute_window failed with code %d\n", ret);
-                /* Continue with remaining plugins */
-            } else {
-                /* Extract device timing */
-                device_tin_ns = device_timing.tin;
-                device_tstart_ns = device_timing.tstart;
-                device_tend_ns = device_timing.tend;
-                device_tfirst_tx_ns = device_timing.tfirst_tx;
-                device_tlast_tx_ns = device_timing.tlast_tx;
-            }
+        if (ret < 0) {
+            fprintf(stderr, "[scheduler] device_comm_execute_window failed: %d (plugin=%s, window=%llu)\n",
+                    ret, entry->plugin_name, (unsigned long long)scheduler->window_count);
+            window_failed = 1;
+            error_code = ret;
         } else {
-            /* Direct execution (original behavior) */
-            entry->api.process(entry->handle, input, output);
+            /* Extract device timing */
+            device_tin_ns = device_timing.tin;
+            device_tstart_ns = device_timing.tstart;
+            device_tend_ns = device_timing.tend;
+            device_tfirst_tx_ns = device_timing.tfirst_tx;
+            device_tlast_tx_ns = device_timing.tlast_tx;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ts);
@@ -502,7 +482,8 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
         }
 
         record_window_metrics(scheduler, entry, &release_ts, &deadline_ts, &start_ts, &end_ts, deadline_missed,
-                              device_tin_ns, device_tstart_ns, device_tend_ns, device_tfirst_tx_ns, device_tlast_tx_ns);
+                              device_tin_ns, device_tstart_ns, device_tend_ns, device_tfirst_tx_ns, device_tlast_tx_ns,
+                              window_failed, error_code);
     }
 
     if (scheduler->warmup_windows_remaining > 0) {
@@ -522,7 +503,9 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tstart_ns,
                                   uint64_t device_tend_ns,
                                   uint64_t device_tfirst_tx_ns,
-                                  uint64_t device_tlast_tx_ns) {
+                                  uint64_t device_tlast_tx_ns,
+                                  uint8_t window_failed,
+                                  int32_t error_code) {
     uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
     uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
     uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
@@ -530,18 +513,21 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
     uint64_t latency_ns = (uint64_t)((end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC) +
                           (uint64_t)(end_ts->tv_nsec - start_ts->tv_nsec);
 
-    (void)device_tin_ns;         /* TODO: Add to telemetry */
-    (void)device_tstart_ns;
-    (void)device_tend_ns;
-    (void)device_tfirst_tx_ns;
-    (void)device_tlast_tx_ns;
-
-    /* Print simple log */
-    fprintf(stdout,
-            "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d\n",
-            plugin->plugin_name ? plugin->plugin_name : "(unnamed)",
-            (unsigned long long)latency_ns,
-            deadline_missed);
+    /* Print log with failure status */
+    if (window_failed) {
+        fprintf(stdout,
+                "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d FAILED (error=%d)\n",
+                plugin->plugin_name ? plugin->plugin_name : "(unnamed)",
+                (unsigned long long)latency_ns,
+                deadline_missed,
+                error_code);
+    } else {
+        fprintf(stdout,
+                "[telemetry] plugin=%s latency_ns=%llu deadline_missed=%d\n",
+                plugin->plugin_name ? plugin->plugin_name : "(unnamed)",
+                (unsigned long long)latency_ns,
+                deadline_missed);
+    }
 
     /* If buffer is provided, add record to buffer */
     if (scheduler->config.telemetry_buffer) {
@@ -562,17 +548,20 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
         rec.repeat = scheduler->config.current_repeat;
 
-        /* Populate device-side timing if adapter was used */
+        /* Populate device-side timing */
         rec.device_tin_ns = device_tin_ns;
         rec.device_tstart_ns = device_tstart_ns;
         rec.device_tend_ns = device_tend_ns;
         rec.device_tfirst_tx_ns = device_tfirst_tx_ns;
         rec.device_tlast_tx_ns = device_tlast_tx_ns;
-        if (entry->device_handle) {
-            strncpy(rec.adapter_name, "x86@loopback", sizeof(rec.adapter_name)-1);
-        } else {
-            rec.adapter_name[0] = '\0';  /* Direct execution - no adapter */
-        }
+
+        /* Copy adapter name from entry */
+        strncpy(rec.adapter_name, plugin->adapter_name, sizeof(rec.adapter_name)-1);
+        rec.adapter_name[sizeof(rec.adapter_name)-1] = '\0';
+
+        /* Record failure status */
+        rec.window_failed = window_failed;
+        rec.error_code = error_code;
 
         cortex_telemetry_add(buffer, &rec);
     }
@@ -604,15 +593,14 @@ static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry) {
     if (!entry) {
         return;
     }
-    if (entry->handle && entry->api.teardown) {
-        entry->api.teardown(entry->handle);
-        entry->handle = NULL;
-    }
+
+    /* NOTE: device_handle is borrowed from harness - do NOT teardown here */
+    /* Harness owns device lifecycle and will call device_comm_teardown() */
+
     free(entry->output_buffer);
     entry->output_buffer = NULL;
-    free(entry->config_blob);
-    entry->config_blob = NULL;
-    entry->config_size = 0;
+    entry->output_bytes = 0;
+
     /* Free duplicated plugin name */
     if (entry->plugin_name) {
         free((char*)entry->plugin_name);

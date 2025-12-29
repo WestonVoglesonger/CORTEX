@@ -5,12 +5,12 @@
 #include <time.h>
 
 #include "config.h"
-#include "cortex_loader.h"
 #include "cortex_state_io.h"
 #include "signal_handler.h"
 #include "telemetry.h"
 #include "util.h"
 #include "../report/report.h"
+#include "../device/device_comm.h"
 
 #include "../scheduler/scheduler.h"
 #include "../replayer/replayer.h"
@@ -53,52 +53,11 @@ static int make_scheduler(const cortex_plugin_entry_cfg_t *plugin_cfg,
     return (*out_sched) ? 0 : -1;
 }
 
-static int load_plugin(const char *plugin_name,
-                       const cortex_plugin_entry_cfg_t *plugin_cfg,
-                       uint32_t sample_rate_hz,
-                       cortex_scheduler_t *scheduler,
-                       cortex_loaded_plugin_t *out_loaded,
-                       void **out_calibration_state) {
-    /* Build plugin path from spec_uri */
-    char plugin_path[1024];
-    if (cortex_plugin_build_path(plugin_cfg->spec_uri, plugin_path, sizeof(plugin_path)) != 0) {
-        fprintf(stderr, "[harness] failed to build plugin path for '%s'\n", plugin_name);
-        return -1;
-    }
-
-    /* Load plugin */
-    if (cortex_plugin_load(plugin_path, out_loaded) != 0) {
-        fprintf(stderr, "[harness] failed to load plugin '%s' from '%s'\n", plugin_name, plugin_path);
-        return -1;
-    }
-
-    /* Build plugin config */
-    cortex_plugin_config_t pc = {0};
-
-    /* Detect kernel ABI version via cortex_calibrate symbol presence.
-     * CONSTRAINT: v3 kernels MUST export cortex_calibrate (even if stub).
-     * v3 stateless kernels should define local CORTEX_ABI_VERSION 2u instead.
-     * This ensures backward compatibility - v2 kernels expect abi_version = 2.
-     * TODO(v4): Export cortex_kernel_abi_version symbol for direct detection. */
-    uint32_t kernel_abi_version = (out_loaded->api.calibrate != NULL) ? 3 : 2;
-    pc.abi_version = kernel_abi_version;
-    pc.struct_size = sizeof(cortex_plugin_config_t);
-    pc.sample_rate_hz = sample_rate_hz;
-    pc.window_length_samples = plugin_cfg->runtime.window_length_samples;
-    pc.hop_samples = plugin_cfg->runtime.hop_samples;
-    pc.channels = plugin_cfg->runtime.channels;
-    pc.dtype = plugin_cfg->runtime.dtype;
-    pc.allow_in_place = plugin_cfg->runtime.allow_in_place ? 1 : 0;
-
-    /* Pass kernel parameters as string (if provided) */
-    if (plugin_cfg->params[0] != '\0') {
-        pc.kernel_params = (void*)plugin_cfg->params;
-        pc.kernel_params_size = (uint32_t)strlen(plugin_cfg->params);
-    } else {
-        pc.kernel_params = NULL;
-        pc.kernel_params_size = 0;
-    }
-
+static int spawn_adapter(const char *plugin_name,
+                         const cortex_plugin_entry_cfg_t *plugin_cfg,
+                         uint32_t sample_rate_hz,
+                         cortex_device_init_result_t *out_device_result,
+                         void **out_calibration_state) {
     /* Load calibration state if path provided (v3 trainable kernels) */
     void *calibration_state_buffer = NULL;
     uint32_t calibration_state_size = 0;
@@ -113,30 +72,38 @@ static int load_plugin(const char *plugin_name,
             /* STRICT ERROR HANDLING - fail fast, don't continue with invalid state */
             fprintf(stderr, "[harness] ERROR: Failed to load calibration state: %s\n",
                     plugin_cfg->calibration_state);
-            cortex_plugin_unload(out_loaded);
             return -1;
         }
         fprintf(stderr, "[harness] Loaded calibration state: %s (%u bytes, v%u)\n",
                 plugin_cfg->calibration_state, calibration_state_size, state_version);
-
-        pc.calibration_state = calibration_state_buffer;
-        pc.calibration_state_size = calibration_state_size;
-    } else {
-        pc.calibration_state = NULL;
-        pc.calibration_state_size = 0;
     }
 
-    /* Register plugin with scheduler */
-    cortex_plugin_api_t api = out_loaded->api;
+    /* Spawn device adapter and perform handshake (universal adapter model) */
+    int ret = device_comm_init(
+        plugin_cfg->adapter_path,
+        plugin_name,
+        plugin_cfg->params,
+        sample_rate_hz,
+        plugin_cfg->runtime.window_length_samples,
+        plugin_cfg->runtime.hop_samples,
+        plugin_cfg->runtime.channels,
+        calibration_state_buffer,
+        calibration_state_size,
+        out_device_result
+    );
 
-    if (cortex_scheduler_register_plugin(scheduler, &api, &pc, plugin_name) != 0) {
-        fprintf(stderr, "[harness] failed to register plugin '%s' with scheduler\n", plugin_name);
-        cortex_plugin_unload(out_loaded);
+    if (ret < 0) {
+        fprintf(stderr, "[harness] failed to spawn adapter for '%s': %d\n", plugin_name, ret);
         free(calibration_state_buffer);
         return -1;
     }
 
-    /* Return buffer to caller for cleanup after scheduler is destroyed */
+    fprintf(stderr, "[harness] Adapter spawned: %s (output: %ux%u)\n",
+            out_device_result->adapter_name,
+            out_device_result->output_window_length_samples,
+            out_device_result->output_channels);
+
+    /* Return calibration state buffer to caller for cleanup after scheduler is destroyed */
     *out_calibration_state = calibration_state_buffer;
     return 0;
 }
@@ -237,32 +204,48 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     cortex_scheduler_set_run_id(scheduler, ctx->run_id);
     cortex_scheduler_set_current_repeat(scheduler, 0);  /* Warmup = repeat 0 */
     
-    /* Step 4: Call load_plugin() to load and register, save handle */
-    cortex_loaded_plugin_t loaded_plugin;
+    /* Step 4: Spawn adapter and perform handshake */
+    cortex_device_init_result_t device_result;
     void *calibration_state = NULL;  /* Caller owns memory, frees after scheduler destroy */
-    if (load_plugin(plugin_name, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz, scheduler, &loaded_plugin, &calibration_state) != 0) {
-        fprintf(stderr, "[harness] failed to load plugin '%s'\n", plugin_name);
+    if (spawn_adapter(plugin_name, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz, &device_result, &calibration_state) != 0) {
+        fprintf(stderr, "[harness] failed to spawn adapter for '%s'\n", plugin_name);
         cortex_scheduler_destroy(scheduler);
         return -1;
     }
-    
-    /* Step 5: Set ctx->scheduler to new scheduler */
+
+    /* Step 5: Register device with scheduler */
+    cortex_scheduler_device_info_t device_info = {0};
+    device_info.device_handle = device_result.handle;
+    device_info.output_window_length_samples = device_result.output_window_length_samples;
+    device_info.output_channels = device_result.output_channels;
+    strncpy(device_info.adapter_name, device_result.adapter_name, sizeof(device_info.adapter_name) - 1);
+    strncpy(device_info.plugin_name, plugin_name, sizeof(device_info.plugin_name) - 1);
+
+    if (cortex_scheduler_register_device(scheduler, &device_info, plugin_cfg->runtime.window_length_samples, plugin_cfg->runtime.channels) != 0) {
+        fprintf(stderr, "[harness] failed to register device for '%s'\n", plugin_name);
+        device_comm_teardown(device_result.handle);
+        free(calibration_state);
+        cortex_scheduler_destroy(scheduler);
+        return -1;
+    }
+
+    /* Step 6: Set ctx->scheduler to new scheduler */
     ctx->scheduler = scheduler;
     
-    /* Step 6: Call run_once() for warmup (ensures reproducible measurements per plugin) */
+    /* Step 7: Call run_once() for warmup (ensures reproducible measurements per plugin) */
     if (ctx->run_cfg.benchmark.parameters.warmup_seconds > 0) {
         printf("[harness] Warmup phase for plugin '%s' (%u seconds)\n", plugin_name, ctx->run_cfg.benchmark.parameters.warmup_seconds);
         if (run_once(ctx, ctx->run_cfg.benchmark.parameters.warmup_seconds, plugin_cfg) != 0) {
             fprintf(stderr, "[harness] warmup failed for plugin '%s'\n", plugin_name);
             cortex_scheduler_destroy(scheduler);
             free(calibration_state);
-            cortex_plugin_unload(&loaded_plugin);
+            device_comm_teardown(device_result.handle);
             ctx->scheduler = NULL;
             return -1;
         }
     }
     
-    /* Step 7: Loop: call run_once() for each repeat */
+    /* Step 8: Loop: call run_once() for each repeat */
     int repeat_failed = 0;
     for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
         printf("[harness] Repeat %u/%u for plugin '%s'\n", r, ctx->run_cfg.benchmark.parameters.repeats, plugin_name);
@@ -284,17 +267,17 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
             /* Non-shutdown failure - cleanup and return immediately */
             cortex_scheduler_destroy(scheduler);
             free(calibration_state);
-            cortex_plugin_unload(&loaded_plugin);
+            device_comm_teardown(device_result.handle);
             ctx->scheduler = NULL;
             return -1;
         }
     }
-    
-    /* Step 8: Cleanup */
-    cortex_scheduler_destroy(scheduler);  /* Must destroy scheduler before unloading plugin */
+
+    /* Step 9: Cleanup */
+    cortex_scheduler_destroy(scheduler);  /* Must destroy scheduler before tearing down adapter */
     ctx->scheduler = NULL;
-    free(calibration_state);  /* Free state buffer after scheduler destroys kernel's copy */
-    cortex_plugin_unload(&loaded_plugin);  /* CRITICAL: Must unload plugin */
+    free(calibration_state);  /* Free state buffer (adapter made copy during handshake) */
+    device_comm_teardown(device_result.handle);  /* CRITICAL: Teardown adapter and reap process */
 
     /* Step 9: Write this plugin's telemetry to per-plugin output directory */
     size_t telemetry_end_count = ctx->telemetry.count;
