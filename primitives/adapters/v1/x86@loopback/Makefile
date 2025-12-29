@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
-INCLUDES = -I../../../../sdk/adapter/include
+INCLUDES = -I../../../../sdk/adapter/include -I../../../../sdk/kernel/include
 LDFLAGS = -L../../../../sdk/adapter/lib/transport -L../../../../sdk/adapter/lib/protocol
 LIBS = -ldl -lpthread
 

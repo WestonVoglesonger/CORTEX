@@ -16,11 +16,37 @@
 #include "cortex_transport.h"
 #include "cortex_protocol.h"
 
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+
+/* Kernel plugin API (from cortex_plugin.h) */
+typedef struct cortex_plugin_config {
+    uint32_t abi_version;
+    uint32_t sample_rate_hz;
+    uint32_t window_length_samples;
+    uint32_t hop_samples;
+    uint32_t channels;
+    const char *kernel_params;
+    const void *calibration_state;
+    size_t calibration_state_size;
+} cortex_plugin_config_t;
+
+typedef void* (*cortex_init_fn)(const cortex_plugin_config_t *config);
+typedef void (*cortex_process_fn)(void *handle, const float *input, float *output);
+typedef void (*cortex_teardown_fn)(void *handle);
+
+/* Loaded kernel state */
+typedef struct {
+    void *dl_handle;             /* dlopen handle */
+    cortex_init_fn init;
+    cortex_process_fn process;
+    cortex_teardown_fn teardown;
+    void *kernel_handle;         /* Kernel instance from init() */
+} kernel_plugin_t;
 
 /* Generate random boot ID */
 static uint32_t generate_boot_id(void)
@@ -171,16 +197,108 @@ static int send_result(
     return ret;
 }
 
-/* Noop kernel: identity function */
-static void noop_process(
-    const float *input,
+/* Load kernel plugin via dlopen */
+static int load_kernel_plugin(
+    const char *plugin_name,
+    uint32_t sample_rate_hz,
     uint32_t window_samples,
+    uint32_t hop_samples,
     uint32_t channels,
-    float *output
+    const char *plugin_params,
+    const void *calib_state,
+    size_t calib_state_size,
+    kernel_plugin_t *out_plugin
 )
 {
-    size_t total_samples = window_samples * channels;
-    memcpy(output, input, total_samples * sizeof(float));
+    /* Construct library path: primitives/kernels/v1/{plugin_name}/lib{base}.dylib */
+    /* plugin_name format: "car@f32" → libcar.dylib */
+
+    char lib_name[64];
+    const char *at_sign = strchr(plugin_name, '@');
+    if (at_sign) {
+        size_t base_len = (size_t)(at_sign - plugin_name);
+        if (base_len >= sizeof(lib_name) - 3) {
+            fprintf(stderr, "Plugin name too long: %s\n", plugin_name);
+            return -1;
+        }
+        memcpy(lib_name, plugin_name, base_len);
+        lib_name[base_len] = '\0';
+    } else {
+        snprintf(lib_name, sizeof(lib_name), "%s", plugin_name);
+    }
+
+    char lib_path[512];
+#ifdef __APPLE__
+    snprintf(lib_path, sizeof(lib_path),
+             "primitives/kernels/v1/%s/lib%s.dylib",
+             plugin_name, lib_name);
+#else
+    snprintf(lib_path, sizeof(lib_path),
+             "primitives/kernels/v1/%s/lib%s.so",
+             plugin_name, lib_name);
+#endif
+
+    /* Load library */
+    void *dl = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
+    if (!dl) {
+        fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        return -1;
+    }
+
+    /* Load symbols */
+    cortex_init_fn init_fn = (cortex_init_fn)dlsym(dl, "cortex_init");
+    cortex_process_fn process_fn = (cortex_process_fn)dlsym(dl, "cortex_process");
+    cortex_teardown_fn teardown_fn = (cortex_teardown_fn)dlsym(dl, "cortex_teardown");
+
+    if (!init_fn || !process_fn || !teardown_fn) {
+        fprintf(stderr, "Failed to load kernel symbols: %s\n", dlerror());
+        dlclose(dl);
+        return -1;
+    }
+
+    /* Initialize kernel */
+    cortex_plugin_config_t config = {
+        .abi_version = 3,
+        .sample_rate_hz = sample_rate_hz,
+        .window_length_samples = window_samples,
+        .hop_samples = hop_samples,
+        .channels = channels,
+        .kernel_params = plugin_params,
+        .calibration_state = calib_state,
+        .calibration_state_size = calib_state_size
+    };
+
+    void *kernel_handle = init_fn(&config);
+    if (!kernel_handle) {
+        fprintf(stderr, "Kernel init failed\n");
+        dlclose(dl);
+        return -1;
+    }
+
+    /* Populate output */
+    out_plugin->dl_handle = dl;
+    out_plugin->init = init_fn;
+    out_plugin->process = process_fn;
+    out_plugin->teardown = teardown_fn;
+    out_plugin->kernel_handle = kernel_handle;
+
+    return 0;
+}
+
+/* Unload kernel plugin */
+static void unload_kernel_plugin(kernel_plugin_t *plugin)
+{
+    if (!plugin) return;
+
+    if (plugin->teardown && plugin->kernel_handle) {
+        plugin->teardown(plugin->kernel_handle);
+    }
+
+    if (plugin->dl_handle) {
+        dlclose(plugin->dl_handle);
+    }
+
+    memset(plugin, 0, sizeof(*plugin));
 }
 
 /* Main adapter loop */
@@ -224,15 +342,18 @@ int main(void)
         return 1;
     }
 
-    /* Validate kernel is noop */
-    if (strcmp(plugin_name, "noop@f32") != 0) {
-        fprintf(stderr, "Unsupported kernel: %s\n", plugin_name);
+    /* 3. Load kernel plugin */
+    kernel_plugin_t kernel_plugin = {0};
+    if (load_kernel_plugin(plugin_name, sample_rate_hz, window_samples, hop_samples,
+                           channels, plugin_params, NULL, 0, &kernel_plugin) < 0) {
+        fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
         return 1;
     }
 
-    /* 3. Send ACK */
+    /* 4. Send ACK (kernel ready) */
     if (send_ack(&transport) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
+        unload_kernel_plugin(&kernel_plugin);
         return 1;
     }
 
@@ -268,9 +389,9 @@ int main(void)
         /* Set tin AFTER reassembly complete */
         uint64_t tin = get_timestamp_ns();
 
-        /* Process window with noop kernel */
+        /* Process window with loaded kernel */
         uint64_t tstart = get_timestamp_ns();
-        noop_process(window_buf, window_samples, channels, output_buf);
+        kernel_plugin.process(kernel_plugin.kernel_handle, window_buf, output_buf);
         uint64_t tend = get_timestamp_ns();
 
         /* Send RESULT */
@@ -302,7 +423,9 @@ int main(void)
 
     free(window_buf);
     free(output_buf);
+    unload_kernel_plugin(&kernel_plugin);
     transport.close(transport.ctx);
+    free(tp);
 
     return 0;
 }
