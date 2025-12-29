@@ -383,7 +383,7 @@ int main(void) {
 
     /* 3. Receive CONFIG */
     uint32_t session_id, sample_rate, window_samples, hop_samples, channels;
-    char plugin_name[32], plugin_params[256];
+    char plugin_name[64], plugin_params[256];
     cortex_adapter_recv_config(transport, &session_id, &sample_rate,
                                &window_samples, &hop_samples, &channels,
                                plugin_name, plugin_params);

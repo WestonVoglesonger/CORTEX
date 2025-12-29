@@ -92,7 +92,7 @@ int main(void) {
                                "noop@f32", 1024, 64);
 
     uint32_t session_id, sr, window, hop, ch;
-    char plugin[32], params[256];
+    char plugin[64], params[256];
     cortex_adapter_recv_config(transport, &session_id, &sr, &window, &hop, &ch,
                                 plugin, params);
 
@@ -307,7 +307,7 @@ typedef struct {
     uint32_t window_length_samples;
     uint32_t hop_length_samples;
     uint32_t channels;
-    char plugin_name[32];
+    char plugin_name[64];
     char plugin_params[256];
     /* Optional: calibration_state_size + calibration_state */
 } cortex_wire_config_t;
