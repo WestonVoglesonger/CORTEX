@@ -279,6 +279,7 @@ int main(void)
                                          kernel_plugin.output_window_length_samples,
                                          kernel_plugin.output_channels) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
+        free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
         transport.close(transport.ctx);
         free(tp);
@@ -297,6 +298,7 @@ int main(void)
         fprintf(stderr, "Failed to allocate window buffers\n");
         free(window_buf);
         free(output_buf);
+        free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
         transport.close(transport.ctx);
         free(tp);
