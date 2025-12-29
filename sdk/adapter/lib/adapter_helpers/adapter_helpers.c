@@ -169,8 +169,8 @@ int cortex_adapter_send_result(
     cortex_write_u64_le(payload + 8, tin);
     cortex_write_u64_le(payload + 16, tstart);
     cortex_write_u64_le(payload + 24, tend);
-    cortex_write_u32_le(payload + 32, tfirst_tx);
-    cortex_write_u32_le(payload + 40, tlast_tx);
+    cortex_write_u64_le(payload + 32, tfirst_tx);
+    cortex_write_u64_le(payload + 40, tlast_tx);
     cortex_write_u32_le(payload + 48, output_length);
     cortex_write_u32_le(payload + 52, output_channels);
 
