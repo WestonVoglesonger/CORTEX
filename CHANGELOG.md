@@ -82,8 +82,9 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
   - `sdk/adapter/README.md` - Adapter SDK overview and build instructions
   - `sdk/adapter/include/README.md` - Protocol and transport API reference
   - `primitives/adapters/v1/README.md` - Adapter catalog (x86, Jetson, STM32)
-  - `docs/reference/adapter-protocol.md` - Complete wire format specification (planned)
-  - `docs/guides/adding-adapters.md` - Adapter implementation tutorial (planned)
+  - `docs/reference/adapter-protocol.md` - Complete wire format specification
+  - `docs/guides/adding-adapters.md` - Adapter implementation tutorial
+  - `docs/guides/using-adapters.md` - User guide for running benchmarks with adapters
   - `docs/architecture/overview.md` - Updated architecture diagram (Device Adapter Model)
 
 ### Changed

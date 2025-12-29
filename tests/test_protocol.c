@@ -30,6 +30,15 @@ static int create_test_transports(cortex_transport_t **t1, cortex_transport_t **
         return -1;
     }
 
+    /* Increase socket buffer sizes to handle large test windows (e.g., 40KB+)
+     * without blocking. Default socket buffers (~16KB on macOS) cause deadlock
+     * in single-threaded send→recv tests. */
+    int buf_size = 128 * 1024;  /* 128KB */
+    setsockopt(sv[0], SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
+    setsockopt(sv[0], SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
+    setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
+    setsockopt(sv[1], SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
+
     *t1 = cortex_transport_mock_create(sv[0]);
     *t2 = cortex_transport_mock_create(sv[1]);
 
