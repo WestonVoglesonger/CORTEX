@@ -191,13 +191,13 @@ static int send_config(
     cortex_write_u32_le(payload + 12, hop_samples);
     cortex_write_u32_le(payload + 16, channels);
 
-    memset(payload + 20, 0, 32);
-    snprintf((char *)(payload + 20), 32, "%s", plugin_name);
+    memset(payload + 20, 0, 64);
+    snprintf((char *)(payload + 20), 64, "%s", plugin_name);
 
-    memset(payload + 52, 0, 256);
-    snprintf((char *)(payload + 52), 256, "%s", plugin_params);
+    memset(payload + 84, 0, 256);
+    snprintf((char *)(payload + 84), 256, "%s", plugin_params);
 
-    cortex_write_u32_le(payload + 308, (uint32_t)calib_state_size);
+    cortex_write_u32_le(payload + 340, (uint32_t)calib_state_size);
 
     /* Append calibration state */
     if (calib_state_size > 0 && calib_state != NULL) {

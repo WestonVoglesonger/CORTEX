@@ -29,7 +29,7 @@
 #define CORTEX_MAX_WINDOW_SIZE  (256 * 1024)  /* 256KB max window */
 
 /* Calibration state validation */
-#define CORTEX_MAX_PLUGIN_NAME   32
+#define CORTEX_MAX_PLUGIN_NAME   64  /* Increased to 64 for full spec_uri paths */
 #define CORTEX_MAX_PLUGIN_PARAMS 256
 #define CORTEX_MAX_ERROR_MESSAGE 256
 

@@ -249,7 +249,7 @@ int main(void)
 
     /* 2. Receive CONFIG */
     uint32_t sample_rate_hz, window_samples, hop_samples, channels;
-    char plugin_name[32], plugin_params[256];
+    char plugin_name[64], plugin_params[256];
 
     if (cortex_adapter_recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
                                     &hop_samples, &channels, plugin_name, plugin_params) < 0) {

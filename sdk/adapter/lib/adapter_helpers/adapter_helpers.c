@@ -79,10 +79,10 @@ int cortex_adapter_recv_config(
     *out_hop_samples = cortex_read_u32_le(frame_buf + 12);
     *out_channels = cortex_read_u32_le(frame_buf + 16);
 
-    memcpy(out_plugin_name, frame_buf + 20, 32);
-    out_plugin_name[31] = '\0';  /* Ensure null termination */
+    memcpy(out_plugin_name, frame_buf + 20, 64);
+    out_plugin_name[63] = '\0';  /* Ensure null termination */
 
-    memcpy(out_plugin_params, frame_buf + 52, 256);
+    memcpy(out_plugin_params, frame_buf + 84, 256);
     out_plugin_params[255] = '\0';  /* Ensure null termination */
 
     /* NOTE: Calibration state extraction not implemented yet (Phase 2) */
