@@ -130,13 +130,14 @@ Reference in `cortex.yaml`:
 plugins:
   - name: "your_kernel"
     spec_uri: "primitives/kernels/v1/your_kernel@f32"
+    adapter_path: "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback"
     spec_version: "1.0.0"
     runtime:
       window_length_samples: 160
       hop_samples: 80
       channels: 64
       dtype: "float32"
-    params: {}  # Currently not supported
+    params: {}  # Optional: kernel-specific runtime parameters
 ```
 
 ## Implementation Status
@@ -434,6 +435,7 @@ plugins:
   - name: "your_kernel"
     status: ready
     spec_uri: "primitives/kernels/v1/your_kernel@f32"
+    adapter_path: "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback"
     spec_version: "1.0.0"
 ```
 

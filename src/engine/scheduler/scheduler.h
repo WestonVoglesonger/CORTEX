@@ -14,7 +14,6 @@
 #include <stdint.h>
 
 #include "cortex_plugin.h"
-#include "cortex_loader.h"  /* For cortex_plugin_api_t definition */
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,7 +43,17 @@ typedef struct cortex_scheduler_config {
 /* Opaque scheduler object. */
 typedef struct cortex_scheduler_t cortex_scheduler_t;
 
-/* cortex_plugin_api_t is now defined in cortex_loader.h (SDK) */
+/*
+ * Device info for scheduler registration
+ * Contains device adapter handle and metadata from handshake.
+ */
+typedef struct cortex_scheduler_device_info {
+    void *device_handle;                /* Device adapter handle (from device_comm_init) */
+    uint32_t output_window_length_samples;  /* Output W from ACK (0 = use config) */
+    uint32_t output_channels;           /* Output C from ACK (0 = use config) */
+    char adapter_name[32];              /* Adapter name from HELLO */
+    char plugin_name[64];               /* Plugin name for telemetry */
+} cortex_scheduler_device_info_t;
 
 /*
  * Create a scheduler instance with the provided configuration.  Returns NULL
@@ -53,20 +62,19 @@ typedef struct cortex_scheduler_t cortex_scheduler_t;
 cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *config);
 
 /*
- * Destroy a scheduler instance, tearing down any registered plugins and
+ * Destroy a scheduler instance, tearing down any registered devices and
  * releasing buffers.
  */
 void cortex_scheduler_destroy(cortex_scheduler_t *scheduler);
 
 /*
- * Register a plugin with the scheduler.  The scheduler copies the provided
- * cortex_plugin_config_t before calling init().  Returns 0 on success, negative
- * errno on failure.
+ * Register a device with the scheduler.  The device adapter is already initialized
+ * and ready to execute windows.  Returns 0 on success, negative errno on failure.
  */
-int cortex_scheduler_register_plugin(cortex_scheduler_t *scheduler,
-                                     const cortex_plugin_api_t *api,
-                                     const cortex_plugin_config_t *plugin_config,
-                                     const char *plugin_name);
+int cortex_scheduler_register_device(cortex_scheduler_t *scheduler,
+                                     const cortex_scheduler_device_info_t *device_info,
+                                     uint32_t config_window_length,
+                                     uint32_t config_channels);
 
 /*
  * Feed interleaved samples (float32 frames of size C) into the scheduler.

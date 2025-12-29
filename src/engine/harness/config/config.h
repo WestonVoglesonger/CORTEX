@@ -12,11 +12,13 @@
 #define CORTEX_MAX_PLUGINS 16
 
 typedef struct cortex_plugin_runtime_cfg {
-    uint32_t window_length_samples;  /* W */
-    uint32_t hop_samples;            /* H */
-    uint32_t channels;               /* C */
-    uint32_t dtype;                  /* maps to cortex_dtype_bitmask_t */
-    uint8_t allow_in_place;          /* 0/1 */
+    uint32_t window_length_samples;         /* Input W */
+    uint32_t hop_samples;                   /* H */
+    uint32_t channels;                      /* Input C */
+    uint32_t dtype;                         /* maps to cortex_dtype_bitmask_t */
+    uint8_t allow_in_place;                 /* 0/1 */
+    uint32_t output_window_length_samples;  /* Output W (from spec.yaml or ACK override) */
+    uint32_t output_channels;               /* Output C (from spec.yaml or ACK override) */
 } cortex_plugin_runtime_cfg_t;
 
 typedef struct cortex_plugin_entry_cfg {
@@ -26,8 +28,9 @@ typedef struct cortex_plugin_entry_cfg {
     char spec_version[32];
     cortex_plugin_runtime_cfg_t runtime;
     /* Kernel-specific parameters (optional) */
-    char params[1024];  /* JSON-like string for kernel params */
-    char calibration_state[512];  /* Path to .cortex_state file (v3 trainable kernels) */
+    char params[1024];                 /* JSON-like string for kernel params */
+    char calibration_state[512];       /* Path to .cortex_state file (v3 trainable kernels) */
+    char adapter_path[256];            /* Path to adapter binary (defaults to x86@loopback) */
 } cortex_plugin_entry_cfg_t;
 
 typedef struct cortex_dataset_cfg {

@@ -1,0 +1,176 @@
+#ifndef CORTEX_PROTOCOL_H
+#define CORTEX_PROTOCOL_H
+
+#include "cortex_transport.h"
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * CORTEX Device Adapter Protocol Layer
+ *
+ * Provides frame-based communication over byte-stream transports.
+ * Handles framing, CRC validation, MAGIC hunting, and timeout management.
+ *
+ * Wire format is defined in cortex_wire.h
+ */
+
+/* Re-export wire format definitions and endian helpers */
+#include "cortex_wire.h"
+#include "cortex_endian.h"
+
+/* Protocol error codes (negative, distinct from transport errors) */
+#define CORTEX_EPROTO_MAGIC_NOT_FOUND  -2000  /* MAGIC not found in stream */
+#define CORTEX_EPROTO_CRC_MISMATCH     -2001  /* CRC verification failed */
+#define CORTEX_EPROTO_VERSION_MISMATCH -2002  /* Protocol version mismatch */
+#define CORTEX_EPROTO_FRAME_TOO_LARGE  -2003  /* Payload exceeds max frame size */
+#define CORTEX_EPROTO_BUFFER_TOO_SMALL -2004  /* Caller's buffer too small */
+#define CORTEX_EPROTO_INVALID_FRAME    -2005  /* Invalid frame structure */
+
+/*
+ * cortex_protocol_recv_frame - Receive one complete frame
+ *
+ * Hunts for MAGIC, reads header, reads payload, verifies CRC.
+ * Handles fragmented stream (may need multiple recv() calls).
+ *
+ * Args:
+ *   transport:        Transport to read from
+ *   out_type:         Pointer to store frame type
+ *   payload_buf:      Buffer to store payload (excluding header)
+ *   payload_buf_size: Size of payload_buf
+ *   out_payload_len:  Pointer to store actual payload length
+ *   timeout_ms:       Total timeout for entire frame reception
+ *
+ * Returns:
+ *    0: Success (frame received and validated)
+ *   <0: Error (transport error, timeout, protocol error)
+ *
+ * Errors:
+ *   CORTEX_ETIMEDOUT:           Timeout waiting for data
+ *   CORTEX_ECONNRESET:          Connection closed
+ *   CORTEX_EPROTO_MAGIC_NOT_FOUND:   MAGIC not found
+ *   CORTEX_EPROTO_CRC_MISMATCH:      CRC verification failed
+ *   CORTEX_EPROTO_VERSION_MISMATCH:  Protocol version != 1
+ *   CORTEX_EPROTO_FRAME_TOO_LARGE:   Payload > CORTEX_MAX_SINGLE_FRAME
+ *   CORTEX_EPROTO_BUFFER_TOO_SMALL:  payload_buf too small for payload
+ *
+ * IMPORTANT:
+ *   - Payload is raw wire format (little-endian). Use endian.h helpers to parse.
+ *   - May block for extended time if transport is slow.
+ *   - timeout_ms is for ENTIRE frame (hunt + header + payload), not per recv().
+ */
+int cortex_protocol_recv_frame(
+    cortex_transport_t *transport,
+    cortex_frame_type_t *out_type,
+    void *payload_buf,
+    size_t payload_buf_size,
+    size_t *out_payload_len,
+    uint32_t timeout_ms
+);
+
+/*
+ * cortex_protocol_send_frame - Send one complete frame
+ *
+ * Builds header with MAGIC/version/type/length, computes CRC, sends frame.
+ *
+ * Args:
+ *   transport:    Transport to send on
+ *   frame_type:   Frame type (HELLO, CONFIG, WINDOW_CHUNK, etc.)
+ *   payload:      Payload data (wire format, little-endian)
+ *   payload_len:  Payload length in bytes
+ *
+ * Returns:
+ *    0: Success
+ *   <0: Error (transport send failure)
+ *
+ * IMPORTANT:
+ *   - Payload must already be in wire format (little-endian).
+ *   - Use endian.h helpers to serialize payload before calling.
+ *   - Entire frame sent in single send() call (header + payload).
+ */
+int cortex_protocol_send_frame(
+    cortex_transport_t *transport,
+    cortex_frame_type_t frame_type,
+    const void *payload,
+    size_t payload_len
+);
+
+/*
+ * cortex_protocol_send_window_chunked - Send window as multiple WINDOW_CHUNK frames
+ *
+ * Breaks large window (W×C float32 samples) into 8KB chunks and sends as
+ * separate WINDOW_CHUNK frames. Last chunk has CORTEX_CHUNK_FLAG_LAST set.
+ *
+ * Args:
+ *   transport:     Transport to send on
+ *   sequence:      Window sequence number
+ *   samples:       Float32 sample buffer (W×C samples)
+ *   window_samples: Number of samples per channel (W)
+ *   channels:      Number of channels (C)
+ *
+ * Returns:
+ *    0: Success (all chunks sent)
+ *   <0: Error (transport send failure)
+ *
+ * Example: 160×64 window = 40,960 bytes → 5 chunks (4×8KB + 1×8KB)
+ *
+ * IMPORTANT:
+ *   - samples buffer is float32 array in host format (NOT little-endian yet)
+ *   - This function handles conversion to little-endian wire format
+ *   - Chunks sent sequentially (not parallel)
+ */
+int cortex_protocol_send_window_chunked(
+    cortex_transport_t *transport,
+    uint32_t sequence,
+    const float *samples,
+    uint32_t window_samples,
+    uint32_t channels
+);
+
+/*
+ * cortex_protocol_recv_window_chunked - Receive window from multiple WINDOW_CHUNK frames
+ *
+ * Receives and reassembles WINDOW_CHUNK frames into complete window buffer.
+ * Validates sequence, offset, total_bytes for completeness and correctness.
+ *
+ * Args:
+ *   transport:         Transport to receive from
+ *   expected_sequence: Expected window sequence number
+ *   out_samples:       Output buffer for float32 samples (host format)
+ *   samples_buf_size:  Size of out_samples buffer in bytes
+ *   out_window_samples: Pointer to store window length (W)
+ *   out_channels:      Pointer to store channel count (C)
+ *   timeout_ms:        Total timeout for receiving ALL chunks
+ *
+ * Returns:
+ *    0: Success (window complete and validated)
+ *   <0: Error (timeout, sequence mismatch, incomplete chunks, etc.)
+ *
+ * Errors:
+ *   CORTEX_ETIMEDOUT:               Timeout waiting for chunks
+ *   CORTEX_EPROTO_*:                Protocol errors (CRC, MAGIC, etc.)
+ *   CORTEX_ECHUNK_SEQUENCE_MISMATCH: Chunk has wrong sequence number
+ *   CORTEX_ECHUNK_INCOMPLETE:        Missing chunks (gaps in offsets)
+ *   CORTEX_ECHUNK_BUFFER_TOO_SMALL:  out_samples buffer too small
+ *
+ * IMPORTANT:
+ *   - Blocks until ALL chunks received or timeout
+ *   - Converts samples from little-endian wire format to host format
+ *   - Sets tin timestamp AFTER final chunk (CORTEX_CHUNK_FLAG_LAST) received
+ *   - Validates no gaps, no duplicates, correct total_bytes
+ */
+int cortex_protocol_recv_window_chunked(
+    cortex_transport_t *transport,
+    uint32_t expected_sequence,
+    float *out_samples,
+    size_t samples_buf_size,
+    uint32_t *out_window_samples,
+    uint32_t *out_channels,
+    uint32_t timeout_ms
+);
+
+/* Chunking error codes */
+#define CORTEX_ECHUNK_SEQUENCE_MISMATCH -2100  /* Chunk sequence != expected */
+#define CORTEX_ECHUNK_INCOMPLETE        -2101  /* Missing chunks (gaps) */
+#define CORTEX_ECHUNK_BUFFER_TOO_SMALL  -2102  /* Buffer too small for window */
+
+#endif /* CORTEX_PROTOCOL_H */

@@ -95,10 +95,10 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -109,7 +109,15 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
                 (unsigned)r->deadline_missed,
                 r->W, r->H, r->C, r->Fs,
                 (unsigned)r->warmup,
-                r->repeat);
+                r->repeat,
+                (unsigned long long)r->device_tin_ns,
+                (unsigned long long)r->device_tstart_ns,
+                (unsigned long long)r->device_tend_ns,
+                (unsigned long long)r->device_tfirst_tx_ns,
+                (unsigned long long)r->device_tlast_tx_ns,
+                r->adapter_name,
+                (unsigned)r->window_failed,
+                r->error_code);
     }
     fclose(f);
     return 0;
@@ -145,10 +153,10 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -159,7 +167,15 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
                 (unsigned)r->deadline_missed,
                 r->W, r->H, r->C, r->Fs,
                 (unsigned)r->warmup,
-                r->repeat);
+                r->repeat,
+                (unsigned long long)r->device_tin_ns,
+                (unsigned long long)r->device_tstart_ns,
+                (unsigned long long)r->device_tend_ns,
+                (unsigned long long)r->device_tfirst_tx_ns,
+                (unsigned long long)r->device_tlast_tx_ns,
+                r->adapter_name,
+                (unsigned)r->window_failed,
+                r->error_code);
     }
     fclose(f);
     return 0;
@@ -235,7 +251,7 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
         }
     }
 
-    char run_id_esc[128], plugin_esc[256];
+    char run_id_esc[128], plugin_esc[256], adapter_name_esc[64];
 
     /* Write each record as one JSON object per line (NDJSON format) */
     for (size_t i = 0; i < tb->count; i++) {
@@ -244,6 +260,7 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
         /* Escape string fields for JSON */
         json_escape_string(run_id_esc, sizeof(run_id_esc), r->run_id);
         json_escape_string(plugin_esc, sizeof(plugin_esc), r->plugin_name);
+        json_escape_string(adapter_name_esc, sizeof(adapter_name_esc), r->adapter_name);
 
         /* Write JSON object (compact, one line per record) */
         fprintf(f,
@@ -260,7 +277,15 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             "\"C\":%u,"
             "\"Fs\":%u,"
             "\"warmup\":%u,"
-            "\"repeat\":%u}\n",
+            "\"repeat\":%u,"
+            "\"device_tin_ns\":%llu,"
+            "\"device_tstart_ns\":%llu,"
+            "\"device_tend_ns\":%llu,"
+            "\"device_tfirst_tx_ns\":%llu,"
+            "\"device_tlast_tx_ns\":%llu,"
+            "\"adapter_name\":\"%s\","
+            "\"window_failed\":%u,"
+            "\"error_code\":%d}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -271,7 +296,15 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             (unsigned)r->deadline_missed,
             r->W, r->H, r->C, r->Fs,
             (unsigned)r->warmup,
-            r->repeat);
+            r->repeat,
+            (unsigned long long)r->device_tin_ns,
+            (unsigned long long)r->device_tstart_ns,
+            (unsigned long long)r->device_tend_ns,
+            (unsigned long long)r->device_tfirst_tx_ns,
+            (unsigned long long)r->device_tlast_tx_ns,
+            adapter_name_esc,
+            (unsigned)r->window_failed,
+            r->error_code);
     }
 
     fclose(f);
@@ -316,7 +349,7 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
         }
     }
 
-    char run_id_esc[128], plugin_esc[256];
+    char run_id_esc[128], plugin_esc[256], adapter_name_esc[64];
 
     /* Write only records in range [start_idx, end_idx) */
     for (size_t i = start_idx; i < end_idx; i++) {
@@ -325,6 +358,7 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
         /* Escape string fields for JSON */
         json_escape_string(run_id_esc, sizeof(run_id_esc), r->run_id);
         json_escape_string(plugin_esc, sizeof(plugin_esc), r->plugin_name);
+        json_escape_string(adapter_name_esc, sizeof(adapter_name_esc), r->adapter_name);
 
         /* Write JSON object (compact, one line per record) */
         fprintf(f,
@@ -341,7 +375,15 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             "\"C\":%u,"
             "\"Fs\":%u,"
             "\"warmup\":%u,"
-            "\"repeat\":%u}\n",
+            "\"repeat\":%u,"
+            "\"device_tin_ns\":%llu,"
+            "\"device_tstart_ns\":%llu,"
+            "\"device_tend_ns\":%llu,"
+            "\"device_tfirst_tx_ns\":%llu,"
+            "\"device_tlast_tx_ns\":%llu,"
+            "\"adapter_name\":\"%s\","
+            "\"window_failed\":%u,"
+            "\"error_code\":%d}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -352,7 +394,15 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             (unsigned)r->deadline_missed,
             r->W, r->H, r->C, r->Fs,
             (unsigned)r->warmup,
-            r->repeat);
+            r->repeat,
+            (unsigned long long)r->device_tin_ns,
+            (unsigned long long)r->device_tstart_ns,
+            (unsigned long long)r->device_tend_ns,
+            (unsigned long long)r->device_tfirst_tx_ns,
+            (unsigned long long)r->device_tlast_tx_ns,
+            adapter_name_esc,
+            (unsigned)r->window_failed,
+            r->error_code);
     }
 
     fclose(f);

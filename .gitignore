@@ -22,7 +22,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# The lib/ pattern above is for Python packages, but catches SDK code as collateral
 lib64/
 parts/
 sdist/
@@ -214,6 +214,10 @@ tests/test_scheduler
 tests/test_*
 !tests/test_*.c
 !tests/test_*.py
+
+# Adapter binaries (built from source)
+cortex_adapter_*
+!cortex_adapter_*.c
 
 # macOS debug symbols
 *.dSYM/

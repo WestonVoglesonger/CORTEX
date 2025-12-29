@@ -55,12 +55,14 @@ plugins:
   - name: "notch_iir"
     status: ready
     spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    adapter_path: "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback"
     params:
       f0_hz: 60.0  # Notch frequency (Hz)
       Q: 30.0      # Quality factor
   - name: "goertzel"
     status: ready
     spec_uri: "primitives/kernels/v1/goertzel@f32"
+    adapter_path: "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback"
     params:
       alpha_low: 8.0
       alpha_high: 13.0
@@ -70,6 +72,7 @@ plugins:
 - Only runs explicitly listed kernels
 - Empty `plugins:` section means run zero kernels (valid for testing)
 - Parameters are kernel-specific (see kernel README for available params)
+- **adapter_path is REQUIRED** in explicit mode (routes execution through device adapter)
 
 ### Discovery Criteria
 
@@ -279,6 +282,7 @@ Array of objects:
 | name | string | `car`, `notch_iir`, `bandpass_fir`, `goertzel`, … |
 | status | enum | `draft` \| `ready` |
 | spec_uri | string\|null | Path to kernel spec (e.g., `primitives/kernels/v1/car@f32`) |
+| adapter_path | string | **REQUIRED**: Path to device adapter binary (e.g., `primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback`) |
 | spec_version | string\|null | Kernel spec version (e.g., `1.0.0`) |
 
 **plugins[i].runtime**

@@ -18,6 +18,18 @@ typedef struct cortex_telemetry_record {
     uint32_t W, H, C, Fs;
     uint8_t warmup;
     uint32_t repeat;
+
+    /* Device-side timing (0 if direct execution, populated if adapter used) */
+    uint64_t device_tin_ns;       /* Input complete timestamp (device clock) */
+    uint64_t device_tstart_ns;    /* Kernel start (device clock) */
+    uint64_t device_tend_ns;      /* Kernel end (device clock) */
+    uint64_t device_tfirst_tx_ns; /* First result byte transmitted (device clock) */
+    uint64_t device_tlast_tx_ns;  /* Last result byte transmitted (device clock) */
+    char adapter_name[32];        /* Adapter identifier (e.g., "x86@loopback") */
+
+    /* Error tracking (distinguish transport failures from deadline misses) */
+    uint8_t window_failed;        /* 1 = transport/adapter failure, 0 = success */
+    int32_t error_code;           /* Error reason if window_failed=1 (cortex_error_code_t) */
 } cortex_telemetry_record_t;
 
 typedef struct cortex_telemetry_buffer {

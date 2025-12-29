@@ -45,7 +45,7 @@ cd CORTEX
 # Install Python CLI and dependencies
 pip install -e .
 
-# Build C engine and kernel plugins
+# Build C engine, device adapters, and kernel plugins
 make all
 
 # Run full benchmarking pipeline
@@ -61,6 +61,7 @@ cat results/run-*/analysis/SUMMARY.md
 
 ### Core Capabilities
 - ✅ **Automated CLI Pipeline** - Build, validate, benchmark, and analyze with one command
+- ✅ **Device Adapter Architecture** - Unified execution via adapters (local/remote HIL testing)
 - ✅ **Plugin Architecture** - Dynamically loadable signal processing kernels (ABI v3)
 - ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP, LDA)
 - ✅ **Runtime Parameters** - Type-safe configuration API for kernel customization
@@ -142,8 +143,8 @@ make clean
 # Check Python CLI
 cortex --help
 
-# Check C engine
-./src/engine/harness/cortex run primitives/configs/cortex.yaml
+# Check C engine (routes through x86@loopback adapter)
+cortex run primitives/configs/cortex.yaml
 
 # Run test suite
 make test
@@ -290,8 +291,8 @@ make harness    # Build C benchmarking engine
 make plugins    # Build signal processing kernel plugins
 make tests      # Build and run C unit tests
 
-# Verify build
-./src/engine/harness/cortex run primitives/configs/cortex.yaml
+# Verify build (routes through adapter automatically)
+cortex run primitives/configs/cortex.yaml
 ```
 
 ### Platform-Specific Notes
@@ -337,18 +338,20 @@ cortex run --kernel ica --state ica_S001.cortex_state --duration 10
 cortex analyze results/run-20250112-143022/
 ```
 
-### Using the C Engine Directly
+### Advanced Usage
 
 ```bash
-# Run with default configuration
-./src/engine/harness/cortex run primitives/configs/cortex.yaml
+# Filter to specific kernel(s) via environment variable
+CORTEX_KERNEL_FILTER=noop cortex run primitives/configs/cortex.yaml
 
-# Override configuration parameters
-./src/engine/harness/cortex run primitives/configs/cortex.yaml \
-  --kernel primitives/kernels/bandpass_fir/bandpass_fir.dylib \
-  --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
-  --deadline-us 10000
+# Override benchmark duration/repeats
+CORTEX_DURATION_OVERRIDE=10 CORTEX_REPEATS_OVERRIDE=5 cortex run primitives/configs/cortex.yaml
+
+# Specify custom output directory
+CORTEX_OUTPUT_DIR=/tmp/my_results cortex run primitives/configs/cortex.yaml
 ```
+
+**Note:** All kernel execution routes through device adapters (no direct harness execution). See [adapter documentation](primitives/adapters/v1/README.md) for details.
 
 ### Working with Primitives
 

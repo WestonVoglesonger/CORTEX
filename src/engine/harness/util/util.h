@@ -9,6 +9,22 @@ void cortex_generate_run_id(char out[32]);
 int cortex_create_directories(const char *path);  /* Create parent directories for file */
 
 /**
+ * Error codes for CORTEX operations.
+ * Stable enum for device communication and telemetry error reporting.
+ * Negative values indicate errors, zero is success.
+ */
+typedef enum {
+    CORTEX_E_SUCCESS = 0,
+    CORTEX_E_TIMEOUT = -1,           /* Adapter didn't respond in time */
+    CORTEX_E_CRC = -2,               /* CRC validation failed */
+    CORTEX_E_BADSEQ = -3,            /* Sequence number mismatch */
+    CORTEX_E_EOF = -4,               /* Adapter closed connection */
+    CORTEX_E_ADAPTER_CRASH = -5,     /* Adapter process died */
+    CORTEX_E_PROTOCOL = -6,          /* Protocol violation */
+    CORTEX_E_SESSION_MISMATCH = -7,  /* Session ID mismatch (adapter restart) */
+} cortex_error_code_t;
+
+/**
  * Check if multiplying two size_t values would overflow.
  *
  * Uses compiler builtins when available (GCC 5.1+, Clang 3.4+) for optimal

@@ -1,10 +1,10 @@
 # Top-level Makefile for CORTEX benchmarking pipeline
 # Orchestrates building SDK, harness, plugins, and tests
 
-.PHONY: all sdk harness plugins tests clean help
+.PHONY: all sdk harness plugins adapters tests clean help
 
 # Default target: build everything
-all: sdk harness plugins tests
+all: sdk harness plugins adapters tests
 
 # Build SDK (kernel library and tools)
 sdk:
@@ -20,6 +20,20 @@ harness: sdk
 plugins: sdk
 	@echo "Building kernel plugins from registry..."
 	@for version_dir in primitives/kernels/v*/; do \
+		if [ -d "$$version_dir" ]; then \
+			for dir in $$version_dir*@*/; do \
+				if [ -f "$$dir/Makefile" ]; then \
+					echo "  Building $$(basename $$(dirname $$dir))/$$(basename $$dir)..."; \
+					$(MAKE) -C "$$dir"; \
+				fi \
+			done \
+		fi \
+	done
+
+# Build adapters - depends on SDK
+adapters: sdk
+	@echo "Building device adapters..."
+	@for version_dir in primitives/adapters/v*/; do \
 		if [ -d "$$version_dir" ]; then \
 			for dir in $$version_dir*@*/; do \
 				if [ -f "$$dir/Makefile" ]; then \
@@ -50,6 +64,15 @@ clean:
 			done \
 		fi \
 	done
+	@for version_dir in primitives/adapters/v*/; do \
+		if [ -d "$$version_dir" ]; then \
+			for dir in $$version_dir*@*/; do \
+				if [ -f "$$dir/Makefile" ]; then \
+					$(MAKE) -C "$$dir" clean || true; \
+				fi \
+			done \
+		fi \
+	done
 	$(MAKE) -C tests clean
 
 # Development workflow
@@ -61,10 +84,11 @@ help:
 	@echo "CORTEX Build System"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  all      - Build SDK, harness, plugins, and run tests (default)"
+	@echo "  all      - Build SDK, harness, plugins, adapters, and run tests (default)"
 	@echo "  sdk      - Build CORTEX SDK (kernel lib + tools)"
 	@echo "  harness  - Build the benchmarking harness"
 	@echo "  plugins  - Build all kernel plugins"
+	@echo "  adapters - Build all device adapters"
 	@echo "  tests    - Build and run unit tests"
 	@echo "  clean    - Clean all build artifacts"
 	@echo "  dev      - Full clean + rebuild cycle"
@@ -75,4 +99,5 @@ help:
 	@echo "  make sdk          # Build only SDK"
 	@echo "  make harness      # Build only harness"
 	@echo "  make plugins      # Build only plugins"
+	@echo "  make adapters     # Build only adapters"
 	@echo "  make clean all    # Clean and rebuild"
