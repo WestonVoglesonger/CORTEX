@@ -79,9 +79,10 @@ static int spawn_adapter(const char *plugin_name,
     }
 
     /* Spawn device adapter and perform handshake (universal adapter model) */
+    /* Pass spec_uri instead of just plugin_name so adapter knows full kernel path */
     int ret = device_comm_init(
         plugin_cfg->adapter_path,
-        plugin_name,
+        plugin_cfg->spec_uri,  /* Full path: "primitives/kernels/v1/noop@f32" */
         plugin_cfg->params,
         sample_rate_hz,
         plugin_cfg->runtime.window_length_samples,

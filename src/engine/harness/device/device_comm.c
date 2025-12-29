@@ -80,10 +80,22 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
         }
 
         /* Exec adapter binary */
+        /* Try with full path first */
+        char abs_path[1024];
+        if (adapter_path[0] != '/') {
+            /* Relative path - convert to absolute using getcwd */
+            char cwd[1024];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                snprintf(abs_path, sizeof(abs_path), "%s/%s", cwd, adapter_path);
+                execl(abs_path, abs_path, (char *)NULL);
+            }
+        }
+        /* Fall back to original path */
         execl(adapter_path, adapter_path, (char *)NULL);
 
         /* If exec returns, it failed */
         perror("execl");
+        fprintf(stderr, "[adapter] Failed to exec: %s\n", adapter_path);
         _exit(1);
     }
 

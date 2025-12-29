@@ -299,6 +299,12 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
                 strncpy(plugin->spec_version, "1.0.0", sizeof(plugin->spec_version) - 1);
             }
 
+            /* Set default adapter path (universal adapter model) */
+            strncpy(plugin->adapter_path,
+                    "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback",
+                    sizeof(plugin->adapter_path) - 1);
+            plugin->adapter_path[sizeof(plugin->adapter_path) - 1] = '\0';
+
             /* TODO(Spring 2026 - Quantization): Display full {name}@{dtype} instead of
              * just kernel_name to disambiguate when multiple dtypes exist.
              * Currently safe because only @f32 variants exist.

@@ -95,38 +95,54 @@ static int load_kernel_plugin(
     kernel_plugin_t *out_plugin
 )
 {
-    /* Construct library path: primitives/kernels/v1/{plugin_name}/lib{base}.dylib */
-    /* plugin_name format: "car@f32" → libcar.dylib */
+    /* plugin_name is now spec_uri: "primitives/kernels/v1/noop@f32" */
+    /* Extract kernel@dtype from path (last component after final slash) */
+    const char *last_slash = strrchr(plugin_name, '/');
+    const char *kernel_at_dtype = last_slash ? (last_slash + 1) : plugin_name;
 
+    /* Extract base kernel name (before '@') */
     char lib_name[64];
-    const char *at_sign = strchr(plugin_name, '@');
+    const char *at_sign = strchr(kernel_at_dtype, '@');
     if (at_sign) {
-        size_t base_len = (size_t)(at_sign - plugin_name);
-        if (base_len >= sizeof(lib_name) - 3) {
-            fprintf(stderr, "Plugin name too long: %s\n", plugin_name);
+        size_t base_len = (size_t)(at_sign - kernel_at_dtype);
+        if (base_len >= sizeof(lib_name)) {
+            fprintf(stderr, "Kernel name too long: %s\n", kernel_at_dtype);
             return -1;
         }
-        memcpy(lib_name, plugin_name, base_len);
+        memcpy(lib_name, kernel_at_dtype, base_len);
         lib_name[base_len] = '\0';
     } else {
-        snprintf(lib_name, sizeof(lib_name), "%s", plugin_name);
+        snprintf(lib_name, sizeof(lib_name), "%s", kernel_at_dtype);
     }
 
+    /* Construct library path using spec_uri */
     char lib_path[512];
 #ifdef __APPLE__
     snprintf(lib_path, sizeof(lib_path),
-             "primitives/kernels/v1/%s/lib%s.dylib",
-             plugin_name, lib_name);
+             "%s/lib%s.dylib", plugin_name, lib_name);
 #else
     snprintf(lib_path, sizeof(lib_path),
-             "primitives/kernels/v1/%s/lib%s.so",
-             plugin_name, lib_name);
+             "%s/lib%s.so", plugin_name, lib_name);
 #endif
 
+    /* Convert to absolute path (adapter working directory = harness working directory) */
+    char abs_lib_path[1024];
+    if (lib_path[0] != '/') {
+        char cwd[512];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            fprintf(stderr, "getcwd failed\n");
+            return -1;
+        }
+        snprintf(abs_lib_path, sizeof(abs_lib_path), "%s/%s", cwd, lib_path);
+    } else {
+        snprintf(abs_lib_path, sizeof(abs_lib_path), "%s", lib_path);
+    }
+
     /* Load library */
-    void *dl = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
+    void *dl = dlopen(abs_lib_path, RTLD_NOW | RTLD_LOCAL);
     if (!dl) {
         fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        fprintf(stderr, "  Tried: %s\n", abs_lib_path);
         return -1;
     }
 
