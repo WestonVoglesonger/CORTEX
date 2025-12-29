@@ -13,6 +13,7 @@
 
 #include "../telemetry/telemetry.h"
 #include "../harness/util/util.h"
+#include "../harness/device/device_comm.h"
 
 #ifdef __linux__
 #include <sched.h>
@@ -32,6 +33,7 @@ typedef struct cortex_scheduler_plugin_entry {
     size_t output_bytes;
     void *config_blob;
     size_t config_size;
+    void *device_handle;  /* Device adapter handle (NULL = direct execution) */
 } cortex_scheduler_plugin_entry_t;
 
 struct cortex_scheduler_t {
@@ -69,7 +71,12 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const struct timespec *deadline_ts,
                                   const struct timespec *start_ts,
                                   const struct timespec *end_ts,
-                                  int deadline_missed);
+                                  int deadline_missed,
+                                  uint64_t device_tin_ns,
+                                  uint64_t device_tstart_ns,
+                                  uint64_t device_tend_ns,
+                                  uint64_t device_tfirst_tx_ns,
+                                  uint64_t device_tlast_tx_ns);
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry);
 
 cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *config) {
@@ -440,8 +447,48 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
         void *output = entry->output_buffer;
         struct timespec start_ts;
         struct timespec end_ts;
+
+        /* Device timing (0 if direct execution) */
+        uint64_t device_tin_ns = 0;
+        uint64_t device_tstart_ns = 0;
+        uint64_t device_tend_ns = 0;
+        uint64_t device_tfirst_tx_ns = 0;
+        uint64_t device_tlast_tx_ns = 0;
+
         clock_gettime(CLOCK_MONOTONIC, &start_ts);
-        entry->api.process(entry->handle, input, output);
+
+        /* Route through device adapter if configured */
+        if (entry->device_handle) {
+            cortex_device_handle_t *device = (cortex_device_handle_t *)entry->device_handle;
+            cortex_device_timing_t device_timing;
+
+            int ret = device_comm_execute_window(
+                device,
+                (uint32_t)scheduler->window_count,  /* sequence */
+                input,
+                (uint32_t)scheduler->config.window_length_samples,
+                (uint32_t)scheduler->config.channels,
+                (float *)output,
+                entry->output_bytes,
+                &device_timing
+            );
+
+            if (ret < 0) {
+                fprintf(stderr, "ERROR: device_comm_execute_window failed with code %d\n", ret);
+                /* Continue with remaining plugins */
+            } else {
+                /* Extract device timing */
+                device_tin_ns = device_timing.tin;
+                device_tstart_ns = device_timing.tstart;
+                device_tend_ns = device_timing.tend;
+                device_tfirst_tx_ns = device_timing.tfirst_tx;
+                device_tlast_tx_ns = device_timing.tlast_tx;
+            }
+        } else {
+            /* Direct execution (original behavior) */
+            entry->api.process(entry->handle, input, output);
+        }
+
         clock_gettime(CLOCK_MONOTONIC, &end_ts);
 
         int deadline_missed = 0;
@@ -454,7 +501,8 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
             continue;
         }
 
-        record_window_metrics(scheduler, entry, &release_ts, &deadline_ts, &start_ts, &end_ts, deadline_missed);
+        record_window_metrics(scheduler, entry, &release_ts, &deadline_ts, &start_ts, &end_ts, deadline_missed,
+                              device_tin_ns, device_tstart_ns, device_tend_ns, device_tfirst_tx_ns, device_tlast_tx_ns);
     }
 
     if (scheduler->warmup_windows_remaining > 0) {
@@ -469,13 +517,24 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const struct timespec *deadline_ts,
                                   const struct timespec *start_ts,
                                   const struct timespec *end_ts,
-                                  int deadline_missed) {
+                                  int deadline_missed,
+                                  uint64_t device_tin_ns,
+                                  uint64_t device_tstart_ns,
+                                  uint64_t device_tend_ns,
+                                  uint64_t device_tfirst_tx_ns,
+                                  uint64_t device_tlast_tx_ns) {
     uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
     uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
     uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
     uint64_t end_ns = (uint64_t)end_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)end_ts->tv_nsec;
     uint64_t latency_ns = (uint64_t)((end_ts->tv_sec - start_ts->tv_sec) * NSEC_PER_SEC) +
                           (uint64_t)(end_ts->tv_nsec - start_ts->tv_nsec);
+
+    (void)device_tin_ns;         /* TODO: Add to telemetry */
+    (void)device_tstart_ns;
+    (void)device_tend_ns;
+    (void)device_tfirst_tx_ns;
+    (void)device_tlast_tx_ns;
 
     /* Print simple log */
     fprintf(stdout,
