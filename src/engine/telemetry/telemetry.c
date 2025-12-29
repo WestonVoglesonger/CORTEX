@@ -95,10 +95,10 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -115,7 +115,9 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
                 (unsigned long long)r->device_tend_ns,
                 (unsigned long long)r->device_tfirst_tx_ns,
                 (unsigned long long)r->device_tlast_tx_ns,
-                r->adapter_name);
+                r->adapter_name,
+                (unsigned)r->window_failed,
+                r->error_code);
     }
     fclose(f);
     return 0;
@@ -151,10 +153,10 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -171,7 +173,9 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
                 (unsigned long long)r->device_tend_ns,
                 (unsigned long long)r->device_tfirst_tx_ns,
                 (unsigned long long)r->device_tlast_tx_ns,
-                r->adapter_name);
+                r->adapter_name,
+                (unsigned)r->window_failed,
+                r->error_code);
     }
     fclose(f);
     return 0;
@@ -279,7 +283,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             "\"device_tend_ns\":%llu,"
             "\"device_tfirst_tx_ns\":%llu,"
             "\"device_tlast_tx_ns\":%llu,"
-            "\"adapter_name\":\"%s\"}\n",
+            "\"adapter_name\":\"%s\","
+            "\"window_failed\":%u,"
+            "\"error_code\":%d}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -296,7 +302,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             (unsigned long long)r->device_tend_ns,
             (unsigned long long)r->device_tfirst_tx_ns,
             (unsigned long long)r->device_tlast_tx_ns,
-            adapter_name_esc);
+            adapter_name_esc,
+            (unsigned)r->window_failed,
+            r->error_code);
     }
 
     fclose(f);
@@ -373,7 +381,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             "\"device_tend_ns\":%llu,"
             "\"device_tfirst_tx_ns\":%llu,"
             "\"device_tlast_tx_ns\":%llu,"
-            "\"adapter_name\":\"%s\"}\n",
+            "\"adapter_name\":\"%s\","
+            "\"window_failed\":%u,"
+            "\"error_code\":%d}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -390,7 +400,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             (unsigned long long)r->device_tend_ns,
             (unsigned long long)r->device_tfirst_tx_ns,
             (unsigned long long)r->device_tlast_tx_ns,
-            adapter_name_esc);
+            adapter_name_esc,
+            (unsigned)r->window_failed,
+            r->error_code);
     }
 
     fclose(f);

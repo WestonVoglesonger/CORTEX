@@ -70,12 +70,16 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
         runtime->channels = dataset_channels;  /* Use dataset channels */
         runtime->dtype = 1; /* float32 */
         runtime->allow_in_place = 0;
+        runtime->output_window_length_samples = 160;  /* Default: passthrough */
+        runtime->output_channels = dataset_channels;   /* Default: passthrough */
         return 0;
     }
 
     char line[1024];
     char dtype_str[32] = "";
     uint32_t window_length = 160; /* Default W */
+    uint32_t output_window = 0;   /* 0 = not found yet */
+    uint32_t output_channels = 0; /* 0 = not found yet */
 
     /* Simple spec parser - look for key fields */
     while (fgets(line, sizeof(line), f)) {
@@ -98,6 +102,29 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
                 window_length = (uint32_t)strtoul(v, (char**)&v, 10);
             }
         }
+        else if (starts_with(line, "  output_shape:")) {
+            /* Parse [W, C] or [W, null] format */
+            const char *v = line + strlen("  output_shape:");
+            while (*v == ' ') v++;
+            if (*v == '[') {
+                v++;
+                /* Parse first dimension (W) */
+                if (strncmp(v, "null", 4) == 0) {
+                    output_window = 0;  /* Signal "use input W" */
+                    v += 4;
+                } else {
+                    output_window = (uint32_t)strtoul(v, (char**)&v, 10);
+                }
+                /* Skip comma and whitespace */
+                while (*v == ' ' || *v == ',') v++;
+                /* Parse second dimension (C) */
+                if (strncmp(v, "null", 4) == 0) {
+                    output_channels = 0;  /* Signal "use dataset C" */
+                } else {
+                    output_channels = (uint32_t)strtoul(v, (char**)&v, 10);
+                }
+            }
+        }
     }
 
     fclose(f);
@@ -108,6 +135,10 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     runtime->channels = dataset_channels;     /* Always use dataset channels */
     runtime->dtype = map_dtype(dtype_str[0] ? dtype_str : "float32");
     runtime->allow_in_place = 1; /* Most kernels can be in-place */
+
+    /* Resolve output dimensions: null means passthrough */
+    runtime->output_window_length_samples = (output_window == 0) ? runtime->window_length_samples : output_window;
+    runtime->output_channels = (output_channels == 0) ? dataset_channels : output_channels;
 
     return 0;
 }
@@ -571,6 +602,16 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             out->plugins[i].runtime.channels = out->dataset.channels;
             out->plugins[i].runtime.dtype = 1; /* float32 */
             out->plugins[i].runtime.allow_in_place = 0;
+            out->plugins[i].runtime.output_window_length_samples = 160;
+            out->plugins[i].runtime.output_channels = out->dataset.channels;
+        }
+
+        /* Set default adapter path if not specified (universal adapter model) */
+        if (out->plugins[i].adapter_path[0] == '\0') {
+            strncpy(out->plugins[i].adapter_path,
+                    "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback",
+                    sizeof(out->plugins[i].adapter_path) - 1);
+            out->plugins[i].adapter_path[sizeof(out->plugins[i].adapter_path) - 1] = '\0';
         }
     }
 

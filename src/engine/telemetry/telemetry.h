@@ -26,6 +26,10 @@ typedef struct cortex_telemetry_record {
     uint64_t device_tfirst_tx_ns; /* First result byte transmitted (device clock) */
     uint64_t device_tlast_tx_ns;  /* Last result byte transmitted (device clock) */
     char adapter_name[32];        /* Adapter identifier (e.g., "x86@loopback") */
+
+    /* Error tracking (distinguish transport failures from deadline misses) */
+    uint8_t window_failed;        /* 1 = transport/adapter failure, 0 = success */
+    int32_t error_code;           /* Error reason if window_failed=1 (cortex_error_code_t) */
 } cortex_telemetry_record_t;
 
 typedef struct cortex_telemetry_buffer {
