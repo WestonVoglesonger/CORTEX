@@ -33,13 +33,14 @@ pip install -e .
 ## 2. Build Everything
 
 ```bash
-# Clean build of harness, plugins, and tests
+# Clean build of harness, device adapters, plugins, and tests
 make clean && make
 ```
 
 **Expected output:**
 ```
 Building harness...
+Building device adapters...
 Building kernel plugins from registry...
   Building v1/notch_iir@f32...
   Building v1/bandpass_fir@f32...
@@ -133,7 +134,7 @@ cortex run --kernel bandpass_fir --duration 60 --warmup 5
 vim primitives/configs/cortex.yaml
 
 # Run with custom config
-./src/engine/harness/cortex run primitives/configs/my-custom-config.yaml
+cortex run primitives/configs/my-custom-config.yaml
 ```
 
 ### Add Your Own Kernel
@@ -162,6 +163,7 @@ See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-ste
 
 - **Complete CLI Reference**: [cli-usage.md](cli-usage.md)
 - **Architecture Overview**: [docs/architecture/overview.md](../architecture/overview.md)
+- **Device Adapters**: [primitives/adapters/v1/README.md](../../primitives/adapters/v1/README.md)
 - **Configuration Guide**: [docs/reference/configuration.md](../reference/configuration.md)
 - **Plugin Interface**: [docs/reference/plugin-interface.md](../reference/plugin-interface.md)
 - **Troubleshooting**: [docs/guides/troubleshooting.md](../guides/troubleshooting.md)

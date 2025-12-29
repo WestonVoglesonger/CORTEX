@@ -215,6 +215,10 @@ tests/test_*
 !tests/test_*.c
 !tests/test_*.py
 
+# Adapter binaries (built from source)
+cortex_adapter_*
+!cortex_adapter_*.c
+
 # macOS debug symbols
 *.dSYM/
 

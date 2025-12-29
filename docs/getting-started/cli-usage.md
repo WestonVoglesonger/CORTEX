@@ -459,6 +459,7 @@ benchmark:
 plugins:
   - name: my_custom_kernel
     spec_uri: "primitives/kernels/v1/my_kernel@f32"
+    adapter_path: "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback"
 ```
 
 Run with:

@@ -55,7 +55,7 @@ The ABI is designed with these properties:
 
 ## System Context
 
-CORTEX plugins are dynamically loaded by the harness and process windowed EEG data. Each plugin implements 3-4 functions and receives runtime configuration through structs—never YAML or file paths. The harness handles all dataset streaming, scheduling, deadline enforcement, and telemetry collection.
+CORTEX plugins are dynamically loaded by device adapters and process windowed EEG data. Each plugin implements 3-4 functions and receives runtime configuration through structs—never YAML or file paths. The harness (via device adapters) handles all dataset streaming, scheduling, deadline enforcement, and telemetry collection.
 
 **Plugin Lifecycle**:
 ```
@@ -534,7 +534,7 @@ Plugins must be built with the correct extension for each platform:
 - **macOS**: `lib<name>.dylib`
 - **Linux**: `lib<name>.so`
 
-The harness loader automatically detects the platform and searches for the appropriate extension.
+Device adapters automatically detect the platform and search for the appropriate extension.
 
 ### Build Flags
 
@@ -571,7 +571,7 @@ libmyplugin$(LIBEXT): myplugin.c
 
 ### Loading Behavior
 
-The harness uses `dlopen()` to load plugins:
+Device adapters use `dlopen()` to load plugins:
 
 - Searches for `.dylib` (macOS) or `.so` (Linux) automatically
 - Platform-independent ABI (same `cortex_plugin.h` on all platforms)
