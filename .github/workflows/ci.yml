@@ -22,9 +22,6 @@ jobs:
     - name: Build everything (SDK, harness, adapters, plugins)
       run: make all
 
-    - name: Build adapter manually (not part of make all yet)
-      run: make -C primitives/adapters/v1/x86@loopback
-
     - name: Run all tests
       run: |
         cd tests
