@@ -19,7 +19,7 @@ int main(void)
     printf("=== Adapter Smoke Test ===\n\n");
 
     const char *adapter_path = "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback";
-    const char *plugin_name = "noop@f32";
+    const char *spec_uri = "primitives/kernels/v1/noop@f32";  /* Full path, not just "noop@f32" */
     const char *plugin_params = "";
 
     const uint32_t sample_rate_hz = 160;
@@ -30,10 +30,10 @@ int main(void)
     /* Initialize device (spawn adapter + handshake) */
     printf("1. Spawning adapter and performing handshake...\n");
 
-    cortex_device_handle_t *handle = NULL;
+    cortex_device_init_result_t result;
     int ret = device_comm_init(
         adapter_path,
-        plugin_name,
+        spec_uri,
         plugin_params,
         sample_rate_hz,
         window_samples,
@@ -41,7 +41,7 @@ int main(void)
         channels,
         NULL,  /* No calibration state */
         0,
-        &handle
+        &result
     );
 
     if (ret < 0) {
@@ -66,7 +66,7 @@ int main(void)
 
     cortex_device_timing_t timing;
     ret = device_comm_execute_window(
-        handle,
+        result.handle,
         0,  /* sequence 0 */
         input,
         window_samples,
@@ -78,7 +78,7 @@ int main(void)
 
     if (ret < 0) {
         printf("ERROR: device_comm_execute_window failed with code %d\n", ret);
-        device_comm_teardown(handle);
+        device_comm_teardown(result.handle);
         free(input);
         free(output);
         return 1;
@@ -94,7 +94,7 @@ int main(void)
         printf("First 10 output samples: ");
         for (int i = 0; i < 10; i++) printf("%.2f ", output[i]);
         printf("\n");
-        device_comm_teardown(handle);
+        device_comm_teardown(result.handle);
         free(input);
         free(output);
         return 1;
@@ -115,7 +115,7 @@ int main(void)
 
     /* Teardown */
     printf("4. Cleaning up adapter process...\n");
-    device_comm_teardown(handle);
+    device_comm_teardown(result.handle);
     free(input);
     free(output);
 
