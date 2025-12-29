@@ -23,6 +23,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# NOTE: sdk/adapter/lib/ files are force-added (git add -f) to track SDK source code
+# The lib/ pattern above is for Python packages, but catches SDK code as collateral
 lib64/
 parts/
 sdist/
