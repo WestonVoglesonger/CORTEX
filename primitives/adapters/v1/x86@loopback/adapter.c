@@ -61,6 +61,8 @@ typedef struct {
     cortex_process_fn process;
     cortex_teardown_fn teardown;
     void *kernel_handle;         /* Kernel instance from init() */
+    uint32_t output_window_length_samples;  /* Actual output shape */
+    uint32_t output_channels;
 } kernel_plugin_t;
 
 /* Generate random boot ID */
@@ -254,13 +256,11 @@ static int load_kernel_plugin(
 #endif
 
     /* Load library */
-    fprintf(stderr, "[DEBUG] Loading kernel from: %s\n", lib_path);
     void *dl = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
     if (!dl) {
         fprintf(stderr, "dlopen failed: %s\n", dlerror());
         return -1;
     }
-    fprintf(stderr, "[DEBUG] Kernel library loaded successfully\n");
 
     /* Load symbols */
     cortex_init_fn init_fn = (cortex_init_fn)dlsym(dl, "cortex_init");
@@ -276,7 +276,6 @@ static int load_kernel_plugin(
 
     /* Detect kernel ABI version */
     uint32_t kernel_abi_version = (calibrate_fn != NULL) ? 3 : 2;
-    fprintf(stderr, "[DEBUG] Detected kernel ABI version: %u\n", kernel_abi_version);
 
     /* Initialize kernel */
     cortex_plugin_config_t config = {
@@ -294,16 +293,12 @@ static int load_kernel_plugin(
         .calibration_state_size = (uint32_t)calib_state_size
     };
 
-    fprintf(stderr, "[DEBUG] Calling cortex_init() with config: abi=%u, window=%u, channels=%u\n",
-            config.abi_version, config.window_length_samples, config.channels);
     cortex_init_result_t result = init_fn(&config);
     if (!result.handle) {
         fprintf(stderr, "[ERROR] Kernel init failed (returned NULL handle)\n");
         dlclose(dl);
         return -1;
     }
-    fprintf(stderr, "[DEBUG] Kernel init succeeded, handle=%p, output_channels=%u\n",
-            result.handle, result.output_channels);
 
     void *kernel_handle = result.handle;
 
@@ -313,6 +308,8 @@ static int load_kernel_plugin(
     out_plugin->process = process_fn;
     out_plugin->teardown = teardown_fn;
     out_plugin->kernel_handle = kernel_handle;
+    out_plugin->output_window_length_samples = result.output_window_length_samples;
+    out_plugin->output_channels = result.output_channels;
 
     return 0;
 }
@@ -361,6 +358,8 @@ int main(void)
     /* 1. Send HELLO */
     if (send_hello(&transport, boot_id) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -371,6 +370,8 @@ int main(void)
     if (recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
                     &hop_samples, &channels, plugin_name, plugin_params) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -379,6 +380,8 @@ int main(void)
     if (load_kernel_plugin(plugin_name, sample_rate_hz, window_samples, hop_samples,
                            channels, plugin_params, NULL, 0, &kernel_plugin) < 0) {
         fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -386,15 +389,26 @@ int main(void)
     if (send_ack(&transport) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
         unload_kernel_plugin(&kernel_plugin);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
     /* 4. Window loop */
     float *window_buf = (float *)malloc(window_samples * channels * sizeof(float));
-    float *output_buf = (float *)malloc(window_samples * channels * sizeof(float));
+
+    /* Allocate output buffer based on kernel's actual output shape */
+    size_t output_samples = kernel_plugin.output_window_length_samples * kernel_plugin.output_channels;
+    float *output_buf = (float *)malloc(output_samples * sizeof(float));
+
 
     if (!window_buf || !output_buf) {
         fprintf(stderr, "Failed to allocate window buffers\n");
+        free(window_buf);
+        free(output_buf);
+        unload_kernel_plugin(&kernel_plugin);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -421,24 +435,12 @@ int main(void)
         /* Set tin AFTER reassembly complete */
         uint64_t tin = get_timestamp_ns();
 
-        /* Debug: Check first few input samples */
-        fprintf(stderr, "Adapter: First 5 input samples: %.2f %.2f %.2f %.2f %.2f\n",
-                window_buf[0], window_buf[1], window_buf[2], window_buf[3], window_buf[4]);
-
-        /* Debug: Check pointers before calling process */
-        fprintf(stderr, "[DEBUG] Calling process: handle=%p, input=%p, output=%p\n",
-                kernel_plugin.kernel_handle, (void*)window_buf, (void*)output_buf);
-
         /* Process window with loaded kernel */
         uint64_t tstart = get_timestamp_ns();
         kernel_plugin.process(kernel_plugin.kernel_handle, window_buf, output_buf);
         uint64_t tend = get_timestamp_ns();
 
-        /* Debug: Check first few output samples */
-        fprintf(stderr, "Adapter: First 5 output samples: %.2f %.2f %.2f %.2f %.2f\n",
-                output_buf[0], output_buf[1], output_buf[2], output_buf[3], output_buf[4]);
-
-        /* Send RESULT */
+        /* Send RESULT with actual output shape */
         uint64_t tfirst_tx = get_timestamp_ns();
         ret = send_result(
             &transport,
@@ -450,8 +452,8 @@ int main(void)
             tfirst_tx,
             tfirst_tx,  /* tlast_tx = tfirst_tx for now (approximate) */
             output_buf,
-            window_samples,
-            channels
+            kernel_plugin.output_window_length_samples,
+            kernel_plugin.output_channels
         );
         uint64_t tlast_tx = get_timestamp_ns();
 
