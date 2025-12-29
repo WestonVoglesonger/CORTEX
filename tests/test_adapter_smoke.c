@@ -87,6 +87,13 @@ int main(void)
     /* Verify noop output matches input (bit-exact) */
     if (memcmp(input, output, total_samples * sizeof(float)) != 0) {
         printf("ERROR: Output does not match input (noop should be identity)\n");
+        /* Show first few samples for debugging */
+        printf("First 10 input samples:  ");
+        for (int i = 0; i < 10; i++) printf("%.2f ", input[i]);
+        printf("\n");
+        printf("First 10 output samples: ");
+        for (int i = 0; i < 10; i++) printf("%.2f ", output[i]);
+        printf("\n");
         device_comm_teardown(handle);
         free(input);
         free(output);

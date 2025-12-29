@@ -65,6 +65,10 @@ static int read_exact(cortex_transport_t *transport, void *buf, size_t n, uint32
  * Returns:
  *    0: Success (MAGIC found)
  *   <0: Error (timeout or transport error)
+ *
+ * IMPORTANT: Wire format is little-endian, so MAGIC bytes arrive as:
+ *   0x58, 0x54, 0x52, 0x43 (little-endian representation of 0x43525458)
+ * We reconstruct by shifting RIGHT and inserting new bytes at the top.
  */
 static int hunt_magic(cortex_transport_t *transport, uint32_t timeout_ms)
 {
@@ -99,8 +103,14 @@ static int hunt_magic(cortex_transport_t *transport, uint32_t timeout_ms)
             return (int)got;
         }
 
-        /* Shift window and add new byte */
-        window = (window << 8) | byte;
+        /* Shift window RIGHT and add new byte at top (little-endian order)
+         * Example: MAGIC bytes arrive as 0x58, 0x54, 0x52, 0x43
+         *   After 0x58: window = 0x00000058
+         *   After 0x54: window = 0x00005458
+         *   After 0x52: window = 0x00525458
+         *   After 0x43: window = 0x43525458 ✓ matches CORTEX_PROTOCOL_MAGIC
+         */
+        window = (window >> 8) | ((uint32_t)byte << 24);
 
         /* Check if MAGIC found */
         if (window == CORTEX_PROTOCOL_MAGIC) {

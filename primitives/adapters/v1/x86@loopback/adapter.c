@@ -26,18 +26,33 @@
 /* Kernel plugin API (from cortex_plugin.h) */
 typedef struct cortex_plugin_config {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t sample_rate_hz;
     uint32_t window_length_samples;
     uint32_t hop_samples;
     uint32_t channels;
-    const char *kernel_params;
+    uint32_t dtype;
+    uint8_t  allow_in_place;
+    uint8_t  reserved0[3];
+    const void *kernel_params;
+    uint32_t   kernel_params_size;
     const void *calibration_state;
-    size_t calibration_state_size;
+    uint32_t calibration_state_size;
 } cortex_plugin_config_t;
 
-typedef void* (*cortex_init_fn)(const cortex_plugin_config_t *config);
-typedef void (*cortex_process_fn)(void *handle, const float *input, float *output);
+typedef struct {
+    void *handle;
+    uint32_t output_window_length_samples;
+    uint32_t output_channels;
+    uint32_t capabilities;
+} cortex_init_result_t;
+
+typedef cortex_init_result_t (*cortex_init_fn)(const cortex_plugin_config_t *config);
+typedef void (*cortex_process_fn)(void *handle, const void *input, void *output);
 typedef void (*cortex_teardown_fn)(void *handle);
+
+/* Calibrate function type (for v3 detection only, not stored) */
+typedef void* (*cortex_calibrate_fn)(const cortex_plugin_config_t *, const void *, uint32_t);
 
 /* Loaded kernel state */
 typedef struct {
@@ -239,16 +254,19 @@ static int load_kernel_plugin(
 #endif
 
     /* Load library */
+    fprintf(stderr, "[DEBUG] Loading kernel from: %s\n", lib_path);
     void *dl = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
     if (!dl) {
         fprintf(stderr, "dlopen failed: %s\n", dlerror());
         return -1;
     }
+    fprintf(stderr, "[DEBUG] Kernel library loaded successfully\n");
 
     /* Load symbols */
     cortex_init_fn init_fn = (cortex_init_fn)dlsym(dl, "cortex_init");
     cortex_process_fn process_fn = (cortex_process_fn)dlsym(dl, "cortex_process");
     cortex_teardown_fn teardown_fn = (cortex_teardown_fn)dlsym(dl, "cortex_teardown");
+    cortex_calibrate_fn calibrate_fn = (cortex_calibrate_fn)dlsym(dl, "cortex_calibrate");
 
     if (!init_fn || !process_fn || !teardown_fn) {
         fprintf(stderr, "Failed to load kernel symbols: %s\n", dlerror());
@@ -256,24 +274,38 @@ static int load_kernel_plugin(
         return -1;
     }
 
+    /* Detect kernel ABI version */
+    uint32_t kernel_abi_version = (calibrate_fn != NULL) ? 3 : 2;
+    fprintf(stderr, "[DEBUG] Detected kernel ABI version: %u\n", kernel_abi_version);
+
     /* Initialize kernel */
     cortex_plugin_config_t config = {
-        .abi_version = 3,
+        .abi_version = kernel_abi_version,
+        .struct_size = sizeof(cortex_plugin_config_t),
         .sample_rate_hz = sample_rate_hz,
         .window_length_samples = window_samples,
         .hop_samples = hop_samples,
         .channels = channels,
+        .dtype = 1,  /* CORTEX_DTYPE_FLOAT32 */
+        .allow_in_place = 0,
         .kernel_params = plugin_params,
+        .kernel_params_size = (uint32_t)strlen(plugin_params),
         .calibration_state = calib_state,
-        .calibration_state_size = calib_state_size
+        .calibration_state_size = (uint32_t)calib_state_size
     };
 
-    void *kernel_handle = init_fn(&config);
-    if (!kernel_handle) {
-        fprintf(stderr, "Kernel init failed\n");
+    fprintf(stderr, "[DEBUG] Calling cortex_init() with config: abi=%u, window=%u, channels=%u\n",
+            config.abi_version, config.window_length_samples, config.channels);
+    cortex_init_result_t result = init_fn(&config);
+    if (!result.handle) {
+        fprintf(stderr, "[ERROR] Kernel init failed (returned NULL handle)\n");
         dlclose(dl);
         return -1;
     }
+    fprintf(stderr, "[DEBUG] Kernel init succeeded, handle=%p, output_channels=%u\n",
+            result.handle, result.output_channels);
+
+    void *kernel_handle = result.handle;
 
     /* Populate output */
     out_plugin->dl_handle = dl;
@@ -389,10 +421,22 @@ int main(void)
         /* Set tin AFTER reassembly complete */
         uint64_t tin = get_timestamp_ns();
 
+        /* Debug: Check first few input samples */
+        fprintf(stderr, "Adapter: First 5 input samples: %.2f %.2f %.2f %.2f %.2f\n",
+                window_buf[0], window_buf[1], window_buf[2], window_buf[3], window_buf[4]);
+
+        /* Debug: Check pointers before calling process */
+        fprintf(stderr, "[DEBUG] Calling process: handle=%p, input=%p, output=%p\n",
+                kernel_plugin.kernel_handle, (void*)window_buf, (void*)output_buf);
+
         /* Process window with loaded kernel */
         uint64_t tstart = get_timestamp_ns();
         kernel_plugin.process(kernel_plugin.kernel_handle, window_buf, output_buf);
         uint64_t tend = get_timestamp_ns();
+
+        /* Debug: Check first few output samples */
+        fprintf(stderr, "Adapter: First 5 output samples: %.2f %.2f %.2f %.2f %.2f\n",
+                output_buf[0], output_buf[1], output_buf[2], output_buf[3], output_buf[4]);
 
         /* Send RESULT */
         uint64_t tfirst_tx = get_timestamp_ns();
