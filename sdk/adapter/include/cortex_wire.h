@@ -84,7 +84,7 @@ typedef struct __attribute__((packed)) {
  */
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      /* Random on adapter start */
-    char     adapter_name[32];     /* "x86@loopback", "stm32-h7@uart" */
+    char     adapter_name[32];     /* "native@loopback", "stm32-h7@uart" */
     uint8_t  adapter_abi_version;  /* 1 */
     uint8_t  num_kernels;          /* Available kernel count */
     uint16_t reserved;             /* Padding */

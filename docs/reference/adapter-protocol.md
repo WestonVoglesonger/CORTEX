@@ -131,7 +131,7 @@ The MAGIC constant serves as a frame boundary marker in byte streams. Receivers 
 ```c
 struct {
     uint32_t adapter_boot_id;      // Random on adapter start
-    char     adapter_name[32];     // "x86@loopback", "jetson@tcp"
+    char     adapter_name[32];     // "native@loopback", "jetson@tcp"
     uint8_t  adapter_abi_version;  // Must be 1
     uint8_t  num_kernels;          // Count of available kernels
     uint16_t reserved;             // Padding (0)
@@ -146,7 +146,7 @@ struct {
 **Example:**
 ```
 adapter_boot_id:     0x12345678
-adapter_name:        "x86@loopback"
+adapter_name:        "native@loopback"
 adapter_abi_version: 1
 num_kernels:         2
 max_window_samples:  512

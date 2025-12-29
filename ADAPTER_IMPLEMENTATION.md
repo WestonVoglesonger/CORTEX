@@ -25,7 +25,7 @@ SDK Protocol (framing, chunking, CRC, serialization)
     ↓
 SDK Transport (mock/TCP/UART with timeouts)
     ↓
-Device Adapter (x86@loopback, jetson@tcp, stm32@uart)
+Device Adapter (native@loopback, jetson@tcp, stm32@uart)
     ↓
 Kernel Execution
 ```
@@ -72,7 +72,7 @@ Day 0: Open draft PR "feat: Phase 1 - Device Adapter Loopback Foundation"
        Push commit "feat: Add transport API and mock implementation [Step 1]"
 Day 1: Push commit "feat: Add protocol frame I/O with recv_frame [Step 2]"
        Push commit "feat: Add WINDOW chunking and reassembly [Step 3]"
-Day 2: Push commit "feat: Add x86@loopback adapter binary [Step 4]"
+Day 2: Push commit "feat: Add native@loopback adapter binary [Step 4]"
        Push commit "feat: Add device_comm spawning layer [Step 5]"
 Day 3: Push commit "test: Add critical adapter tests [Step 6]"
        Push commit "feat: Integrate scheduler with device_comm [Step 7]"
@@ -297,7 +297,7 @@ typedef struct __attribute__((packed)) {
 ```c
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      // Random on adapter start (detects restarts)
-    char     adapter_name[32];     // "x86@loopback", "stm32-h7@uart"
+    char     adapter_name[32];     // "native@loopback", "stm32-h7@uart"
     uint8_t  adapter_abi_version;  // 1
     uint8_t  num_kernels;          // Available kernel count
     uint16_t reserved;             // Padding
@@ -510,8 +510,8 @@ Harness                          Adapter
   - Added `cortex_device_handle_t *device_handle` to plugin entry
   - Adapter path specified in YAML config
 
-#### x86@loopback Adapter
-- ✅ **`primitives/adapters/v1/x86@loopback/adapter.c`**
+#### native@loopback Adapter
+- ✅ **`primitives/adapters/v1/native@loopback/adapter.c`**
   - Main loop: stdin/stdout as transport
   - Send HELLO (advertises all available kernels dynamically)
   - Receive CONFIG, dlopen kernel, validate calibration state
@@ -520,8 +520,8 @@ Harness                          Adapter
   - Timestamp placement: tin AFTER reassembly, tstart/tend around process()
   - Error handling: memory cleanup, calibration state validation
 
-- ✅ **`primitives/adapters/v1/x86@loopback/Makefile`**
-  - Builds `cortex_adapter_x86_loopback` binary
+- ✅ **`primitives/adapters/v1/native@loopback/Makefile`**
+  - Builds `cortex_adapter_native_loopback` binary
   - Links against SDK libraries
 
 #### Telemetry Extension
@@ -943,7 +943,7 @@ sdk/adapter/
 
 primitives/adapters/v1/
 ├── README.md
-├── x86@loopback/
+├── native@loopback/
 │   ├── README.md
 │   ├── config.yaml
 │   ├── adapter.c
@@ -1143,7 +1143,7 @@ src/engine/harness/device/
 
 **Deliverables**:
 - SDK: Transport layer, protocol layer, wire format, endian helpers
-- Adapters: x86@loopback reference implementation
+- Adapters: native@loopback reference implementation
 - Harness: device_comm layer, scheduler integration
 - Tests: 6 protocol tests, 2 adapter tests, all passing
 - Documentation: Wire spec, implementation guide, API reference, adapter catalog

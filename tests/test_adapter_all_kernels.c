@@ -1,7 +1,7 @@
 /*
  * Adapter All Kernels Test
  *
- * Tests all 6 core kernels through the x86@loopback adapter.
+ * Tests all 6 core kernels through the native@loopback adapter.
  * Validates that adapter execution produces reasonable output.
  */
 
@@ -16,7 +16,7 @@
 #include <string.h>
 
 /* Test configuration */
-const char *ADAPTER_PATH = "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback";
+const char *ADAPTER_PATH = "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback";
 const uint32_t SAMPLE_RATE_HZ = 160;
 const uint32_t WINDOW_SAMPLES = 160;
 const uint32_t HOP_SAMPLES = 80;
@@ -175,7 +175,7 @@ static int test_kernel(const char *plugin_name, const char *plugin_params)
 int main(void)
 {
     printf("=== Adapter All Kernels Test ===\n");
-    printf("Testing 6 core kernels through x86@loopback adapter\n");
+    printf("Testing 6 core kernels through native@loopback adapter\n");
 
     int total_tests = 0;
     int passed_tests = 0;

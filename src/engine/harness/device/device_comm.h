@@ -71,7 +71,7 @@ typedef struct {
  * device_handle. Dimensions cannot change per-window.
  *
  * Args:
- *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/x86@loopback/cortex_adapter_x86_loopback")
+ *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback")
  *   plugin_name:     Kernel to load (e.g., "noop@f32")
  *   plugin_params:   Kernel parameters (e.g., "f0_hz=60.0,Q=30.0")
  *   sample_rate_hz:  Sample rate (e.g., 160)

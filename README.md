@@ -143,7 +143,7 @@ make clean
 # Check Python CLI
 cortex --help
 
-# Check C engine (routes through x86@loopback adapter)
+# Check C engine (routes through native@loopback adapter)
 cortex run primitives/configs/cortex.yaml
 
 # Run test suite

@@ -45,7 +45,7 @@ Format is determined by the `output.format` configuration setting (`ndjson` or `
 
 | Column | Unit | Notes |
 |---|---|---|
-| adapter_name | — | Name of device adapter used (e.g., `x86@loopback`, `jetson@tcp`) |
+| adapter_name | — | Name of device adapter used (e.g., `native@loopback`, `jetson@tcp`) |
 | device_tin_ns | ns | Time adapter received window from harness |
 | device_tstart_ns | ns | Time adapter started kernel execution |
 | device_tend_ns | ns | Time adapter finished kernel execution |
@@ -54,7 +54,7 @@ Format is determined by the `output.format` configuration setting (`ndjson` or `
 
 **Notes**:
 - Device timing fields enable measuring adapter overhead and network latency
-- For local adapters (x86@loopback): device timing ≈ harness timing (socketpair overhead ~microseconds)
+- For local adapters (native@loopback): device timing ≈ harness timing (socketpair overhead ~microseconds)
 - For remote adapters (jetson@tcp, stm32@uart): device timing captures network/serial latency
 - Adapter overhead = `(device_tin_ns - start_ts_ns) + (end_ts_ns - device_tlast_tx_ns)`
 

@@ -11,7 +11,7 @@ Successfully implemented complete device adapter infrastructure for Hardware-In-
 1. **`59dd845`** - Transport API with timeout support
 2. **`25dbd64`** - Protocol frame I/O with CRC validation
 3. **`c85ddf0`** - WINDOW chunking and reassembly
-4. **`598051b`** - x86@loopback adapter binary
+4. **`598051b`** - native@loopback adapter binary
 5. **`9968543`** - Device comm layer for spawning
 6. **`29acda3`** - Critical test infrastructure
 7. **`b2167c8`** - Scheduler integration
@@ -30,7 +30,7 @@ Successfully implemented complete device adapter infrastructure for Hardware-In-
                                        │ socketpair
 ┌──────────────────────────────────────┼──────────────────┐
 │ Adapter (primitives/adapters/v1/)   │                  │
-│  x86@loopback/adapter.c              │                  │
+│  native@loopback/adapter.c              │                  │
 │   ├─ stdin/stdout transport◄─────────┘                  │
 │   ├─ Protocol layer (SDK)                               │
 │   │   ├─ recv_frame/send_frame                          │
@@ -130,7 +130,7 @@ Minor items deferred to follow-up PRs (non-blocking):
 - Wire up adapter spawning in harness main
 
 ### PR #41: All Kernels Validation
-- Run 6 kernels through x86@loopback
+- Run 6 kernels through native@loopback
 - Validate oracle correctness
 - Measure adapter overhead vs direct execution
 

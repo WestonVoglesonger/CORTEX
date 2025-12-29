@@ -1,7 +1,7 @@
 /*
- * x86@loopback adapter - Phase 1 minimal adapter
+ * native@loopback adapter - Phase 1 minimal adapter
  *
- * Runs kernels on local x86 host, communicating via stdin/stdout.
+ * Runs kernels on local host (native architecture), communicating via stdin/stdout.
  * Implements handshake and window processing for loopback testing.
  *
  * Protocol:
