@@ -179,30 +179,3 @@ cortex_transport_t* cortex_transport_mock_create_from_fds(int read_fd, int write
 
     return transport;
 }
-
-/*
- * Stub implementations for future transports (Phase 2/3)
- */
-
-cortex_transport_t* cortex_transport_uart_posix_create(const char *device, int baud_rate)
-{
-    (void)device;
-    (void)baud_rate;
-    errno = ENOSYS;  /* Not implemented */
-    return NULL;
-}
-
-cortex_transport_t* cortex_transport_tcp_client_create(const char *host, uint16_t port)
-{
-    (void)host;
-    (void)port;
-    errno = ENOSYS;  /* Not implemented */
-    return NULL;
-}
-
-cortex_transport_t* cortex_transport_tcp_server_create(int listen_fd)
-{
-    (void)listen_fd;
-    errno = ENOSYS;  /* Not implemented */
-    return NULL;
-}

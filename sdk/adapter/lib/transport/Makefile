@@ -1,16 +1,16 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../include
+# Transport layer - builds all transport implementations
+# Subdirectories: local/, network/, serial/, embedded/
 
-# Transport implementations
-SOURCES = mock.c
-OBJECTS = $(SOURCES:.c=.o)
+SUBDIRS = local network serial
 
-all: $(OBJECTS)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+all:
+	@for dir in $(SUBDIRS); do \
+		$(MAKE) -C $$dir || exit 1; \
+	done
 
 clean:
-	rm -f $(OBJECTS)
+	@for dir in $(SUBDIRS); do \
+		$(MAKE) -C $$dir clean; \
+	done
 
 .PHONY: all clean

@@ -118,16 +118,29 @@ cortex_transport_t* cortex_transport_mock_create_from_fds(int read_fd, int write
 /*
  * UART Transport (POSIX)
  *
- * Phase 2 implementation (stub for Phase 1)
+ * Opens serial port with specified baud rate.
+ *
+ * Args:
+ *   device:    Serial device path (e.g., "/dev/ttyUSB0", "/dev/cu.usbserial")
+ *   baud_rate: Baud rate (9600, 115200, etc.)
+ *
+ * Returns: Transport or NULL on failure
  */
-cortex_transport_t* cortex_transport_uart_posix_create(const char *device, int baud_rate);
+cortex_transport_t* cortex_transport_uart_posix_create(const char *device, uint32_t baud_rate);
 
 /*
  * TCP Client Transport
  *
- * Phase 2 implementation (stub for Phase 1)
+ * Connects to remote host:port with timeout.
+ *
+ * Args:
+ *   host:        Hostname or IP address (e.g., "192.168.1.100", "localhost")
+ *   port:        TCP port
+ *   timeout_ms:  Connection timeout in milliseconds
+ *
+ * Returns: Transport or NULL on failure
  */
-cortex_transport_t* cortex_transport_tcp_client_create(const char *host, uint16_t port);
+cortex_transport_t* cortex_transport_tcp_client_create(const char *host, uint16_t port, uint32_t timeout_ms);
 
 /*
  * TCP Server Transport
@@ -135,5 +148,23 @@ cortex_transport_t* cortex_transport_tcp_client_create(const char *host, uint16_
  * Phase 2 implementation (stub for Phase 1)
  */
 cortex_transport_t* cortex_transport_tcp_server_create(int listen_fd);
+
+/*
+ * Shared Memory Transport (POSIX)
+ *
+ * High-performance local IPC using POSIX shared memory and semaphores.
+ * ~10x faster than socketpair, ~100x faster than TCP.
+ *
+ * Two-phase setup:
+ *   1. Harness creates shared memory region (calls create_harness)
+ *   2. Adapter connects to existing region (calls create_adapter)
+ *
+ * Args:
+ *   name: Unique name for this transport (e.g., "cortex_adapter_0")
+ *
+ * Returns: Transport or NULL on failure
+ */
+cortex_transport_t* cortex_transport_shm_create_harness(const char *name);
+cortex_transport_t* cortex_transport_shm_create_adapter(const char *name);
 
 #endif /* CORTEX_TRANSPORT_H */
