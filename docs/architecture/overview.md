@@ -27,20 +27,33 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 └────────────────────┬────────────────────────────────────┘
                      │ (Windows: W×C samples)
                      v
-            ┌────────┴────────┐
-            │  Plugin Loader   │
-            └────────┬────────┘
+┌─────────────────────────────────────────────────────────┐
+│               Device Communication                      │
+│  - Spawn adapter process (fork + exec)                 │
+│  - Handshake (HELLO → CONFIG → ACK)                    │
+│  - Window transfer (chunked, CRC-validated)            │
+│  - Device timing collection (tin, tstart, tend)        │
+└────────────────────┬────────────────────────────────────┘
+                     │ (Wire protocol: frames, CRC, session IDs)
+                     v
+┌─────────────────────────────────────────────────────────┐
+│              Device Adapter (x86@loopback)              │
+│  - Protocol layer (framing, chunking, CRC)             │
+│  - Transport layer (mock/TCP/UART)                     │
+│  - Dynamic kernel loading (dlopen)                     │
+│  - Sequential kernel execution                         │
+└────────────────────┬────────────────────────────────────┘
                      │
        ┌─────────────┼─────────────┐
        │             │             │
        v             v             v
   ┌─────────┐  ┌─────────┐  ┌─────────┐
-  │ notch   │  │   fir   │  │goertzel │  (Sequential execution)
+  │ notch   │  │   fir   │  │goertzel │  (Loaded as plugins in adapter)
   │  _iir   │  │_bandpass│  │         │
   └────┬────┘  └────┬────┘  └────┬────┘
        │            │            │
        └────────────┼────────────┘
-                    │ (Per-window metrics)
+                    │ (Output + device timing)
                     v
          ┌──────────────────────┐
          │     Telemetry         │
@@ -75,15 +88,15 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
 **Responsibilities**:
 - Parse YAML configuration (`primitives/configs/cortex.yaml`)
 - Initialize replayer with dataset parameters
-- Load kernel plugins dynamically (`.dylib` on macOS, `.so` on Linux)
-- Create separate scheduler instance per plugin
-- Execute plugins sequentially (not in parallel)
-- Collect and write telemetry to disk
+- Spawn device adapters (fork + exec with socketpair)
+- Create separate scheduler instance per kernel
+- Execute kernels sequentially (not in parallel)
+- Collect and write telemetry to disk (host + device timing)
 - Generate HTML reports with visualizations
 
 **Key files**:
 - `src/engine/harness/app/main.c` - Entry point and orchestration
-- `sdk/kernel/lib/loader/loader.c` - Dynamic plugin loading
+- `src/engine/harness/device/device_comm.c` - Device adapter spawning and communication
 - `src/engine/harness/telemetry/telemetry.c` - Metrics collection
 - `src/engine/harness/config/config.c` - YAML parsing
 
@@ -137,7 +150,7 @@ The replayer owns stress-ng because it controls the **timing environment** for r
 - Check deadline: `deadline_missed = (end_ts > deadline_ts)`
 - Configure real-time priority (SCHED_FIFO or SCHED_RR on Linux)
 - Set CPU affinity (pin to specific cores)
-- Pass windows to plugin `cortex_process()` function
+- Route windows to device adapters via device_handle
 
 **Window parameters** (EEG v1):
 - **W (window length)**: 160 samples (1 second @ 160 Hz)
@@ -145,19 +158,41 @@ The replayer owns stress-ng because it controls the **timing environment** for r
 - **C (channels)**: 64
 - **Deadline**: H/Fs = 500 ms per window
 
-### 4. Plugin System
+### 4. Device Adapter System
 
-**Purpose**: Loadable kernel implementations using dynamic libraries (`.dylib` on macOS, `.so` on Linux)
+**Purpose**: Universal execution model for all kernels, enabling Hardware-In-the-Loop (HIL) testing across x86, Jetson Nano, STM32, and other platforms
 
-**ABI Version**: 2 (current) - See [plugin-interface.md](../reference/plugin-interface.md) for complete specification
+**Architecture**: ALL kernels execute through device adapters (no direct execution path)
 
-**Plugin lifecycle**:
-1. Harness calls `dlopen()` to load plugin library
-2. Harness calls `cortex_init()` → plugin allocates state, returns output shape
-3. For each window: Harness calls `cortex_process()` → plugin runs algorithm
-4. At end: Harness calls `cortex_teardown()` → plugin frees resources
+**Adapter lifecycle**:
+1. Harness spawns adapter process via `device_comm_init()` (fork + exec with socketpair)
+2. Adapter sends HELLO frame (advertises capabilities, boot_id, available kernels)
+3. Harness sends CONFIG frame (selects kernel, sends parameters, calibration state if trainable)
+4. Adapter loads kernel plugin via `dlopen()`, calls `cortex_init()`
+5. Adapter sends ACK frame (ready for windows)
+6. For each window:
+   - Harness sends WINDOW_CHUNK frames (8KB chunks, CRC-validated)
+   - Adapter reassembles window, sets `tin` timestamp
+   - Adapter calls `cortex_process()` on loaded kernel
+   - Adapter sends RESULT frame (output + device timing: tin, tstart, tend, tfirst_tx, tlast_tx)
+7. At end: Harness closes socketpair, adapter calls `cortex_teardown()` and exits
 
-**See**: [plugin-interface.md](../reference/plugin-interface.md) for complete API specification, function signatures, and implementation constraints
+**Wire Protocol**:
+- 16-byte header: magic (0x43525458), version, type, flags, payload_length, CRC32
+- Session IDs: Ties CONFIG to RESULT (detects adapter restart)
+- Boot IDs: Adapter restart detection
+- Chunking: Large windows split into 8KB chunks
+- Timeouts: All recv() operations have timeout_ms (prevents hangs)
+
+**Supported Adapters**:
+- `x86@loopback`: Local execution via socketpair (Phase 1 complete)
+- `jetson@tcp`: Network execution via TCP (Phase 2)
+- `stm32@uart`: Bare-metal firmware via UART (Phase 3)
+
+**See**:
+- [adapter-protocol.md](../reference/adapter-protocol.md) for wire format specification
+- [adding-adapters.md](../guides/adding-adapters.md) for implementation guide
+- `sdk/adapter/README.md` for SDK documentation
 
 ### 5. Telemetry (`src/engine/harness/telemetry/`)
 

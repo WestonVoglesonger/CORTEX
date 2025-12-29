@@ -35,7 +35,10 @@ TEST_ADAPTER_SMOKE = test_adapter_smoke
 
 .PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-clock-resolution test-signal-handler test-param-accessor test-protocol test-adapter-smoke
 
-# NOTE: test_scheduler temporarily disabled - needs refactoring for device-based API
+# NOTE: test_scheduler temporarily disabled - needs refactoring for universal adapter model
+#   - Current tests use cortex_plugin_api_t and cortex_scheduler_register_plugin() (removed in v0.4.0)
+#   - Needs rewrite to use cortex_scheduler_register_device() with mock device handles
+#   - Will be fixed in follow-up PR (tracked in Phase 5 documentation updates)
 all: $(TEST_REPLAYER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR) $(TEST_PROTOCOL) $(TEST_ADAPTER_SMOKE)
 
 $(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
