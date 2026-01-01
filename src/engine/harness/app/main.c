@@ -80,10 +80,14 @@ static int spawn_adapter(const char *plugin_name,
     }
 
     /* Spawn device adapter and perform handshake (universal adapter model) */
+    /* Get transport URI from environment variable (CLI override) */
+    const char *transport_uri = getenv("CORTEX_TRANSPORT_URI");
+    /* NULL defaults to "local://" in device_comm_init */
+
     /* Pass spec_uri instead of just plugin_name so adapter knows full kernel path */
     int ret = device_comm_init(
         plugin_cfg->adapter_path,
-        NULL,  /* transport_config (NULL = default "local://") */
+        transport_uri,  /* transport_config: from env var or NULL (defaults to "local://") */
         plugin_cfg->spec_uri,  /* Full path: "primitives/kernels/v1/noop@f32" */
         plugin_cfg->params,
         sample_rate_hz,
