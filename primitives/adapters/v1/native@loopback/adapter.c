@@ -1,5 +1,5 @@
 /*
- * native adapter - Phase 1 minimal adapter
+ * native@loopback adapter - Phase 1 minimal adapter
  *
  * Runs kernels on local host (native architecture), communicating via stdin/stdout.
  * Implements handshake and window processing for loopback testing.
@@ -14,7 +14,6 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "cortex_transport.h"
-#include "cortex_adapter_transport.h"
 #include "cortex_protocol.h"
 #include "cortex_adapter_helpers.h"
 
@@ -216,26 +215,35 @@ static void unload_kernel_plugin(kernel_plugin_t *plugin)
 }
 
 /* Main adapter loop */
-int main(int argc, char **argv)
+int main(void)
 {
     uint32_t boot_id = generate_boot_id();
     uint32_t session_id = 0;
     uint32_t sequence = 0;
 
-    /* Parse transport config from argv[1] (defaults to "local://") */
-    const char *config_uri = (argc > 1) ? argv[1] : "local://";
+    /* Create transport from stdin/stdout */
+    cortex_transport_t transport = {
+        .ctx = NULL,  /* Will be set by mock transport */
+        .send = NULL,
+        .recv = NULL,
+        .close = NULL,
+        .get_timestamp_ns = get_timestamp_ns
+    };
 
-    /* Create transport from URI configuration */
-    cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
+    /* Initialize mock transport with stdin/stdout */
+    cortex_transport_t *tp = cortex_transport_mock_create_from_fds(STDIN_FILENO, STDOUT_FILENO);
     if (!tp) {
-        fprintf(stderr, "Failed to create transport from URI: %s\n", config_uri);
+        fprintf(stderr, "Failed to create transport\n");
         return 1;
     }
 
+    transport = *tp;  /* Copy transport */
+
     /* 1. Send HELLO */
-    if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
+    if (cortex_adapter_send_hello(&transport, boot_id, "x86@loopback", "noop@f32", 1024, 64) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
-        cortex_transport_destroy(tp);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -245,11 +253,12 @@ int main(int argc, char **argv)
     void *calibration_state = NULL;
     uint32_t calibration_state_size = 0;
 
-    if (cortex_adapter_recv_config(tp, &session_id, &sample_rate_hz, &window_samples,
+    if (cortex_adapter_recv_config(&transport, &session_id, &sample_rate_hz, &window_samples,
                                     &hop_samples, &channels, plugin_name, plugin_params,
                                     &calibration_state, &calibration_state_size) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
-        cortex_transport_destroy(tp);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -259,19 +268,21 @@ int main(int argc, char **argv)
                            channels, plugin_params, calibration_state, calibration_state_size, &kernel_plugin) < 0) {
         fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
         free(calibration_state);  /* Free calibration state on error */
-        cortex_transport_destroy(tp);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
     /* 4. Send ACK (kernel ready, with output dimensions) */
     /* Send actual output dimensions from kernel init result */
-    if (cortex_adapter_send_ack_with_dims(tp,
+    if (cortex_adapter_send_ack_with_dims(&transport,
                                          kernel_plugin.output_window_length_samples,
                                          kernel_plugin.output_channels) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
         free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
-        cortex_transport_destroy(tp);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -289,7 +300,8 @@ int main(int argc, char **argv)
         free(output_buf);
         free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
-        cortex_transport_destroy(tp);
+        transport.close(transport.ctx);
+        free(tp);
         return 1;
     }
 
@@ -299,7 +311,7 @@ int main(int argc, char **argv)
         uint32_t received_channels = 0;
 
         int ret = cortex_protocol_recv_window_chunked(
-            tp,
+            &transport,
             sequence,
             window_buf,
             window_samples * channels * sizeof(float),
@@ -324,7 +336,7 @@ int main(int argc, char **argv)
         /* Send RESULT with actual output shape */
         uint64_t tfirst_tx = get_timestamp_ns();
         ret = cortex_adapter_send_result(
-            tp,
+            &transport,
             session_id,
             sequence,
             tin,
@@ -352,7 +364,8 @@ int main(int argc, char **argv)
     free(output_buf);
     free(calibration_state);  /* Free calibration state if it was allocated */
     unload_kernel_plugin(&kernel_plugin);
-    cortex_transport_destroy(tp);
+    transport.close(transport.ctx);
+    free(tp);
 
     return 0;
 }

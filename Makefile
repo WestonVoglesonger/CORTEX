@@ -35,8 +35,8 @@ adapters: sdk
 	@echo "Building device adapters..."
 	@for version_dir in primitives/adapters/v*/; do \
 		if [ -d "$$version_dir" ]; then \
-			for dir in $$version_dir*/; do \
-				if [ -f "$$dir/Makefile" ] && [ "$$(basename $$dir)" != "README.md" ]; then \
+			for dir in $$version_dir*@*/; do \
+				if [ -f "$$dir/Makefile" ]; then \
 					echo "  Building $$(basename $$(dirname $$dir))/$$(basename $$dir)..."; \
 					$(MAKE) -C "$$dir"; \
 				fi \
@@ -66,7 +66,7 @@ clean:
 	done
 	@for version_dir in primitives/adapters/v*/; do \
 		if [ -d "$$version_dir" ]; then \
-			for dir in $$version_dir*/; do \
+			for dir in $$version_dir*@*/; do \
 				if [ -f "$$dir/Makefile" ]; then \
 					$(MAKE) -C "$$dir" clean || true; \
 				fi \

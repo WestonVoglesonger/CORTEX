@@ -192,7 +192,7 @@ typedef struct __attribute__((packed)) {
 /* HELLO payload */
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      /* Random on adapter start */
-    char     adapter_name[32];     /* "native" */
+    char     adapter_name[32];     /* "native@loopback" */
     uint8_t  adapter_abi_version;  /* 1 */
     uint8_t  num_kernels;          /* Available kernel count */
     uint16_t reserved;
@@ -323,7 +323,7 @@ uint32_t payload_len = cortex_read_u32_le(buf + 8);
 int cortex_adapter_send_hello(
     cortex_transport_t *transport,
     uint32_t boot_id,
-    const char *adapter_name,       /* "native" */
+    const char *adapter_name,       /* "native@loopback" */
     const char *kernel_names,       /* "noop@f32,car@f32" (comma-separated) */
     uint32_t max_window_samples,
     uint32_t max_channels
@@ -379,7 +379,7 @@ int main(void) {
 
     /* 2. Send HELLO */
     uint32_t boot_id = generate_boot_id();
-    cortex_adapter_send_hello(transport, boot_id, "native", "noop@f32", 1024, 64);
+    cortex_adapter_send_hello(transport, boot_id, "native@loopback", "noop@f32", 1024, 64);
 
     /* 3. Receive CONFIG */
     uint32_t session_id, sample_rate, window_samples, hop_samples, channels;
@@ -463,9 +463,9 @@ $(TARGET): adapter.o $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS)
 	$(CC) -o $@ $^ -ldl -lpthread
 ```
 
-### Example: native Adapter
+### Example: native@loopback Adapter
 
-**Complete example:** [`../../../primitives/adapters/v1/native/`](../../../primitives/adapters/v1/native/)
+**Complete example:** [`../../../primitives/adapters/v1/native@loopback/`](../../../primitives/adapters/v1/native@loopback/)
 
 ---
 

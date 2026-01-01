@@ -82,72 +82,10 @@ typedef struct cortex_transport_api {
 typedef cortex_transport_api_t cortex_transport_t;
 
 /*
- * Transport Configuration URI
- *
- * Parsed adapter configuration URI for selecting transport type.
- *
- * Supported formats:
- *   local://                                    → Local spawn (socketpair)
- *   tcp://host:port                             → TCP client (connect to host)
- *   tcp://host:port?timeout_ms=500              → TCP client with custom timeout
- *   tcp://:port                                 → TCP server (listen on INADDR_ANY)
- *   tcp://:port?accept_timeout_ms=5000          → TCP server with custom timeout
- *   serial:///dev/ttyUSB0?baud=115200           → UART/serial port
- *   shm://bench01                               → Shared memory IPC
- */
-typedef struct {
-    char scheme[16];        /* "local", "tcp", "serial", "shm" */
-
-    /* TCP fields */
-    char host[256];         /* "10.0.1.42" or "" (empty = server/listen mode) */
-    uint16_t port;          /* 9000 (0 = not applicable) */
-    uint32_t timeout_ms;    /* Query param timeout (0 = use default) */
-
-    /* UART/Serial fields */
-    char device_path[256];  /* "/dev/ttyUSB0", "/dev/cu.usbserial-*" */
-    uint32_t baud_rate;     /* 115200, 921600, etc. (0 = use default 115200) */
-
-    /* Shared Memory fields */
-    char shm_name[64];      /* "bench01", "test", etc. */
-} cortex_uri_t;
-
-/**
- * Parse adapter configuration URI
- *
- * @param uri Input URI string (NULL or empty defaults to "local://")
- * @param out Parsed URI structure
- * @return 0 on success, -1 on error
- */
-int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out);
-
-/**
- * Destroy transport and free all resources
- *
- * OWNERSHIP CONTRACT:
- *   - transport->close(ctx) MUST free ctx
- *   - This function only frees the transport struct itself
- *
- * Safe to call with NULL.
- *
- * @param transport Transport to destroy (may be NULL)
- */
-void cortex_transport_destroy(cortex_transport_t *transport);
-
-/*
- * ============================================================================
- * Production Transports (URI-accessible, fully integrated)
- * ============================================================================
- */
-
-/*
  * Mock Transport (POSIX socketpair-based)
  *
  * Used for loopback adapter (harness ↔ adapter on same machine).
  * Uses poll() for recv() timeouts.
- *
- * URI: local://
- * Status: ✅ Production-ready
- * Use: Development, testing, CI/CD
  */
 
 /*
@@ -178,21 +116,9 @@ cortex_transport_t* cortex_transport_mock_create(int fd);
 cortex_transport_t* cortex_transport_mock_create_from_fds(int read_fd, int write_fd);
 
 /*
- * ============================================================================
- * Development/Debugging Transports (implemented but not URI-accessible)
- * ============================================================================
- */
-
-/*
  * UART Transport (POSIX)
  *
  * Opens serial port with specified baud rate.
- *
- * URI: Not yet implemented (manual create only)
- * Status: ⚠️ Implemented but not wired to URI factory
- * Use: Debug console, initial hardware bring-up, low-bandwidth telemetry
- * Bandwidth: ~11 KB/s @ 115200 baud (insufficient for typical BCI data rates)
- * Note: For production BCI on STM32, use TCP over Ethernet instead
  *
  * Args:
  *   device:    Serial device path (e.g., "/dev/ttyUSB0", "/dev/cu.usbserial")
@@ -207,10 +133,6 @@ cortex_transport_t* cortex_transport_uart_posix_create(const char *device, uint3
  *
  * Connects to remote host:port with timeout.
  *
- * URI: tcp://192.168.1.100:9000
- * Status: ✅ Production-ready
- * Use: Harness connecting to remote adapter (STM32, Raspberry Pi, etc.)
- *
  * Args:
  *   host:        Hostname or IP address (e.g., "192.168.1.100", "localhost")
  *   port:        TCP port
@@ -223,51 +145,15 @@ cortex_transport_t* cortex_transport_tcp_client_create(const char *host, uint16_
 /*
  * TCP Server Transport
  *
- * Creates listening socket on specified port (INADDR_ANY).
- *
- * URI: tcp://:9000
- * Status: ✅ Production-ready
- * Use: Adapter listening for harness connection (STM32 with Ethernet, etc.)
- *
- * Two-phase setup:
- *   1. Create listening socket: cortex_transport_tcp_server_create(port)
- *   2. Accept connection: cortex_transport_tcp_server_accept(server, timeout_ms)
- *
- * Args:
- *   port: TCP port to listen on (e.g., 9000)
- *
- * Returns: Server transport (listening socket) or NULL on failure
+ * Phase 2 implementation (stub for Phase 1)
  */
-cortex_transport_t* cortex_transport_tcp_server_create(uint16_t port);
-
-/**
- * Accept client connection with timeout
- *
- * Blocks waiting for connection. Uses poll() for timeout.
- *
- * Args:
- *   server:      Server transport from cortex_transport_tcp_server_create()
- *   timeout_ms:  Accept timeout in milliseconds
- *
- * Returns: Connected client transport or NULL on timeout/error
- */
-cortex_transport_t* cortex_transport_tcp_server_accept(
-    cortex_transport_t *server,
-    uint32_t timeout_ms
-);
+cortex_transport_t* cortex_transport_tcp_server_create(int listen_fd);
 
 /*
  * Shared Memory Transport (POSIX)
  *
  * High-performance local IPC using POSIX shared memory and semaphores.
  * ~10x faster than socketpair, ~100x faster than TCP.
- *
- * URI: Not yet implemented (manual create only)
- * Status: ⚠️ Implemented but not wired to URI factory
- * Use: Performance benchmarking, overhead measurement, latency baseline
- * Bandwidth: ~2 GB/s
- * Latency: ~5µs (vs 50µs for socketpair, 1ms for TCP)
- * Note: Local-only (same machine), use for benchmarking pure kernel performance
  *
  * Two-phase setup:
  *   1. Harness creates shared memory region (calls create_harness)

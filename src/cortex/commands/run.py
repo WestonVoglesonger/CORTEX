@@ -59,10 +59,6 @@ def setup_parser(parser):
         action='store_true',
         help='Show verbose harness output'
     )
-    parser.add_argument(
-        '--transport',
-        help='Device adapter transport URI (e.g., tcp://192.168.1.100:9000, local://)'
-    )
 
 
 def execute(args):
@@ -126,12 +122,7 @@ def execute(args):
         # Create run directory structure (required by runner)
         create_run_structure(run_name)
 
-        results_dir = runner.run(
-            args.config,
-            run_name=run_name,
-            verbose=args.verbose,
-            transport_uri=args.transport
-        )
+        results_dir = runner.run(args.config, run_name=run_name, verbose=args.verbose)
         if results_dir:
             print(f"\n✓ Benchmark complete")
             print(f"Results: {results_dir}")
@@ -148,8 +139,7 @@ def execute(args):
             repeats=args.repeats,
             warmup=args.warmup,
             calibration_state=args.state,
-            verbose=args.verbose,
-            transport_uri=args.transport
+            verbose=args.verbose
         )
         return 0 if results_dir else 1
 
@@ -161,8 +151,7 @@ def execute(args):
             repeats=args.repeats,
             warmup=args.warmup,
             calibration_state=args.state,
-            verbose=args.verbose,
-            transport_uri=args.transport
+            verbose=args.verbose
         )
         return 0 if results_dir else 1
 

@@ -301,7 +301,7 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
 
             /* Set default adapter path (universal adapter model) */
             strncpy(plugin->adapter_path,
-                    "primitives/adapters/v1/native/cortex_adapter_native",
+                    "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback",
                     sizeof(plugin->adapter_path) - 1);
             plugin->adapter_path[sizeof(plugin->adapter_path) - 1] = '\0';
 
@@ -615,7 +615,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         /* Set default adapter path if not specified (universal adapter model) */
         if (out->plugins[i].adapter_path[0] == '\0') {
             strncpy(out->plugins[i].adapter_path,
-                    "primitives/adapters/v1/native/cortex_adapter_native",
+                    "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback",
                     sizeof(out->plugins[i].adapter_path) - 1);
             out->plugins[i].adapter_path[sizeof(out->plugins[i].adapter_path) - 1] = '\0';
         }

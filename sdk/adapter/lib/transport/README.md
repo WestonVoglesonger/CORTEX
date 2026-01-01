@@ -541,6 +541,6 @@ make test_adapter_smoke
 
 - **API Header:** `include/cortex_transport.h`
 - **Example Implementation:** `local/mock.c`
-- **Usage Example:** `primitives/adapters/v1/native/adapter.c`
+- **Usage Example:** `primitives/adapters/v1/native@loopback/adapter.c`
 - **Protocol Layer:** `lib/protocol/README.md`
 - **SDK Overview:** `../../README.md`

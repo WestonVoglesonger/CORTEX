@@ -19,7 +19,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
 
 ### Added
 
-- **Device Adapter Infrastructure** (Phase 1: native complete)
+- **Device Adapter Infrastructure** (Phase 1: native@loopback complete)
   - `src/engine/harness/device/device_comm.c` - Device communication layer
     - `device_comm_init()` - Spawn adapter process via fork + exec with socketpair
     - `device_comm_handshake()` - HELLO → CONFIG → ACK protocol exchange
@@ -32,7 +32,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
     - Boot IDs: Adapter restart detection
     - Chunking: 40KB windows split into 5×8KB chunks
     - Timeouts: All recv() operations have timeout_ms (prevents hangs on adapter death)
-  - `primitives/adapters/v1/native/` - Local loopback adapter (35KB binary)
+  - `primitives/adapters/v1/native@loopback/` - Local loopback adapter (35KB binary)
     - stdin/stdout transport via socketpair
     - Dynamic kernel loading (dlopen) inside adapter process
     - Full protocol implementation (handshake + window loop)
@@ -58,7 +58,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
     - `device_tend_ns` - Timestamp when kernel ended on device
     - `device_tfirst_tx_ns` - Timestamp of first result byte transmission
     - `device_tlast_tx_ns` - Timestamp of last result byte transmission
-    - `adapter_name` - Which adapter executed the kernel (e.g., "native")
+    - `adapter_name` - Which adapter executed the kernel (e.g., "native@loopback")
   - NDJSON telemetry output includes all device timing fields
   - Enables cross-platform latency comparison (x86 vs Jetson vs STM32)
 
@@ -96,7 +96,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
 
 - **Configuration Schema**
   - Kernel entries now specify:
-    - `adapter_path`: Path to adapter binary (e.g., `primitives/adapters/v1/native/cortex_adapter_native`)
+    - `adapter_path`: Path to adapter binary (e.g., `primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback`)
     - `spec_uri`: Full path to kernel primitive (e.g., `primitives/kernels/v1/noop@f32`)
   - Old `plugin_name` field deprecated (auto-converted to `spec_uri` for backward compatibility)
 
@@ -120,7 +120,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
 
 ### Testing
 
-- **End-to-End Validation**: All 6 kernels tested through native adapter
+- **End-to-End Validation**: All 6 kernels tested through native@loopback adapter
   - noop: ~1.0ms latency, 160×64 output
   - car: ~1.1ms latency, 160×64 output
   - notch_iir: ~1.0ms latency, 160×64 output

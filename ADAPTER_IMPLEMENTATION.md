@@ -1,62 +1,8 @@
 # Device Adapter Infrastructure - Implementation Tracking
 
-**Last Updated**: 2025-12-31
-**Status**: ✅ Phase 1 COMPLETE | 🟡 Phase 2 Transport COMPLETE (No Jetson Binary) | Phase 3 Transport COMPLETE (No STM32 Firmware)
+**Last Updated**: 2025-12-29
+**Status**: ✅ Phase 1 COMPLETE - Merged to main (PR #39)
 **Owner**: CORTEX Development Team
-
----
-
-## Current Status Summary (2025-12-31)
-
-### What's Complete
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| **Phase 1: Loopback** | ✅ 100% | Merged 2025-12-29, all gating criteria passed |
-| **Phase 2: TCP Transport** | 🟡 95% | Infrastructure + CLI complete, no Jetson binary |
-| **Phase 3: UART Transport** | 🟡 75% | POSIX + CLI complete, no STM32 firmware |
-| **Bonus: SHM Transport** | ✅ 100% | Not planned, fully implemented |
-| **URI Abstraction** | ✅ 100% | Not planned, universal transport system |
-| **CLI Integration** | ✅ 100% | --transport flag shipped (2025-12-31) |
-
-### Front-Loaded Work (Beyond Original Scope)
-
-We **accelerated transport infrastructure** by building a universal system supporting ALL transports:
-
-**Completed (2025-12-31)**:
-- ✅ All 5 transport types: local, TCP client, TCP server, UART, SHM
-- ✅ URI-based configuration: `local://`, `tcp://host:port`, `tcp://:9000`, `serial:///dev/ttyUSB0?baud=115200`, `shm://bench01`
-- ✅ Universal `native` adapter (runs on any transport via command-line URI)
-- ✅ Harness integration (device_comm supports all transport URIs)
-- ✅ **CLI integration (e728649)**: `cortex run --transport <URI>` flag
-- ✅ Python → C communication via `CORTEX_TRANSPORT_URI` environment variable
-- ✅ Full precedence chain: CLI flag > env var > default (`"local://"`)
-
-**What Remains**:
-- ⬜ Jetson-specific binary/deployment (cross-compile, systemd service)
-- ⬜ STM32 bare-metal firmware (HAL integration, static kernel linking)
-
-### Strategic Advantage
-
-**We can test ALL transport modes locally** with the native adapter before building platform-specific binaries:
-
-```bash
-# Test TCP server mode (2-terminal setup) - NOW WORKING
-Terminal 1: ./cortex_adapter_native tcp://:9000
-Terminal 2: cortex run --kernel noop --transport tcp://localhost:9000
-
-# Test UART mode (with USB-serial adapter) - NOW WORKING
-cortex run --kernel car --transport serial:///dev/ttyUSB0?baud=115200
-
-# Test SHM mode (high-performance benchmarking) - NOW WORKING
-Terminal 1: ./cortex_adapter_native shm://bench01
-Terminal 2: cortex run --kernel noop --transport shm://bench01
-
-# Test remote Jetson (when deployed) - NOW WORKING
-cortex run --kernel goertzel --transport tcp://192.168.1.100:9000
-```
-
-This **de-risks** Jetson/STM32 deployment - transport layer is already validated.
 
 ---
 
@@ -79,7 +25,7 @@ SDK Protocol (framing, chunking, CRC, serialization)
     ↓
 SDK Transport (mock/TCP/UART with timeouts)
     ↓
-Device Adapter (native, jetson@tcp, stm32@uart)
+Device Adapter (native@loopback, jetson@tcp, stm32@uart)
     ↓
 Kernel Execution
 ```
@@ -126,7 +72,7 @@ Day 0: Open draft PR "feat: Phase 1 - Device Adapter Loopback Foundation"
        Push commit "feat: Add transport API and mock implementation [Step 1]"
 Day 1: Push commit "feat: Add protocol frame I/O with recv_frame [Step 2]"
        Push commit "feat: Add WINDOW chunking and reassembly [Step 3]"
-Day 2: Push commit "feat: Add native adapter binary [Step 4]"
+Day 2: Push commit "feat: Add native@loopback adapter binary [Step 4]"
        Push commit "feat: Add device_comm spawning layer [Step 5]"
 Day 3: Push commit "test: Add critical adapter tests [Step 6]"
        Push commit "feat: Integrate scheduler with device_comm [Step 7]"
@@ -351,7 +297,7 @@ typedef struct __attribute__((packed)) {
 ```c
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      // Random on adapter start (detects restarts)
-    char     adapter_name[32];     // "native", "stm32-h7@uart"
+    char     adapter_name[32];     // "native@loopback", "stm32-h7@uart"
     uint8_t  adapter_abi_version;  // 1
     uint8_t  num_kernels;          // Available kernel count
     uint16_t reserved;             // Padding
@@ -564,8 +510,8 @@ Harness                          Adapter
   - Added `cortex_device_handle_t *device_handle` to plugin entry
   - Adapter path specified in YAML config
 
-#### native Adapter
-- ✅ **`primitives/adapters/v1/native/adapter.c`**
+#### native@loopback Adapter
+- ✅ **`primitives/adapters/v1/native@loopback/adapter.c`**
   - Main loop: stdin/stdout as transport
   - Send HELLO (advertises all available kernels dynamically)
   - Receive CONFIG, dlopen kernel, validate calibration state
@@ -574,8 +520,8 @@ Harness                          Adapter
   - Timestamp placement: tin AFTER reassembly, tstart/tend around process()
   - Error handling: memory cleanup, calibration state validation
 
-- ✅ **`primitives/adapters/v1/native/Makefile`**
-  - Builds `cortex_adapter_native` binary
+- ✅ **`primitives/adapters/v1/native@loopback/Makefile`**
+  - Builds `cortex_adapter_native_loopback` binary
   - Links against SDK libraries
 
 #### Telemetry Extension
@@ -794,121 +740,66 @@ Expand to all kernels:
 
 ## Phase 2: TCP Transport (Jetson Nano)
 
-**Status**: 🟡 Transport Infrastructure COMPLETE (2025-12-31) | Jetson Binary NOT STARTED
-**Blocker**: None (ready for Jetson-specific integration)
+**Status**: ⬜ Not Started (Ready to begin)
+**Blocker**: ✅ Phase 1 complete - Ready for Phase 2
 
-### **Transport Infrastructure (COMPLETE)**
+### Components Checklist
 
-This work was front-loaded beyond Phase 2 scope - created a universal transport abstraction supporting ALL transports via URI configuration.
-
-**Completed 2025-12-31:**
-- ✅ **URI Abstraction Layer** (not in original plan)
-  - `cortex_parse_adapter_uri()` - Parses all transport URIs
-  - `cortex_adapter_transport_create()` - Adapter-side factory
-  - `device_comm_init()` with `transport_config` parameter
-  - Query parameter support (timeout_ms, accept_timeout_ms, baud)
-
-- ✅ **`sdk/adapter/lib/transport/network/tcp_client.c`** (311 lines)
-  - `cortex_transport_tcp_client_create()` with connect timeout
+- ⬜ **`sdk/adapter/lib/transport/tcp_client.c`**
+  - `tcp_connect()` to host:port
   - `tcp_recv()` with poll() timeout
   - `tcp_send()` using send()
-  - Error handling for ECONNRESET, ETIMEDOUT
+  - Error handling for ECONNRESET
 
-- ✅ **`sdk/adapter/lib/transport/network/tcp_server.c`** (311 lines)
-  - `cortex_transport_tcp_server_create()` - creates listening socket
-  - `cortex_transport_tcp_server_accept()` - accepts ONE connection with timeout
-  - SO_REUSEADDR, poll()-based accept timeout
-  - Proper cleanup (close listening socket after accept)
+- ⬜ **`sdk/adapter/lib/transport/tcp_server.c`**
+  - `tcp_listen()` on port
+  - `tcp_accept()` for incoming connections
+  - Same recv/send as client
 
-- ✅ **`sdk/adapter/lib/adapter_helpers/transport_helpers.c`** (359 lines)
-  - Complete URI parser for all schemes (local, tcp, serial, shm)
-  - Adapter-side factory with validation
-  - TCP server mode: enforces empty host (tcp://:9000)
-  - TCP client mode: enforces host+port (tcp://host:9000)
+- ⬜ **`primitives/adapters/v1/jetson-nano@tcp/daemon/adapter_daemon.c`**
+  - Listen on port 8000
+  - Accept harness connection
+  - Run same protocol as loopback
+  - Use TCP transport instead of mock
 
-- ✅ **Harness integration**
-  - `device_comm.c` supports tcp://host:port URIs
-  - Creates TCP client transport, connects to remote adapter
-  - No adapter spawning for TCP (connects to existing daemon)
-
-- ✅ **Adapter integration**
-  - `native/adapter.c` accepts URI as argv[1]
-  - Supports tcp://:port server mode
-  - Can run standalone: `./cortex_adapter_native tcp://:9000`
-
-- ✅ **CLI integration (e728649 - 2025-12-31)**
-  - `cortex run --transport tcp://host:port` flag
-  - Python CLI: `src/cortex/commands/run.py` - Added --transport argument
-  - Runner: `src/cortex/utils/runner.py` - Pass via CORTEX_TRANSPORT_URI env var
-  - Harness: `src/engine/harness/app/main.c` - Read env var, pass to device_comm_init()
-  - Tested: `cortex run --kernel noop --transport local://` (backward compatible)
-
-### **Jetson-Specific Components (NOT STARTED)**
-
-- ⬜ **`primitives/adapters/v1/jetson-nano/daemon/adapter_daemon.c`**
-  - Cross-compile native adapter for aarch64
-  - Systemd service configuration
-  - Jetson-specific optimizations (CUDA kernels, TensorRT, etc.)
-
-- ⬜ **`primitives/adapters/v1/jetson-nano/Makefile`**
+- ⬜ **`primitives/adapters/v1/jetson-nano@tcp/daemon/Makefile`**
   - Cross-compile for aarch64 (or build on Jetson)
-  - Link against Jetson libraries if needed
 
-- ⬜ **Jetson deployment automation**
-  - Install script for Jetson
-  - Systemd service setup
-  - Network configuration guide
+- ⬜ **`primitives/adapters/v1/jetson-nano@tcp/config.yaml`**
+  - Transport config: host, port
+  - Jetson-specific settings
+
+- ⬜ **Harness config extension**
+  - Parse TCP host/port from adapter config YAML
 
 ### Test Checklist
 
-**Transport Layer (Verified via native adapter):**
-- ✅ **TCP implementation validated** (adapter smoke test uses socketpair, TCP code compiled clean)
-- ✅ **Build system integration** (tcp_client.o, tcp_server.o linked successfully)
-- ✅ **URI parsing tested** (all schemes parse correctly)
-- ✅ **CLI integration tested** (cortex run --transport local:// verified e728649)
-- ⬜ **TCP end-to-end test** (manual 2-terminal local loopback pending)
-- ⬜ **Connection stability** (1000+ windows over TCP)
-- ⬜ **Throughput test** (measure actual bytes/sec over network)
-- ⬜ **Network error handling** (disconnect, reconnect scenarios)
+- ⬜ **TCP loopback test** (127.0.0.1:8000)
+- ⬜ **Connection stability** (1000+ windows, no drops)
+- ⬜ **Throughput test** (measure actual bytes/sec)
+- ⬜ **Network error handling** (disconnect, reconnect)
 
-**Jetson-Specific (Pending Hardware):**
-- ⬜ **Cross-platform validation** (native adapter on Jetson via TCP)
-- ⬜ **Jetson daemon stability** (extended run testing)
+### Gating Criteria (ALL must pass)
 
-### Gating Criteria
+1. ⬜ **TCP connection stable**
+   - No drops over 1000 windows
+   - Graceful reconnect after network hiccup
 
-**Transport Infrastructure (COMPLETE):**
+2. ⬜ **Throughput adequate**
+   - 80KB/sec sustained (40KB window × 2 Hz)
+   - TCP easily handles this (much better than UART)
 
-1. ✅ **TCP transport implemented**
-   - Client and server implementations exist
-   - poll()-based timeout on recv() and accept()
-   - Error handling for ECONNRESET, ETIMEDOUT
-   - SO_REUSEADDR, proper socket cleanup
-
-2. ✅ **URI configuration working**
-   - Parses tcp://host:port and tcp://:port correctly
-   - Validates server mode (empty host) vs client mode (host required)
-   - Query parameter support for timeouts
-
-3. ✅ **CLI integration complete (e728649)**
-   - `--transport` flag added to `cortex run` command
-   - Environment variable passing (CORTEX_TRANSPORT_URI)
-   - Precedence: CLI > env var > default (local://)
-   - Backward compatible (tested with --kernel noop)
-
-**Jetson Integration (PENDING):**
-
-4. ⬜ **Jetson daemon runs stable**
+3. ⬜ **Jetson daemon runs stable**
    - No crashes over extended run
-   - No memory leaks (valgrind on Jetson)
+   - No memory leaks (check with valgrind)
    - CPU usage reasonable
 
-5. ⬜ **Timing shows realistic network latency**
+4. ⬜ **Timing shows realistic network latency**
    - Kernel time: same as loopback
    - Network RTT: 1-10ms typical LAN
    - Telemetry captures network overhead
 
-6. ⬜ **All 6 kernels execute on Jetson**
+5. ⬜ **All 6 kernels execute on Jetson**
    - Same validation as Phase 1
    - Cross-platform kernel behavior verified
 
@@ -924,40 +815,12 @@ This work was front-loaded beyond Phase 2 scope - created a universal transport 
 
 ## Phase 3: STM32 Bare-Metal (UART)
 
-**Status**: 🟡 UART Transport COMPLETE (2025-12-31) | STM32 Firmware NOT STARTED
-**Blocker**: None (ready for STM32 firmware development)
+**Status**: ⬜ Not Started (Blocked by Phase 2)
+**Blocker**: Phase 2 must complete first
 
-### **UART Transport Infrastructure (COMPLETE)**
+### Components Checklist
 
-Front-loaded UART/serial transport implementation - works on POSIX systems, ready for STM32 HAL integration.
-
-**Completed 2025-12-31:**
-- ✅ **`sdk/adapter/lib/transport/serial/uart_posix.c`** (264 lines)
-  - `cortex_transport_uart_posix_create()` with termios configuration
-  - Configurable baud rate (9600-921600)
-  - poll()-based timeout on recv()
-  - Works with /dev/ttyUSB*, /dev/cu.usbserial*, etc.
-  - Proper termios cleanup on close
-
-- ✅ **URI integration**
-  - `serial:///dev/ttyUSB0?baud=115200` URI format
-  - Default baud rate: 115200
-  - Baud rate validation (1-921600 range)
-  - Query parameter parsing for baud
-
-- ✅ **Harness + Adapter support**
-  - `device_comm.c` supports serial:// URIs
-  - `native/adapter.c` can use UART transport
-  - Can test: `./cortex_adapter_native serial:///dev/ttyUSB0`
-
-**Bandwidth Analysis:**
-- 115200 baud: ~11 KB/s (insufficient for 64ch @ 160Hz)
-- 921600 baud: ~88 KB/s (barely sufficient)
-- Recommendation: Use TCP over Ethernet for production STM32
-
-### **STM32-Specific Components (NOT STARTED)**
-
-- ⬜ **`sdk/adapter/lib/transport/serial/uart_stm32.c`**
+- ⬜ **`sdk/adapter/lib/transport/uart_stm32.c`**
   - HAL-based UART (HAL_UART_Transmit/Receive)
   - DWT cycle counter for timestamps
   - Timeout implementation using HAL_GetTick()
@@ -1080,7 +943,7 @@ sdk/adapter/
 
 primitives/adapters/v1/
 ├── README.md
-├── native/
+├── native@loopback/
 │   ├── README.md
 │   ├── config.yaml
 │   ├── adapter.c
@@ -1248,133 +1111,7 @@ src/engine/harness/device/
 
 ---
 
-## Bonus Work: Shared Memory Transport (Not in Original Plan)
-
-**Status**: ✅ COMPLETE (2025-12-31)
-**Purpose**: High-performance local IPC for benchmarking and overhead measurement
-
-### Components
-
-- ✅ **`sdk/adapter/lib/transport/local/shm.c`** (540 lines)
-  - `cortex_transport_shm_create_harness()` - Creates shared memory region
-  - `cortex_transport_shm_create_adapter()` - Connects to existing region
-  - POSIX `shm_open()` + `mmap()` for zero-copy communication
-  - Semaphore-based synchronization (sem_wait/sem_post)
-  - Ring buffer implementation for bidirectional communication
-  - Proper cleanup (shm_unlink, munmap, sem_close)
-
-- ✅ **URI integration**
-  - `shm://bench01` URI format
-  - Name-based region identification
-  - Harness creates, adapter connects (asymmetric setup)
-
-- ✅ **Use cases**
-  - Performance benchmarking (isolate kernel vs transport overhead)
-  - Latency baseline measurement (~5µs vs 50µs socketpair)
-  - Bandwidth testing (~2 GB/s vs 200 MB/s socketpair)
-
-### Performance Characteristics
-
-| Transport | Latency | Bandwidth | Use Case |
-|-----------|---------|-----------|----------|
-| SHM | ~5µs | ~2 GB/s | Local benchmarking |
-| Socketpair | ~50µs | ~200 MB/s | Local development |
-| TCP | ~1-10ms | ~100 MB/s | Remote hardware |
-| UART | ~10-100ms | ~88 KB/s | Embedded debug |
-
-**Note**: SHM is local-only (same machine). Not suitable for remote adapters.
-
----
-
 ## Change Log
-
-### 2025-12-31 (Evening) - CLI Integration Complete
-**Shipped**: Commit e728649
-
-**Feature**: `--transport` CLI flag for remote device adapter configuration
-
-**Implementation**:
-- ✅ Python CLI: Added `--transport` argument to `cortex run` command
-- ✅ Runner: Pass transport URI via `CORTEX_TRANSPORT_URI` environment variable
-- ✅ Harness: Read env var in main.c, pass to device_comm_init()
-- ✅ Whitelist: Added CORTEX_TRANSPORT_URI to allowed env vars
-
-**Precedence Chain**: CLI flag > env var > default (`"local://"`)
-
-**Files Modified**:
-- `src/cortex/commands/run.py` - Added --transport argument
-- `src/cortex/utils/runner.py` - Environment variable passing
-- `src/engine/harness/app/main.c` - Read CORTEX_TRANSPORT_URI
-
-**Usage Examples**:
-```bash
-# Local (default - unchanged)
-cortex run --kernel noop
-
-# Remote Jetson
-cortex run --kernel car --transport tcp://192.168.1.100:9000
-
-# Serial device
-cortex run --kernel noop --transport serial:///dev/ttyUSB0?baud=115200
-
-# Shared memory
-cortex run --kernel noop --transport shm://bench01
-```
-
-**Testing**:
-- ✅ Build clean: `make clean && make all`
-- ✅ All tests passing (21+ tests across 7 suites)
-- ✅ Backward compatible: `cortex run --kernel noop` works unchanged
-- ✅ Explicit local: `cortex run --kernel noop --transport local://` works
-- ✅ Help text: `cortex run --help` shows --transport flag
-
-**Impact**: Phase 2 now 95% complete (was 80%), Phase 3 now 75% complete (was 60%)
-- All transport types now accessible via CLI
-- Ready for Jetson deployment (just need to copy binaries)
-- Can test TCP/UART/SHM locally before hardware deployment
-
----
-
-### 2025-12-31 (Morning) - Transport Abstraction Complete (Front-Loaded Phases 2-3)
-**Shipped**: Commits c129b7c, d91d338, a113837
-
-**Major Achievement**: Universal transport abstraction supporting ALL planned transports
-
-**Transport Infrastructure**:
-- ✅ TCP client/server (Phase 2 scope)
-- ✅ UART/Serial POSIX (Phase 3 scope)
-- ✅ Shared Memory IPC (bonus, not planned)
-- ✅ URI-based configuration system
-- ✅ Unified adapter factory pattern
-
-**Files Added**:
-- `sdk/adapter/lib/transport/network/tcp_server.c` (311 lines)
-- `sdk/adapter/lib/adapter_helpers/transport_helpers.c` (359 lines)
-- `sdk/adapter/lib/adapter_helpers/protocol_helpers.c` (187 lines, split from adapter_helpers.c)
-
-**Architecture Evolution**:
-- Original plan: 3 separate adapters (native, jetson-nano@tcp, stm32-h7@uart)
-- **Reality**: 1 universal `native` adapter + transport URIs
-- Benefits: Simpler codebase, easier testing, flexible deployment
-
-**Native Adapter Enhanced**:
-- Renamed: `native@loopback` → `native` (simpler, architecture-agnostic)
-- HELLO message fixed: "x86@loopback" → "native"
-- README updated: Documents all 5 transport URIs with examples
-- Now supports: `local://`, `tcp://:port`, `tcp://host:port`, `serial://device`, `shm://name`
-
-**Testing**:
-- ✅ All existing tests pass (21+ tests across 7 suites)
-- ✅ Build clean (zero warnings)
-- ✅ Telemetry shows correct adapter name
-
-**Impact on Phases 2-3**:
-- Phase 2: Transport done, only need Jetson binary/deployment
-- Phase 3: Transport done, only need STM32 firmware
-
-**Strategic Position**: Can test all transport modes locally with native adapter before building platform-specific binaries.
-
----
 
 ### 2025-12-29 - Phase 1 Complete (Merged to Main)
 **Shipped**: PR #39 merged to main branch
@@ -1406,7 +1143,7 @@ cortex run --kernel noop --transport shm://bench01
 
 **Deliverables**:
 - SDK: Transport layer, protocol layer, wire format, endian helpers
-- Adapters: native reference implementation
+- Adapters: native@loopback reference implementation
 - Harness: device_comm layer, scheduler integration
 - Tests: 6 protocol tests, 2 adapter tests, all passing
 - Documentation: Wire spec, implementation guide, API reference, adapter catalog

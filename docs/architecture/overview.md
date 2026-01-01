@@ -37,7 +37,7 @@ CORTEX is a reproducible benchmarking pipeline for Brain-Computer Interface (BCI
                      │ (Wire protocol: frames, CRC, session IDs)
                      v
 ┌─────────────────────────────────────────────────────────┐
-│              Device Adapter (native)              │
+│              Device Adapter (native@loopback)              │
 │  - Protocol layer (framing, chunking, CRC)             │
 │  - Transport layer (mock/TCP/UART)                     │
 │  - Dynamic kernel loading (dlopen)                     │
@@ -185,7 +185,7 @@ The replayer owns stress-ng because it controls the **timing environment** for r
 - Timeouts: All recv() operations have timeout_ms (prevents hangs)
 
 **Supported Adapters**:
-- `native`: Local execution via socketpair (Phase 1 complete)
+- `native@loopback`: Local execution via socketpair (Phase 1 complete)
 - `jetson@tcp`: Network execution via TCP (Phase 2)
 - `stm32@uart`: Bare-metal firmware via UART (Phase 3)
 

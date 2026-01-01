@@ -157,7 +157,7 @@ typedef struct {
 - **Returns**: Number of bytes written, or <0 on error
 - **Blocking**: May block until all bytes written
 
-**See also**: `primitives/adapters/v1/native/adapter.c` for reference implementation
+**See also**: `primitives/adapters/v1/native@loopback/adapter.c` for reference implementation
 
 ---
 
@@ -379,8 +379,8 @@ gcc -o my_adapter my_adapter.c -L../../sdk/adapter -lcortex_adapter
 
 ## Platform Examples
 
-### native (stdin/stdout)
-See `primitives/adapters/v1/native/adapter.c` - production reference implementation.
+### native@loopback (stdin/stdout)
+See `primitives/adapters/v1/native@loopback/adapter.c` - production reference implementation.
 
 ### Future: Jetson@TCP
 ```c
@@ -409,14 +409,14 @@ No - it's part of the protocol spec. Changes break compatibility. File feature r
 Enable hex dumps in protocol.c or use Wireshark/tcpdump for TCP transports.
 
 **Q: Where's the kernel loading code?**
-Platform-specific - see `load_kernel_plugin()` in native adapter for dlopen() example.
+Platform-specific - see `load_kernel_plugin()` in native@loopback adapter for dlopen() example.
 
 ---
 
 ## See Also
 
 - **Wire Protocol Spec**: `ADAPTER_IMPLEMENTATION.md` (detailed protocol description)
-- **Reference Adapter**: `primitives/adapters/v1/native/adapter.c`
+- **Reference Adapter**: `primitives/adapters/v1/native@loopback/adapter.c`
 - **Kernel ABI**: `src/engine/include/cortex_plugin.h`
 - **Test Examples**: `tests/test_adapter_smoke.c`, `tests/test_adapter_all_kernels.c`
 

@@ -20,12 +20,7 @@ SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
 
 # Adapter protocol source files
 PROTOCOL_SRC = ../sdk/adapter/lib/protocol/protocol.c ../sdk/adapter/lib/protocol/crc32.c
-TRANSPORT_SRC = ../sdk/adapter/lib/transport/local/mock.c \
-                ../sdk/adapter/lib/transport/local/shm.c \
-                ../sdk/adapter/lib/transport/serial/uart_posix.c \
-                ../sdk/adapter/lib/transport/network/tcp_client.c \
-                ../sdk/adapter/lib/transport/network/tcp_server.c
-TRANSPORT_HELPERS_SRC = ../sdk/adapter/lib/adapter_helpers/transport_helpers.c
+TRANSPORT_MOCK_SRC = ../sdk/adapter/lib/transport/local/mock.c
 
 # Test binaries
 TEST_REPLAYER = test_replayer
@@ -67,12 +62,11 @@ $(TEST_SIGNAL_HANDLER): test_signal_handler.c $(SIGNAL_HANDLER_SRC)
 $(TEST_PARAM_ACCESSOR): test_param_accessor.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-TRANSPORT_MOCK_SRC = ../sdk/adapter/lib/transport/local/mock.c
 $(TEST_PROTOCOL): test_protocol.c $(PROTOCOL_SRC) $(TRANSPORT_MOCK_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ -lpthread
 
 DEVICE_COMM_SRC = ../src/engine/harness/device/device_comm.c
-$(TEST_ADAPTER_SMOKE): test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(TRANSPORT_HELPERS_SRC)
+$(TEST_ADAPTER_SMOKE): test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_MOCK_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ -lpthread
 
 test: test-replayer test-telemetry test-kernel-registry test-signal-handler test-param-accessor test-adapter-smoke test-protocol

@@ -507,6 +507,6 @@ cortex_transport_t *transport = cortex_transport_tcp_client_create(
 - **Transport Selection Guide:** [`../README.md`](../README.md)
 - **Local Transports:** [`../local/README.md`](../local/README.md)
 - **Serial Transports:** [`../serial/README.md`](../serial/README.md)
-- **Example Usage:** `primitives/adapters/v1/native/adapter.c`
+- **Example Usage:** `primitives/adapters/v1/native@loopback/adapter.c`
 - **Protocol Layer:** `../protocol/README.md`
 - **Transport API:** `../../include/cortex_transport.h`

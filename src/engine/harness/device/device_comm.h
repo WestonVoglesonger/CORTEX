@@ -71,10 +71,7 @@ typedef struct {
  * device_handle. Dimensions cannot change per-window.
  *
  * Args:
- *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/native/cortex_adapter_native")
- *                    Used only for local:// transport (spawns this binary)
- *   transport_config: Transport URI (e.g., "local://", "tcp://10.0.1.42:9000")
- *                     NULL or empty defaults to "local://"
+ *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback")
  *   plugin_name:     Kernel to load (e.g., "noop@f32")
  *   plugin_params:   Kernel parameters (e.g., "f0_hz=60.0,Q=30.0")
  *   sample_rate_hz:  Sample rate (e.g., 160)
@@ -96,7 +93,6 @@ typedef struct {
  */
 int device_comm_init(
     const char *adapter_path,
-    const char *transport_config,
     const char *plugin_name,
     const char *plugin_params,
     uint32_t sample_rate_hz,

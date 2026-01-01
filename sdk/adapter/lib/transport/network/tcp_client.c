@@ -11,9 +11,6 @@
  * - Platform-independent timestamp
  */
 
-#ifdef __APPLE__
-#define _DARWIN_C_SOURCE  /* Enable SO_NOSIGPIPE on macOS */
-#endif
 #define _POSIX_C_SOURCE 200809L
 
 #include "cortex_transport.h"
@@ -92,12 +89,7 @@ static ssize_t tcp_client_send(void *ctx, const void *buf, size_t len)
 {
     tcp_client_ctx_t *tcp = (tcp_client_ctx_t *)ctx;
 
-    /* Use MSG_NOSIGNAL on Linux to prevent SIGPIPE (macOS uses SO_NOSIGPIPE socket option) */
-#ifdef __linux__
-    ssize_t n = send(tcp->sockfd, buf, len, MSG_NOSIGNAL);
-#else
     ssize_t n = send(tcp->sockfd, buf, len, 0);
-#endif
 
     if (n < 0) {
         return (errno == EPIPE || errno == ECONNRESET) ? CORTEX_ECONNRESET : -errno;
@@ -172,19 +164,9 @@ cortex_transport_t *cortex_transport_tcp_client_create(
         return NULL;
     }
 
-    /* Configure socket for low latency and reliability */
+    /* Disable Nagle's algorithm for low latency */
     int flag = 1;
-
-    /* TCP_NODELAY: Disable Nagle's algorithm for low latency */
     setsockopt(tcp->sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-    /* SO_KEEPALIVE: Keep connection alive for long runs */
-    setsockopt(tcp->sockfd, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag));
-
-#ifdef __APPLE__
-    /* SO_NOSIGPIPE: Don't send SIGPIPE on broken connection (macOS) */
-    setsockopt(tcp->sockfd, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(flag));
-#endif
 
     /* Set socket to non-blocking for timeout connect */
     int flags = fcntl(tcp->sockfd, F_GETFL, 0);

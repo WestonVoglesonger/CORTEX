@@ -1,8 +1,8 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../include
 
-# Adapter SDK helpers
-SOURCES = protocol_helpers.c transport_helpers.c
+# Adapter helpers sources
+SOURCES = adapter_helpers.c
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(OBJECTS)

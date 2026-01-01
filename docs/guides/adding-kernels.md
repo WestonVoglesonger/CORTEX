@@ -130,7 +130,7 @@ Reference in `cortex.yaml`:
 plugins:
   - name: "your_kernel"
     spec_uri: "primitives/kernels/v1/your_kernel@f32"
-    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
+    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
     spec_version: "1.0.0"
     runtime:
       window_length_samples: 160
@@ -435,7 +435,7 @@ plugins:
   - name: "your_kernel"
     status: ready
     spec_uri: "primitives/kernels/v1/your_kernel@f32"
-    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
+    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
     spec_version: "1.0.0"
 ```
 
