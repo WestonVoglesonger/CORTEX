@@ -33,6 +33,7 @@ int main(void)
     cortex_device_init_result_t result;
     int ret = device_comm_init(
         adapter_path,
+        NULL,  /* transport_config (NULL = default "local://") */
         spec_uri,
         plugin_params,
         sample_rate_hz,

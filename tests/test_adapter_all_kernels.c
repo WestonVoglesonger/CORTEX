@@ -66,6 +66,7 @@ static int test_kernel(const char *plugin_name, const char *plugin_params)
     cortex_device_handle_t *handle = NULL;
     int ret = device_comm_init(
         ADAPTER_PATH,
+        NULL,  /* transport_config (NULL = default "local://") */
         plugin_name,
         plugin_params,
         SAMPLE_RATE_HZ,

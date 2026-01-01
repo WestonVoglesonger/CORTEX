@@ -41,6 +41,7 @@
 #define CORTEX_HANDSHAKE_TIMEOUT_MS 5000
 #define CORTEX_WINDOW_TIMEOUT_MS    10000
 #define CORTEX_CHUNK_TIMEOUT_MS     1000
+#define CORTEX_ACCEPT_TIMEOUT_MS    30000  /* TCP server accept timeout (30s for network) */
 
 /* WINDOW_CHUNK flags */
 #define CORTEX_CHUNK_FLAG_LAST (1U << 0)  /* Last chunk in sequence */

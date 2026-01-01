@@ -24,7 +24,12 @@ OBJECTS = $(SOURCES:.c=.o)
 # Adapter SDK libraries (protocol, transport, etc.)
 ADAPTER_LIBS = ../../../sdk/adapter/lib/protocol/protocol.o \
                ../../../sdk/adapter/lib/protocol/crc32.o \
-               ../../../sdk/adapter/lib/transport/local/mock.o
+               ../../../sdk/adapter/lib/transport/local/mock.o \
+               ../../../sdk/adapter/lib/transport/local/shm.o \
+               ../../../sdk/adapter/lib/transport/serial/uart_posix.o \
+               ../../../sdk/adapter/lib/transport/network/tcp_client.o \
+               ../../../sdk/adapter/lib/transport/network/tcp_server.o \
+               ../../../sdk/adapter/lib/adapter_helpers/transport_helpers.o
 
 all: cortex
 

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <signal.h>
 
 #include "config.h"
 #include "cortex_state_io.h"
@@ -82,6 +83,7 @@ static int spawn_adapter(const char *plugin_name,
     /* Pass spec_uri instead of just plugin_name so adapter knows full kernel path */
     int ret = device_comm_init(
         plugin_cfg->adapter_path,
+        NULL,  /* transport_config (NULL = default "local://") */
         plugin_cfg->spec_uri,  /* Full path: "primitives/kernels/v1/noop@f32" */
         plugin_cfg->params,
         sample_rate_hz,
@@ -365,6 +367,9 @@ int main(int argc, char **argv) {
 
     /* Install signal handlers for graceful shutdown on Ctrl+C */
     cortex_install_signal_handlers();
+
+    /* Ignore SIGPIPE (prevent crashes on broken pipe during adapter communication) */
+    signal(SIGPIPE, SIG_IGN);
 
     /* Track if we were interrupted by a signal */
     int was_interrupted = 0;

@@ -14,8 +14,13 @@ OBJS = $(SRCS:.c=.o)
 # SDK object files (not yet built as libraries)
 PROTOCOL_OBJS = ../../../../sdk/adapter/lib/protocol/protocol.o \
                 ../../../../sdk/adapter/lib/protocol/crc32.o
-TRANSPORT_OBJS = ../../../../sdk/adapter/lib/transport/local/mock.o
-ADAPTER_HELPERS_OBJS = ../../../../sdk/adapter/lib/adapter_helpers/adapter_helpers.o
+TRANSPORT_OBJS = ../../../../sdk/adapter/lib/transport/local/mock.o \
+                 ../../../../sdk/adapter/lib/transport/local/shm.o \
+                 ../../../../sdk/adapter/lib/transport/serial/uart_posix.o \
+                 ../../../../sdk/adapter/lib/transport/network/tcp_client.o \
+                 ../../../../sdk/adapter/lib/transport/network/tcp_server.o
+ADAPTER_HELPERS_OBJS = ../../../../sdk/adapter/lib/adapter_helpers/protocol_helpers.o \
+                       ../../../../sdk/adapter/lib/adapter_helpers/transport_helpers.o
 
 all: $(TARGET)
 

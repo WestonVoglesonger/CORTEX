@@ -11,6 +11,7 @@
 #include "../../../../sdk/adapter/include/cortex_protocol.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,10 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
         return -errno;
     }
+
+    /* Set FD_CLOEXEC on both ends to prevent leaking to unrelated child processes */
+    fcntl(sv[0], F_SETFD, FD_CLOEXEC);
+    fcntl(sv[1], F_SETFD, FD_CLOEXEC);
 
     /* Fork adapter process */
     pid_t pid = fork();
@@ -269,6 +274,7 @@ static int recv_ack(cortex_transport_t *transport,
  */
 int device_comm_init(
     const char *adapter_path,
+    const char *transport_config,
     const char *plugin_name,
     const char *plugin_params,
     uint32_t sample_rate_hz,
@@ -284,29 +290,122 @@ int device_comm_init(
         return -EINVAL;
     }
 
+    /* Default to local:// if no transport config specified */
+    const char *uri = (transport_config && transport_config[0]) ? transport_config : "local://";
+
+    /* Parse transport URI */
+    cortex_uri_t parsed_uri;
+    if (cortex_parse_adapter_uri(uri, &parsed_uri) != 0) {
+        fprintf(stderr, "[harness] Invalid transport URI: %s\n", uri);
+        return -EINVAL;
+    }
+
     /* Allocate device handle */
     cortex_device_handle_t *handle = (cortex_device_handle_t *)calloc(1, sizeof(*handle));
     if (!handle) {
         return -ENOMEM;
     }
 
-    /* Spawn adapter process */
-    int harness_fd;
-    int ret = spawn_adapter(adapter_path, &harness_fd, &handle->adapter_pid);
-    if (ret < 0) {
-        free(handle);
-        return ret;
-    }
+    int ret;
 
-    /* Create transport from socketpair */
-    handle->transport = cortex_transport_mock_create(harness_fd);
-    if (!handle->transport) {
-        close(harness_fd);
-        /* Kill adapter process */
-        kill(handle->adapter_pid, SIGTERM);
-        waitpid(handle->adapter_pid, NULL, 0);
+    /* Create transport based on URI scheme */
+    if (strcmp(parsed_uri.scheme, "local") == 0) {
+        /* Local transport: spawn adapter process + socketpair */
+        int harness_fd;
+        ret = spawn_adapter(adapter_path, &harness_fd, &handle->adapter_pid);
+        if (ret < 0) {
+            free(handle);
+            return ret;
+        }
+
+        /* Create transport from socketpair */
+        handle->transport = cortex_transport_mock_create(harness_fd);
+        if (!handle->transport) {
+            close(harness_fd);
+            /* Kill adapter process */
+            kill(handle->adapter_pid, SIGTERM);
+            waitpid(handle->adapter_pid, NULL, 0);
+            free(handle);
+            return -ENOMEM;
+        }
+    }
+    else if (strcmp(parsed_uri.scheme, "tcp") == 0) {
+        /* TCP transport: connect to remote adapter */
+        if (!parsed_uri.host[0] || parsed_uri.port == 0) {
+            fprintf(stderr, "[harness] TCP transport requires host and port: %s\n", uri);
+            free(handle);
+            return -EINVAL;
+        }
+
+        /* Use timeout from query param or default */
+        uint32_t timeout_ms = parsed_uri.timeout_ms ? parsed_uri.timeout_ms : 5000;
+
+        /* Create TCP client transport */
+        handle->transport = cortex_transport_tcp_client_create(
+            parsed_uri.host,
+            parsed_uri.port,
+            timeout_ms
+        );
+
+        if (!handle->transport) {
+            fprintf(stderr, "[harness] Failed to connect to TCP adapter: %s:%u\n",
+                    parsed_uri.host, parsed_uri.port);
+            free(handle);
+            return -ECONNREFUSED;
+        }
+
+        /* No adapter_pid for TCP (remote adapter not managed by harness) */
+        handle->adapter_pid = 0;
+    }
+    else if (strcmp(parsed_uri.scheme, "serial") == 0) {
+        /* Serial/UART transport: direct hardware connection */
+        if (!parsed_uri.device_path[0]) {
+            fprintf(stderr, "[harness] Serial transport requires device path: %s\n", uri);
+            free(handle);
+            return -EINVAL;
+        }
+
+        /* Create UART transport */
+        handle->transport = cortex_transport_uart_posix_create(
+            parsed_uri.device_path,
+            parsed_uri.baud_rate
+        );
+
+        if (!handle->transport) {
+            fprintf(stderr, "[harness] Failed to open serial port %s @ %u baud\n",
+                    parsed_uri.device_path, parsed_uri.baud_rate);
+            free(handle);
+            return -EIO;
+        }
+
+        /* No adapter_pid for serial (external hardware) */
+        handle->adapter_pid = 0;
+    }
+    else if (strcmp(parsed_uri.scheme, "shm") == 0) {
+        /* Shared memory transport: high-performance local IPC */
+        if (!parsed_uri.shm_name[0]) {
+            fprintf(stderr, "[harness] SHM transport requires name: %s\n", uri);
+            free(handle);
+            return -EINVAL;
+        }
+
+        /* Create SHM transport (harness is creator, adapter connects) */
+        handle->transport = cortex_transport_shm_create_harness(parsed_uri.shm_name);
+
+        if (!handle->transport) {
+            fprintf(stderr, "[harness] Failed to create SHM region '%s'\n", parsed_uri.shm_name);
+            free(handle);
+            return -ENOMEM;
+        }
+
+        /* No adapter_pid for SHM (adapter connects independently) */
+        handle->adapter_pid = 0;
+    }
+    else {
+        fprintf(stderr, "[harness] Unsupported transport scheme: %s\n", parsed_uri.scheme);
+        fprintf(stderr, "[harness] Supported: local://, tcp://host:port, serial:///dev/device, shm://name\n");
         free(handle);
-        return -ENOMEM;
+        return -EINVAL;
     }
 
     /* Receive HELLO */
@@ -468,14 +567,13 @@ void device_comm_teardown(cortex_device_handle_t *handle)
         return;
     }
 
-    /* Close transport (adapter will see EOF and exit) */
+    /* Close transport (local adapter will see EOF and exit, TCP adapter will detect close) */
     if (handle->transport) {
-        handle->transport->close(handle->transport->ctx);
-        free(handle->transport);
+        cortex_transport_destroy(handle->transport);
         handle->transport = NULL;
     }
 
-    /* Wait for adapter process (reap zombie) */
+    /* Wait for adapter process (reap zombie) - only for local adapters */
     if (handle->adapter_pid > 0) {
         int status;
         waitpid(handle->adapter_pid, &status, 0);
