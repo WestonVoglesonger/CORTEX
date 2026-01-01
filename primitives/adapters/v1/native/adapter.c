@@ -233,7 +233,7 @@ int main(int argc, char **argv)
     }
 
     /* 1. Send HELLO */
-    if (cortex_adapter_send_hello(tp, boot_id, "x86@loopback", "noop@f32", 1024, 64) < 0) {
+    if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
         cortex_transport_destroy(tp);
         return 1;

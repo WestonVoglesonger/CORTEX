@@ -1,10 +1,10 @@
 # native Adapter
 
 **Platform:** x86_64, arm64 (macOS, Linux)
-**Transport:** Mock (socketpair - stdin/stdout)
-**Purpose:** Local development, testing, and CI/CD validation
+**Transports:** Local (socketpair), TCP, UART, Shared Memory
+**Purpose:** Universal adapter supporting all transport types
 
-The native adapter enables running CORTEX kernels in a separate process on the same machine, communicating via stdin/stdout over a socketpair. This is the **primary adapter for Phase 1 development** and serves as the reference implementation for the CORTEX adapter protocol.
+The native adapter is a **universal reference implementation** that runs CORTEX kernels on the local machine and supports all transport types via URI configuration. It is the **primary adapter for Phase 1 development** and demonstrates the complete CORTEX adapter protocol across multiple connectivity scenarios.
 
 ---
 
@@ -30,6 +30,21 @@ The native adapter enables running CORTEX kernels in a separate process on the s
 
 ---
 
+## Transport Support
+
+The native adapter accepts transport configuration via **command-line URI** (first argument):
+
+| Transport | URI Example | Use Case | Status |
+|-----------|-------------|----------|--------|
+| **Local** | `local://` (default) | Harness-spawned adapter (socketpair) | ✅ Production |
+| **TCP Server** | `tcp://:9000` | Listen for remote harness connection | ✅ Production |
+| **UART** | `serial:///dev/ttyUSB0?baud=115200` | Hardware debug console | ⚠️ Implemented |
+| **Shared Memory** | `shm://bench01` | High-speed local benchmarking | ⚠️ Implemented |
+
+**Default behavior:** If no URI provided, defaults to `local://` (stdin/stdout).
+
+---
+
 ## Quick Start
 
 ### Build
@@ -41,31 +56,66 @@ make clean && make
 
 # Verify binary created
 ls -lh cortex_adapter_native
-# Should be ~35KB
+# Should be ~60KB
 ```
 
-### Manual Test (Interactive)
+### Running with Different Transports
+
+#### 1. Local (Default - Harness Spawns Adapter)
 
 ```bash
-# Run adapter (reads from stdin, writes to stdout)
-./cortex_adapter_native
+# From CORTEX root - harness spawns adapter automatically
+cortex run --kernel noop --duration 1
 
-# Adapter sends HELLO frame immediately
-# You'll see binary output (MAGIC: 0x58 0x54 0x52 0x43 "CRTX")
-
-# Send CONFIG frame (hex input):
-# ... (manual protocol testing is complex - use harness integration instead)
+# Harness spawns: ./cortex_adapter_native local://
+# (stdin/stdout connected via socketpair)
 ```
 
-### Integrated Test (Via Harness)
+#### 2. TCP Server Mode (Remote Connection)
 
 ```bash
-# From CORTEX root - run through harness
-cortex pipeline --duration 1 --repeats 1 --warmup 0
+# Terminal 1: Start adapter in TCP server mode
+./primitives/adapters/v1/native/cortex_adapter_native tcp://:9000
 
-# Check telemetry for adapter fields
-cat results/run-*/telemetry-*.csv | head -5
-# Should see: device_tin_ns, device_tstart_ns, device_tend_ns columns
+# Output:
+# Adapter: Listening on TCP port 9000 (30000 ms timeout)...
+# (blocks waiting for connection)
+
+# Terminal 2: Run harness with TCP transport (future feature)
+# cortex run --kernel noop --transport tcp://localhost:9000
+```
+
+#### 3. Shared Memory (Benchmarking)
+
+```bash
+# Terminal 1: Start adapter with SHM transport
+./primitives/adapters/v1/native/cortex_adapter_native shm://bench01
+
+# Terminal 2: Run harness with matching SHM config (future feature)
+# cortex run --kernel noop --transport shm://bench01
+```
+
+#### 4. Serial/UART (Hardware Debug)
+
+```bash
+# Requires UART adapter connected to /dev/ttyUSB0
+./primitives/adapters/v1/native/cortex_adapter_native serial:///dev/ttyUSB0?baud=115200
+
+# Note: UART bandwidth (~11-88 KB/s) insufficient for typical BCI data rates
+# Use TCP over Ethernet for production embedded deployments
+```
+
+### Automated Tests
+
+```bash
+# Run full test suite (uses local:// transport)
+make tests
+
+# Run quick smoke test
+./tests/test_adapter_smoke
+
+# Run with verbose output
+cortex run --kernel noop --verbose
 ```
 
 ---
@@ -76,15 +126,21 @@ cat results/run-*/telemetry-*.csv | head -5
 
 **On Startup:**
 ```c
-// adapter.c:202-223
-uint32_t boot_id = generate_boot_id();  // Random ID (detects adapter restarts)
+// adapter.c:225-229
+const char *config_uri = (argc > 1) ? argv[1] : "local://";
 
-// Create transport from stdin/stdout (inherited from socketpair)
-cortex_transport_t *tp = cortex_transport_mock_create_from_fds(
-    STDIN_FILENO,   // Read from stdin (sv[1] from harness socketpair)
-    STDOUT_FILENO   // Write to stdout
-);
+// Create transport from URI configuration
+cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
+// Supports: local://, tcp://:port, serial://device, shm://name
 ```
+
+**Transport Factory (`cortex_adapter_transport_create`):**
+- Parses URI scheme (local, tcp, serial, shm)
+- Creates appropriate transport implementation
+- For `local://`: returns stdin/stdout transport (socketpair from harness)
+- For `tcp://:port`: creates TCP server, accepts ONE connection, returns client socket
+- For `serial://device`: opens UART with specified baud rate
+- For `shm://name`: connects to shared memory region
 
 **Boot ID Generation:**
 - Uses `CLOCK_MONOTONIC` timestamp XOR'd with nanoseconds
