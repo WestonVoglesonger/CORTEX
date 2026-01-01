@@ -1,5 +1,5 @@
 /*
- * native@loopback adapter - Phase 1 minimal adapter
+ * native adapter - Phase 1 minimal adapter
  *
  * Runs kernels on local host (native architecture), communicating via stdin/stdout.
  * Implements handshake and window processing for loopback testing.

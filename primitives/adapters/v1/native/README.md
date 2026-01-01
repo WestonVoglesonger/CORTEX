@@ -1,10 +1,10 @@
-# native@loopback Adapter
+# native Adapter
 
 **Platform:** x86_64, arm64 (macOS, Linux)
 **Transport:** Mock (socketpair - stdin/stdout)
 **Purpose:** Local development, testing, and CI/CD validation
 
-The native@loopback adapter enables running CORTEX kernels in a separate process on the same machine, communicating via stdin/stdout over a socketpair. This is the **primary adapter for Phase 1 development** and serves as the reference implementation for the CORTEX adapter protocol.
+The native adapter enables running CORTEX kernels in a separate process on the same machine, communicating via stdin/stdout over a socketpair. This is the **primary adapter for Phase 1 development** and serves as the reference implementation for the CORTEX adapter protocol.
 
 ---
 
@@ -12,7 +12,7 @@ The native@loopback adapter enables running CORTEX kernels in a separate process
 
 ```
 ┌──────────────┐                         ┌──────────────────┐
-│   Harness    │                         │  native@loopback    │
+│   Harness    │                         │  native    │
 │  (parent)    │                         │  (child process) │
 │              │                         │                  │
 │  scheduler ──┼─── socketpair ─────────►│  stdin/stdout    │
@@ -36,11 +36,11 @@ The native@loopback adapter enables running CORTEX kernels in a separate process
 
 ```bash
 # From CORTEX root
-cd primitives/adapters/v1/native@loopback
+cd primitives/adapters/v1/native
 make clean && make
 
 # Verify binary created
-ls -lh cortex_adapter_native_loopback
+ls -lh cortex_adapter_native
 # Should be ~35KB
 ```
 
@@ -48,7 +48,7 @@ ls -lh cortex_adapter_native_loopback
 
 ```bash
 # Run adapter (reads from stdin, writes to stdout)
-./cortex_adapter_native_loopback
+./cortex_adapter_native
 
 # Adapter sends HELLO frame immediately
 # You'll see binary output (MAGIC: 0x58 0x54 0x52 0x43 "CRTX")
@@ -96,7 +96,7 @@ cortex_transport_t *tp = cortex_transport_mock_create_from_fds(
 ```
 Adapter                            Harness
   │                                   │
-  ├──────── HELLO ─────────────────►  │  (boot_id, "native@loopback", "noop@f32")
+  ├──────── HELLO ─────────────────►  │  (boot_id, "native", "noop@f32")
   │                                   │
   ◄─────── CONFIG ────────────────────┤  (session_id, kernel selection)
   │                                   │
@@ -113,7 +113,7 @@ Adapter                            Harness
 cortex_adapter_send_hello(
     &transport,
     boot_id,
-    "native@loopback",  // adapter_name
+    "native",  // adapter_name
     "noop@f32",      // Single kernel advertised (Phase 1)
     1024,            // max_window_samples
     64               // max_channels
@@ -384,7 +384,7 @@ Round-trip latency (harness-side): tout_ns - tin_ns
 
 ```bash
 # Clean everything
-cd primitives/adapters/v1/native@loopback
+cd primitives/adapters/v1/native
 make clean
 
 # Build SDK dependencies first
@@ -393,11 +393,11 @@ cd ../transport && make clean && make
 cd ../adapter_helpers && make clean && make
 
 # Build adapter
-cd ../../../../primitives/adapters/v1/native@loopback
+cd ../../../../primitives/adapters/v1/native
 make
 
 # Verify
-./cortex_adapter_native_loopback --version  # Should print usage or run
+./cortex_adapter_native --version  # Should print usage or run
 ```
 
 ### Debug Flags
@@ -410,14 +410,14 @@ CFLAGS = -Wall -Wextra -O0 -g -std=c11 -DDEBUG
 make clean && make
 
 # Run with stderr logging
-./cortex_adapter_native_loopback 2>adapter.log
+./cortex_adapter_native 2>adapter.log
 ```
 
 **Use valgrind:**
 ```bash
 # Check for memory leaks
 valgrind --leak-check=full --show-leak-kinds=all \
-    ./cortex_adapter_native_loopback < test_input.bin > test_output.bin 2>valgrind.log
+    ./cortex_adapter_native < test_input.bin > test_output.bin 2>valgrind.log
 
 # Should report: "All heap blocks were freed -- no leaks are possible"
 ```
@@ -426,11 +426,11 @@ valgrind --leak-check=full --show-leak-kinds=all \
 ```bash
 # Linux
 strace -e trace=read,write,open,close,mmap -s 1000 \
-    ./cortex_adapter_native_loopback 2>strace.log
+    ./cortex_adapter_native 2>strace.log
 
 # macOS (requires sudo)
 sudo dtruss -t read -t write -t open -t close \
-    ./cortex_adapter_native_loopback 2>dtruss.log
+    ./cortex_adapter_native 2>dtruss.log
 ```
 
 ### Common Build Errors
@@ -492,7 +492,7 @@ ls -l ../../../../sdk/adapter/lib/transport/local/mock.o
 **Debug:**
 ```bash
 # Capture stdin bytes
-./cortex_adapter_native_loopback < /dev/null 2>&1 | hexdump -C
+./cortex_adapter_native < /dev/null 2>&1 | hexdump -C
 
 # Check for MAGIC: 58 54 52 43 (little-endian "CRTX")
 # If missing, harness isn't sending valid frames
@@ -516,8 +516,8 @@ ls -l primitives/kernels/v1/car@f32/libcar.dylib
 nm -g primitives/kernels/v1/car@f32/libcar.dylib | grep cortex
 
 # Run with dlopen verbose errors
-DYLD_PRINT_LIBRARIES=1 ./cortex_adapter_native_loopback  # macOS
-LD_DEBUG=libs ./cortex_adapter_native_loopback           # Linux
+DYLD_PRINT_LIBRARIES=1 ./cortex_adapter_native  # macOS
+LD_DEBUG=libs ./cortex_adapter_native           # Linux
 ```
 
 ### Adapter Hangs in Window Loop
@@ -532,7 +532,7 @@ LD_DEBUG=libs ./cortex_adapter_native_loopback           # Linux
 **Debug:**
 ```bash
 # Attach debugger
-gdb ./cortex_adapter_native_loopback
+gdb ./cortex_adapter_native
 (gdb) attach <pid>
 (gdb) where  # Check stack trace
 
@@ -553,7 +553,7 @@ kill -ABRT <pid>
 **Debug:**
 ```bash
 # Profile with perf (Linux)
-perf record -g ./cortex_adapter_native_loopback
+perf record -g ./cortex_adapter_native
 perf report
 
 # Check CPU frequency

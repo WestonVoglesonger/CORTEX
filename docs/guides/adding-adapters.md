@@ -3,7 +3,7 @@
 **Audience:** Developers implementing new device adapters for CORTEX
 **Prerequisites:** C programming, understanding of the [adapter protocol](../reference/adapter-protocol.md)
 **Estimated Time:** 4-8 hours for basic adapter
-**Reference Implementation:** `primitives/adapters/v1/native@loopback/`
+**Reference Implementation:** `primitives/adapters/v1/native/`
 
 ---
 
@@ -26,7 +26,7 @@ Before starting, ensure you have:
 - [ ] CORTEX SDK installed (`sdk/adapter/` directory)
 - [ ] C11 compiler (GCC 7+ or Clang 10+)
 - [ ] Understanding of wire protocol (read [`docs/reference/adapter-protocol.md`](../reference/adapter-protocol.md))
-- [ ] Reference adapter built (`make -C primitives/adapters/v1/native@loopback/`)
+- [ ] Reference adapter built (`make -C primitives/adapters/v1/native/`)
 
 ---
 
@@ -627,7 +627,7 @@ After completing this tutorial, you should:
 
 1. **Read the transport layer docs:** [`sdk/adapter/lib/transport/README.md`](../../sdk/adapter/lib/transport/README.md)
 2. **Study reference implementations:**
-   - native@loopback: `primitives/adapters/v1/native@loopback/`
+   - native: `primitives/adapters/v1/native/`
    - TCP client template: `sdk/adapter/lib/transport/network/tcp_client.c`
    - UART template: `sdk/adapter/lib/transport/serial/uart_posix.c`
 3. **Contribute your adapter:** Open a PR to add your adapter to `primitives/adapters/v1/`

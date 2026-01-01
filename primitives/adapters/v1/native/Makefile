@@ -1,4 +1,4 @@
-# native@loopback adapter Makefile
+# native adapter Makefile
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
@@ -6,7 +6,7 @@ INCLUDES = -I../../../../sdk/adapter/include -I../../../../sdk/kernel/include
 LDFLAGS = -L../../../../sdk/adapter/lib/transport -L../../../../sdk/adapter/lib/protocol
 LIBS = -ldl -lpthread
 
-TARGET = cortex_adapter_native_loopback
+TARGET = cortex_adapter_native
 
 SRCS = adapter.c
 OBJS = $(SRCS:.c=.o)

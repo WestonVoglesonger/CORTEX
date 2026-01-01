@@ -645,6 +645,6 @@ Use 3.3V adapter or level shifter
 - **Transport Selection Guide:** [`../README.md`](../README.md)
 - **Local Transports:** [`../local/README.md`](../local/README.md)
 - **Network Transports:** [`../network/README.md`](../network/README.md)
-- **Example Usage:** `primitives/adapters/v1/native@loopback/adapter.c`
+- **Example Usage:** `primitives/adapters/v1/native/adapter.c`
 - **Protocol Layer:** `../protocol/README.md`
 - **Transport API:** `../../include/cortex_transport.h`

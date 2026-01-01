@@ -71,7 +71,7 @@ typedef struct {
  * device_handle. Dimensions cannot change per-window.
  *
  * Args:
- *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback")
+ *   adapter_path:    Path to adapter binary (e.g., "primitives/adapters/v1/native/cortex_adapter_native")
  *                    Used only for local:// transport (spawns this binary)
  *   transport_config: Transport URI (e.g., "local://", "tcp://10.0.1.42:9000")
  *                     NULL or empty defaults to "local://"

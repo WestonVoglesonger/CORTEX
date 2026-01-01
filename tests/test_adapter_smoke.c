@@ -1,7 +1,7 @@
 /*
  * Adapter Smoke Test
  *
- * End-to-end test: Spawn native@loopback adapter and execute one window.
+ * End-to-end test: Spawn native adapter and execute one window.
  * Validates full protocol flow works (handshake + window execution).
  */
 
@@ -18,7 +18,7 @@ int main(void)
 {
     printf("=== Adapter Smoke Test ===\n\n");
 
-    const char *adapter_path = "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback";
+    const char *adapter_path = "primitives/adapters/v1/native/cortex_adapter_native";
     const char *spec_uri = "primitives/kernels/v1/noop@f32";  /* Full path, not just "noop@f32" */
     const char *plugin_params = "";
 

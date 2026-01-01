@@ -55,14 +55,14 @@ plugins:
   - name: "notch_iir"
     status: ready
     spec_uri: "primitives/kernels/v1/notch_iir@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     params:
       f0_hz: 60.0  # Notch frequency (Hz)
       Q: 30.0      # Quality factor
   - name: "goertzel"
     status: ready
     spec_uri: "primitives/kernels/v1/goertzel@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     params:
       alpha_low: 8.0
       alpha_high: 13.0
@@ -282,7 +282,7 @@ Array of objects:
 | name | string | `car`, `notch_iir`, `bandpass_fir`, `goertzel`, … |
 | status | enum | `draft` \| `ready` |
 | spec_uri | string\|null | Path to kernel spec (e.g., `primitives/kernels/v1/car@f32`) |
-| adapter_path | string | **REQUIRED**: Path to device adapter binary (e.g., `primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback`) |
+| adapter_path | string | **REQUIRED**: Path to device adapter binary (e.g., `primitives/adapters/v1/native/cortex_adapter_native`) |
 | spec_version | string\|null | Kernel spec version (e.g., `1.0.0`) |
 
 **plugins[i].runtime**
