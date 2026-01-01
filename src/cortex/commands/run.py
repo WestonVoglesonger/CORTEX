@@ -130,7 +130,7 @@ def execute(args):
             args.config,
             run_name=run_name,
             verbose=args.verbose,
-            transport_uri=args.transport if hasattr(args, 'transport') else None
+            transport_uri=args.transport
         )
         if results_dir:
             print(f"\n✓ Benchmark complete")
@@ -149,7 +149,7 @@ def execute(args):
             warmup=args.warmup,
             calibration_state=args.state,
             verbose=args.verbose,
-            transport_uri=args.transport if hasattr(args, 'transport') else None
+            transport_uri=args.transport
         )
         return 0 if results_dir else 1
 
@@ -162,7 +162,7 @@ def execute(args):
             warmup=args.warmup,
             calibration_state=args.state,
             verbose=args.verbose,
-            transport_uri=args.transport if hasattr(args, 'transport') else None
+            transport_uri=args.transport
         )
         return 0 if results_dir else 1
 

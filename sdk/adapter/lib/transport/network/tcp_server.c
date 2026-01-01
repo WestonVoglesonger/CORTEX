@@ -9,9 +9,13 @@
  * - Accept with timeout using poll()
  * - TCP_NODELAY for low latency
  * - SO_KEEPALIVE for long-running connections
+ * - SO_NOSIGPIPE (macOS) for SIGPIPE protection
  * - Graceful teardown
  */
 
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE  /* Enable SO_NOSIGPIPE on macOS */
+#endif
 #define _POSIX_C_SOURCE 200809L
 
 #include "cortex_transport.h"
@@ -283,6 +287,11 @@ cortex_transport_t *cortex_transport_tcp_server_accept(
 
     /* SO_KEEPALIVE: Keep connection alive for long runs */
     setsockopt(client_fd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
+
+#ifdef __APPLE__
+    /* SO_NOSIGPIPE: Don't send SIGPIPE on broken connection (macOS) */
+    setsockopt(client_fd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#endif
 
     /* Allocate connected client context */
     tcp_connected_ctx_t *conn = (tcp_connected_ctx_t *)malloc(sizeof(tcp_connected_ctx_t));
