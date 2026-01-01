@@ -7,7 +7,7 @@
  * - Transport lifecycle management (destroy)
  */
 
-#include "cortex_adapter_transport.h"
+#include "cortex_transport.h"
 #include "cortex_wire.h"
 #include <stdio.h>
 #include <stdlib.h>
