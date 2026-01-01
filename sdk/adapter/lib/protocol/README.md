@@ -161,7 +161,7 @@ if (computed_crc != wire_crc) {
 ```c
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      /* Random on adapter start (detects restart) */
-    char     adapter_name[32];     /* "native@loopback", "stm32-h7@uart" */
+    char     adapter_name[32];     /* "native", "stm32-h7@uart" */
     uint8_t  adapter_abi_version;  /* Must be 1 for Phase 1 */
     uint8_t  num_kernels;          /* How many kernels follow */
     uint16_t reserved;             /* Padding (0) */
@@ -177,7 +177,7 @@ typedef struct __attribute__((packed)) {
 ```
 HELLO frame with 2 kernels:
   adapter_boot_id:     0x12345678
-  adapter_name:        "native@loopback"
+  adapter_name:        "native"
   adapter_abi_version: 1
   num_kernels:         2
   max_window_samples:  512
@@ -477,7 +477,7 @@ Sends a single frame with header, payload, and CRC.
 uint8_t payload[48 + 64];  /* cortex_wire_hello_t + 2 kernels */
 
 cortex_write_u32_le(payload + 0, 0x12345678);  /* boot_id */
-strncpy((char *)(payload + 4), "native@loopback", 32);
+strncpy((char *)(payload + 4), "native", 32);
 payload[36] = 1;  /* abi_version */
 payload[37] = 2;  /* num_kernels */
 cortex_write_u16_le(payload + 38, 0);  /* reserved */
@@ -1070,5 +1070,5 @@ Total overhead: 180 bytes (0.44% - negligible)
 - **Wire Format Spec:** `../../include/cortex_wire.h`
 - **Endian Helpers:** `../../include/cortex_endian.h`
 - **CRC32 Implementation:** `crc32.c` / `crc32.h`
-- **Example Usage:** `../../../primitives/adapters/v1/native@loopback/adapter.c`
+- **Example Usage:** `../../../primitives/adapters/v1/native/adapter.c`
 - **SDK Overview:** `../../README.md`

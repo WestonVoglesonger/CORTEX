@@ -41,6 +41,7 @@
 #define CORTEX_HANDSHAKE_TIMEOUT_MS 5000
 #define CORTEX_WINDOW_TIMEOUT_MS    10000
 #define CORTEX_CHUNK_TIMEOUT_MS     1000
+#define CORTEX_ACCEPT_TIMEOUT_MS    30000  /* TCP server accept timeout (30s for network) */
 
 /* WINDOW_CHUNK flags */
 #define CORTEX_CHUNK_FLAG_LAST (1U << 0)  /* Last chunk in sequence */
@@ -84,7 +85,7 @@ typedef struct __attribute__((packed)) {
  */
 typedef struct __attribute__((packed)) {
     uint32_t adapter_boot_id;      /* Random on adapter start */
-    char     adapter_name[32];     /* "native@loopback", "stm32-h7@uart" */
+    char     adapter_name[32];     /* "native", "stm32-h7@uart" */
     uint8_t  adapter_abi_version;  /* 1 */
     uint8_t  num_kernels;          /* Available kernel count */
     uint16_t reserved;             /* Padding */

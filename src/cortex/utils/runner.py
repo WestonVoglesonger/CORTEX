@@ -33,7 +33,7 @@ HARNESS_LOG_FILE = 'harness.log'
 # Environment variable whitelist (defense-in-depth for subprocess isolation)
 ALLOWED_ENV_VARS = {
     'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM',
-    'PYTHONUNBUFFERED', 'CORTEX_OUTPUT_DIR', 'CORTEX_NO_INHIBIT'
+    'PYTHONUNBUFFERED', 'CORTEX_OUTPUT_DIR', 'CORTEX_NO_INHIBIT', 'CORTEX_TRANSPORT_URI'
 }
 ALLOWED_ENV_PREFIXES = ['CORTEX_']
 
@@ -102,13 +102,14 @@ class HarnessRunner:
             # Don't fail if cleanup fails - just log it
             self.log.warning(f"Could not clean up partial run directory {run_dir}: {e}")
 
-    def run(self, config_path: str, run_name: str, verbose: bool = False, env: Optional[dict] = None) -> Optional[str]:
+    def run(self, config_path: str, run_name: str, verbose: bool = False, transport_uri: Optional[str] = None, env: Optional[dict] = None) -> Optional[str]:
         """Run the CORTEX harness with a given config.
 
         Args:
             config_path: Path to configuration file
             run_name: Name of the run for organizing results
             verbose: Show all output including stress-ng and telemetry
+            transport_uri: Optional device adapter transport URI (e.g., tcp://192.168.1.100:9000)
             env: Optional environment variable overrides (merged with base environment)
 
         Returns:
@@ -185,6 +186,10 @@ class HarnessRunner:
         # This overrides config's output.directory so kernel-data goes to the right place
         run_dir = get_run_directory(run_name)
         base_env['CORTEX_OUTPUT_DIR'] = str(run_dir)
+
+        # Pass transport URI if specified
+        if transport_uri:
+            base_env['CORTEX_TRANSPORT_URI'] = transport_uri
 
         # Use base_env for all subsequent operations
         env = base_env
@@ -280,7 +285,8 @@ class HarnessRunner:
         repeats: Optional[int] = None,
         warmup: Optional[int] = None,
         calibration_state: Optional[str] = None,
-        verbose: bool = False
+        verbose: bool = False,
+        transport_uri: Optional[str] = None
     ) -> Optional[str]:
         """Run benchmark for a single kernel using temp YAML generation.
 
@@ -314,7 +320,7 @@ class HarnessRunner:
 
         try:
             # Run harness with temp config
-            results_dir = self.run(temp_config, run_name, verbose=verbose, env=None)
+            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=None)
 
             if results_dir:
                 self.log.info(f"✓ Benchmark complete: {results_dir}")
@@ -337,7 +343,8 @@ class HarnessRunner:
         repeats: Optional[int] = None,
         warmup: Optional[int] = None,
         calibration_state: Optional[str] = None,
-        verbose: bool = False
+        verbose: bool = False,
+        transport_uri: Optional[str] = None
     ) -> Optional[str]:
         """Run benchmarks for all available kernels in a single harness invocation.
 
@@ -388,7 +395,7 @@ class HarnessRunner:
 
         try:
             # Single harness invocation with temp config
-            results_dir = self.run(temp_config, run_name, verbose=verbose, env=None)
+            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=None)
 
             if results_dir:
                 self.log.info("")

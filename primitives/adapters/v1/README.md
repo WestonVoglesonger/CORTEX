@@ -30,13 +30,13 @@ Kernel Execution (x86, Jetson, STM32, etc.)
 
 | Adapter | Platform | Transport | Status | Use Case |
 |---------|----------|-----------|--------|----------|
-| **[native@loopback](native@loopback/)** | x86_64, arm64 (macOS/Linux) | Mock (socketpair) | ✅ Complete | Local development, CI/CD, reference implementation |
+| **[native](native/)** | x86_64, arm64 (macOS/Linux) | Mock (socketpair) | ✅ Complete | Local development, CI/CD, reference implementation |
 | **jetson-nano@tcp** | Jetson Nano (aarch64) | TCP Client | ⬜ Planned (Phase 2) | Remote GPU-accelerated processing |
 | **stm32-h7@uart** | STM32H7 (Cortex-M7) | UART | ⬜ Planned (Phase 3) | Bare-metal embedded validation |
 
 ---
 
-## native@loopback
+## native
 
 **Platform:** x86_64, arm64 (macOS, Linux)
 **Transport:** Mock (socketpair - stdin/stdout)
@@ -51,7 +51,7 @@ Primary adapter for **local development and testing**. Runs kernels in a separat
 ```
 Harness (parent process)
     ↓ fork() + exec()
-native@loopback Adapter (child process)
+native Adapter (child process)
     ↓ dlopen()
 Kernel Plugin (.dylib/.so)
 ```
@@ -76,7 +76,7 @@ Kernel Plugin (.dylib/.so)
 
 ```bash
 # Build
-cd primitives/adapters/v1/native@loopback
+cd primitives/adapters/v1/native
 make
 
 # Run via harness
@@ -89,7 +89,7 @@ cat results/run-*/telemetry-*.csv | head -5
 
 ### Documentation
 
-**Complete guide:** [native@loopback/README.md](native@loopback/README.md)
+**Complete guide:** [native/README.md](native/README.md)
 
 ---
 
@@ -207,7 +207,7 @@ Kernel Code (compiled into firmware)
 ### Decision Tree
 
 **Question 1: Is the kernel on the same machine as the harness?**
-- **Yes** → Use **native@loopback**
+- **Yes** → Use **native**
 - **No** → Go to Question 2
 
 **Question 2: Does the device have a network interface?**
@@ -216,15 +216,15 @@ Kernel Code (compiled into firmware)
 
 **Question 3: Do you need GPU acceleration?**
 - **Yes** → Use **jetson-nano@tcp** (CUDA support)
-- **No** → Use **native@loopback** or **stm32-h7@uart**
+- **No** → Use **native** or **stm32-h7@uart**
 
 **Question 4: Are you benchmarking transport overhead?**
-- **Yes** → Use **native@loopback** (minimal overhead, isolates kernel time)
+- **Yes** → Use **native** (minimal overhead, isolates kernel time)
 - **No** → Any adapter is fine
 
 ### Comparison Table
 
-| Feature | native@loopback | jetson-nano@tcp | stm32-h7@uart |
+| Feature | native | jetson-nano@tcp | stm32-h7@uart |
 |---------|--------------|-----------------|---------------|
 | **Latency** | ~350µs | ~10ms | ~20ms |
 | **Throughput** | 500 MB/s | 100 MB/s | 90 KB/s |
@@ -342,7 +342,7 @@ All adapters populate these device-side timing fields in telemetry:
 | `device_tend_ns` | uint64 | Kernel end timestamp |
 | `device_tfirst_tx_ns` | uint64 | First result byte transmitted |
 | `device_tlast_tx_ns` | uint64 | Last result byte transmitted |
-| `adapter_name` | string | Adapter identifier (e.g., "native@loopback") |
+| `adapter_name` | string | Adapter identifier (e.g., "native") |
 
 **Timing semantics:**
 - **tin:** Set AFTER last WINDOW_CHUNK received and decoded
@@ -369,7 +369,7 @@ Round-trip (harness): tout_ns - tin_ns
 ```
 primitives/adapters/v1/
 ├── README.md (this file)
-├── native@loopback/
+├── native/
 │   ├── README.md
 │   ├── adapter.c
 │   └── Makefile
@@ -396,7 +396,7 @@ primitives/adapters/v1/
 .PHONY: adapters
 
 adapters:
-	$(MAKE) -C primitives/adapters/v1/native@loopback
+	$(MAKE) -C primitives/adapters/v1/native
 	# Future: jetson-nano@tcp, stm32-h7@uart
 
 all: harness adapters
@@ -409,7 +409,7 @@ all: harness adapters
 plugins:
   - name: "car@f32"
     path: "primitives/kernels/v1/car@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     adapter_config: ""  # Empty for loopback
 ```
 
@@ -427,7 +427,7 @@ plugins:
 
 ### What's the overhead of the adapter layer?
 
-**native@loopback:** ~50µs per window (7% overhead for typical kernels)
+**native:** ~50µs per window (7% overhead for typical kernels)
 **jetson-nano@tcp:** ~5-10ms (mostly network latency)
 **stm32-h7@uart:** ~10-20ms (UART serialization time)
 
@@ -450,7 +450,7 @@ plugins:
 
 ### Can adapters support multiple kernels?
 
-**Yes.** HELLO frame advertises multiple kernels, CONFIG selects one. Phase 1 `native@loopback` advertises only `noop@f32`, but Phase 1.1 will advertise all 6 kernels.
+**Yes.** HELLO frame advertises multiple kernels, CONFIG selects one. Phase 1 `native` advertises only `noop@f32`, but Phase 1.1 will advertise all 6 kernels.
 
 ### What if my platform doesn't fit these categories?
 

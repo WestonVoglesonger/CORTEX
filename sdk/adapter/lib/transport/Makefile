@@ -1,5 +1,5 @@
 # Transport layer - builds all transport implementations
-# Subdirectories: local/, network/, serial/, embedded/
+# Subdirectories: local/, network/, serial/
 
 SUBDIRS = local network serial
 
