@@ -25,7 +25,8 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
 
     /* Default to local if NULL or empty */
     if (!uri || uri[0] == '\0') {
-        strcpy(out->scheme, "local");
+        memcpy(out->scheme, "local", 5);
+        out->scheme[5] = '\0';
         out->host[0] = '\0';
         out->port = 0;
         out->timeout_ms = 0;
@@ -81,13 +82,18 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
         if (query) {
             const char *baud_param = strstr(query, "baud=");
             if (baud_param) {
-                int baud = atoi(baud_param + 5);  /* Skip "baud=" */
-                if (baud > 0 && baud <= 921600) {
-                    out->baud_rate = (uint32_t)baud;
-                } else {
-                    fprintf(stderr, "Invalid baud rate: %d (must be 1-921600)\n", baud);
+                char *endptr;
+                unsigned long baud = strtoul(baud_param + 5, &endptr, 10);
+                /* Validate: must have parsed something, stopped at valid delimiter, and in range */
+                if (endptr == baud_param + 5 || (*endptr != '\0' && *endptr != '&')) {
+                    fprintf(stderr, "Invalid baud rate format in URI\n");
                     return -1;
                 }
+                if (baud == 0 || baud > 921600) {
+                    fprintf(stderr, "Invalid baud rate: %lu (must be 1-921600)\n", baud);
+                    return -1;
+                }
+                out->baud_rate = (uint32_t)baud;
             }
         }
 
@@ -182,7 +188,8 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
             return -1;
         }
 
-        strcpy(out->shm_name, rest);
+        strncpy(out->shm_name, rest, sizeof(out->shm_name) - 1);
+        out->shm_name[sizeof(out->shm_name) - 1] = '\0';
 
         /* Clear unused fields */
         out->host[0] = '\0';

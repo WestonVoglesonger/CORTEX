@@ -3,6 +3,7 @@
 CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
 """
 import sys
+import argparse
 from cortex.utils.runner import HarnessRunner
 from cortex.utils.paths import generate_run_name, create_run_structure
 from cortex.core import (
@@ -14,6 +15,38 @@ from cortex.core import (
     SystemToolLocator,
     YamlConfigLoader,
 )
+
+
+def validate_transport_uri(uri):
+    """Validate transport URI format.
+
+    Args:
+        uri: Transport URI string (e.g., tcp://192.168.1.100:9000)
+
+    Returns:
+        Validated URI string
+
+    Raises:
+        argparse.ArgumentTypeError: If URI format is invalid
+    """
+    if not uri:
+        return uri
+
+    valid_schemes = ['local://', 'tcp://', 'serial://', 'shm://']
+
+    # Check if URI starts with a valid scheme
+    if not any(uri.startswith(scheme) for scheme in valid_schemes):
+        raise argparse.ArgumentTypeError(
+            f"Invalid transport URI: {uri}\n"
+            f"Must start with one of: {', '.join(valid_schemes)}\n"
+            f"Examples:\n"
+            f"  local://                           (default, spawn local adapter)\n"
+            f"  tcp://192.168.1.100:9000          (connect to remote adapter)\n"
+            f"  serial:///dev/ttyUSB0?baud=115200 (UART connection)\n"
+            f"  shm://bench01                      (shared memory)"
+        )
+
+    return uri
 
 
 def setup_parser(parser):
@@ -61,6 +94,7 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--transport',
+        type=validate_transport_uri,
         help='Device adapter transport URI (e.g., tcp://192.168.1.100:9000, local://)'
     )
 

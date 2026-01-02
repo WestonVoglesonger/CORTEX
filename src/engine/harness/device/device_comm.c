@@ -45,14 +45,20 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
 {
     int sv[2];  /* socketpair */
 
-    /* Create bidirectional socketpair */
+    /* Create bidirectional socketpair with CLOEXEC atomically set */
+#ifdef SOCK_CLOEXEC
+    /* Linux/modern POSIX: Use SOCK_CLOEXEC to avoid race between socketpair and fork */
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
+        return -errno;
+    }
+#else
+    /* macOS/older systems: Fall back to post-creation fcntl */
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
         return -errno;
     }
-
-    /* Set FD_CLOEXEC on both ends to prevent leaking to unrelated child processes */
     fcntl(sv[0], F_SETFD, FD_CLOEXEC);
     fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+#endif
 
     /* Fork adapter process */
     pid_t pid = fork();

@@ -225,6 +225,12 @@ int main(int argc, char **argv)
     /* Parse transport config from argv[1] (defaults to "local://") */
     const char *config_uri = (argc > 1) ? argv[1] : "local://";
 
+    /* Validate URI length to prevent malformed input from crashing */
+    if (config_uri && strlen(config_uri) > 512) {
+        fprintf(stderr, "Transport URI too long (max 512 chars): %zu\n", strlen(config_uri));
+        return 1;
+    }
+
     /* Create transport from URI configuration */
     cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
     if (!tp) {
