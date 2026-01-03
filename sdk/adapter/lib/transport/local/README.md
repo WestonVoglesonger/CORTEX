@@ -521,6 +521,6 @@ Measured on **MacBook Pro M1 (arm64)**:
 ## See Also
 
 - **Transport Selection Guide:** [`../README.md`](../README.md)
-- **Example Usage:** `primitives/adapters/v1/native@loopback/adapter.c`
+- **Example Usage:** `primitives/adapters/v1/native/adapter.c`
 - **Protocol Layer:** `../protocol/README.md`
 - **Transport API:** `../../include/cortex_transport.h`

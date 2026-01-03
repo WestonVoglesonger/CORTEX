@@ -30,7 +30,7 @@ typedef struct cortex_plugin_entry_cfg {
     /* Kernel-specific parameters (optional) */
     char params[1024];                 /* JSON-like string for kernel params */
     char calibration_state[512];       /* Path to .cortex_state file (v3 trainable kernels) */
-    char adapter_path[256];            /* Path to adapter binary (defaults to native@loopback) */
+    char adapter_path[256];            /* Path to adapter binary (defaults to native) */
 } cortex_plugin_entry_cfg_t;
 
 typedef struct cortex_dataset_cfg {

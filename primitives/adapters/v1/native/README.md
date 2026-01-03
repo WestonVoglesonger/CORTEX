@@ -1,10 +1,10 @@
-# native@loopback Adapter
+# native Adapter
 
 **Platform:** x86_64, arm64 (macOS, Linux)
-**Transport:** Mock (socketpair - stdin/stdout)
-**Purpose:** Local development, testing, and CI/CD validation
+**Transports:** Local (socketpair), TCP, UART, Shared Memory
+**Purpose:** Universal adapter supporting all transport types
 
-The native@loopback adapter enables running CORTEX kernels in a separate process on the same machine, communicating via stdin/stdout over a socketpair. This is the **primary adapter for Phase 1 development** and serves as the reference implementation for the CORTEX adapter protocol.
+The native adapter is a **universal reference implementation** that runs CORTEX kernels on the local machine and supports all transport types via URI configuration. It is the **primary adapter for Phase 1 development** and demonstrates the complete CORTEX adapter protocol across multiple connectivity scenarios.
 
 ---
 
@@ -12,7 +12,7 @@ The native@loopback adapter enables running CORTEX kernels in a separate process
 
 ```
 ┌──────────────┐                         ┌──────────────────┐
-│   Harness    │                         │  native@loopback    │
+│   Harness    │                         │  native    │
 │  (parent)    │                         │  (child process) │
 │              │                         │                  │
 │  scheduler ──┼─── socketpair ─────────►│  stdin/stdout    │
@@ -30,42 +30,92 @@ The native@loopback adapter enables running CORTEX kernels in a separate process
 
 ---
 
+## Transport Support
+
+The native adapter accepts transport configuration via **command-line URI** (first argument):
+
+| Transport | URI Example | Use Case | Status |
+|-----------|-------------|----------|--------|
+| **Local** | `local://` (default) | Harness-spawned adapter (socketpair) | ✅ Production |
+| **TCP Server** | `tcp://:9000` | Listen for remote harness connection | ✅ Production |
+| **UART** | `serial:///dev/ttyUSB0?baud=115200` | Hardware debug console | ⚠️ Implemented |
+| **Shared Memory** | `shm://bench01` | High-speed local benchmarking | ⚠️ Implemented |
+
+**Default behavior:** If no URI provided, defaults to `local://` (stdin/stdout).
+
+---
+
 ## Quick Start
 
 ### Build
 
 ```bash
 # From CORTEX root
-cd primitives/adapters/v1/native@loopback
+cd primitives/adapters/v1/native
 make clean && make
 
 # Verify binary created
-ls -lh cortex_adapter_native_loopback
-# Should be ~35KB
+ls -lh cortex_adapter_native
+# Should be ~60KB
 ```
 
-### Manual Test (Interactive)
+### Running with Different Transports
+
+#### 1. Local (Default - Harness Spawns Adapter)
 
 ```bash
-# Run adapter (reads from stdin, writes to stdout)
-./cortex_adapter_native_loopback
+# From CORTEX root - harness spawns adapter automatically
+cortex run --kernel noop --duration 1
 
-# Adapter sends HELLO frame immediately
-# You'll see binary output (MAGIC: 0x58 0x54 0x52 0x43 "CRTX")
-
-# Send CONFIG frame (hex input):
-# ... (manual protocol testing is complex - use harness integration instead)
+# Harness spawns: ./cortex_adapter_native local://
+# (stdin/stdout connected via socketpair)
 ```
 
-### Integrated Test (Via Harness)
+#### 2. TCP Server Mode (Remote Connection)
 
 ```bash
-# From CORTEX root - run through harness
-cortex pipeline --duration 1 --repeats 1 --warmup 0
+# Terminal 1: Start adapter in TCP server mode
+./primitives/adapters/v1/native/cortex_adapter_native tcp://:9000
 
-# Check telemetry for adapter fields
-cat results/run-*/telemetry-*.csv | head -5
-# Should see: device_tin_ns, device_tstart_ns, device_tend_ns columns
+# Output:
+# Adapter: Listening on TCP port 9000 (30000 ms timeout)...
+# (blocks waiting for connection)
+
+# Terminal 2: Run harness with TCP transport (future feature)
+# cortex run --kernel noop --transport tcp://localhost:9000
+```
+
+#### 3. Shared Memory (Benchmarking)
+
+```bash
+# Terminal 1: Start adapter with SHM transport
+./primitives/adapters/v1/native/cortex_adapter_native shm://bench01
+
+# Terminal 2: Run harness with matching SHM config (future feature)
+# cortex run --kernel noop --transport shm://bench01
+```
+
+#### 4. Serial/UART (Hardware Debug)
+
+```bash
+# Requires UART adapter connected to /dev/ttyUSB0
+./primitives/adapters/v1/native/cortex_adapter_native serial:///dev/ttyUSB0?baud=115200
+
+# Note: UART bandwidth (~11-88 KB/s) insufficient for typical BCI data rates
+# Use TCP over Ethernet for production embedded deployments
+```
+
+### Automated Tests
+
+```bash
+# Run full test suite (uses local:// transport)
+make tests
+
+# Run quick smoke test
+./tests/test_adapter_smoke
+
+# Run with verbose output
+cortex run --kernel noop --verbose
 ```
 
 ---
@@ -76,15 +126,21 @@ cat results/run-*/telemetry-*.csv | head -5
 
 **On Startup:**
 ```c
-// adapter.c:202-223
-uint32_t boot_id = generate_boot_id();  // Random ID (detects adapter restarts)
+// adapter.c:225-229
+const char *config_uri = (argc > 1) ? argv[1] : "local://";
 
-// Create transport from stdin/stdout (inherited from socketpair)
-cortex_transport_t *tp = cortex_transport_mock_create_from_fds(
-    STDIN_FILENO,   // Read from stdin (sv[1] from harness socketpair)
-    STDOUT_FILENO   // Write to stdout
-);
+// Create transport from URI configuration
+cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
+// Supports: local://, tcp://:port, serial://device, shm://name
 ```
+
+**Transport Factory (`cortex_adapter_transport_create`):**
+- Parses URI scheme (local, tcp, serial, shm)
+- Creates appropriate transport implementation
+- For `local://`: returns stdin/stdout transport (socketpair from harness)
+- For `tcp://:port`: creates TCP server, accepts ONE connection, returns client socket
+- For `serial://device`: opens UART with specified baud rate
+- For `shm://name`: connects to shared memory region
 
 **Boot ID Generation:**
 - Uses `CLOCK_MONOTONIC` timestamp XOR'd with nanoseconds
@@ -96,7 +152,7 @@ cortex_transport_t *tp = cortex_transport_mock_create_from_fds(
 ```
 Adapter                            Harness
   │                                   │
-  ├──────── HELLO ─────────────────►  │  (boot_id, "native@loopback", "noop@f32")
+  ├──────── HELLO ─────────────────►  │  (boot_id, "native", "noop@f32")
   │                                   │
   ◄─────── CONFIG ────────────────────┤  (session_id, kernel selection)
   │                                   │
@@ -113,7 +169,7 @@ Adapter                            Harness
 cortex_adapter_send_hello(
     &transport,
     boot_id,
-    "native@loopback",  // adapter_name
+    "native",  // adapter_name
     "noop@f32",      // Single kernel advertised (Phase 1)
     1024,            // max_window_samples
     64               // max_channels
@@ -384,7 +440,7 @@ Round-trip latency (harness-side): tout_ns - tin_ns
 
 ```bash
 # Clean everything
-cd primitives/adapters/v1/native@loopback
+cd primitives/adapters/v1/native
 make clean
 
 # Build SDK dependencies first
@@ -393,11 +449,11 @@ cd ../transport && make clean && make
 cd ../adapter_helpers && make clean && make
 
 # Build adapter
-cd ../../../../primitives/adapters/v1/native@loopback
+cd ../../../../primitives/adapters/v1/native
 make
 
 # Verify
-./cortex_adapter_native_loopback --version  # Should print usage or run
+./cortex_adapter_native --version  # Should print usage or run
 ```
 
 ### Debug Flags
@@ -410,14 +466,14 @@ CFLAGS = -Wall -Wextra -O0 -g -std=c11 -DDEBUG
 make clean && make
 
 # Run with stderr logging
-./cortex_adapter_native_loopback 2>adapter.log
+./cortex_adapter_native 2>adapter.log
 ```
 
 **Use valgrind:**
 ```bash
 # Check for memory leaks
 valgrind --leak-check=full --show-leak-kinds=all \
-    ./cortex_adapter_native_loopback < test_input.bin > test_output.bin 2>valgrind.log
+    ./cortex_adapter_native < test_input.bin > test_output.bin 2>valgrind.log
 
 # Should report: "All heap blocks were freed -- no leaks are possible"
 ```
@@ -426,11 +482,11 @@ valgrind --leak-check=full --show-leak-kinds=all \
 ```bash
 # Linux
 strace -e trace=read,write,open,close,mmap -s 1000 \
-    ./cortex_adapter_native_loopback 2>strace.log
+    ./cortex_adapter_native 2>strace.log
 
 # macOS (requires sudo)
 sudo dtruss -t read -t write -t open -t close \
-    ./cortex_adapter_native_loopback 2>dtruss.log
+    ./cortex_adapter_native 2>dtruss.log
 ```
 
 ### Common Build Errors
@@ -492,7 +548,7 @@ ls -l ../../../../sdk/adapter/lib/transport/local/mock.o
 **Debug:**
 ```bash
 # Capture stdin bytes
-./cortex_adapter_native_loopback < /dev/null 2>&1 | hexdump -C
+./cortex_adapter_native < /dev/null 2>&1 | hexdump -C
 
 # Check for MAGIC: 58 54 52 43 (little-endian "CRTX")
 # If missing, harness isn't sending valid frames
@@ -516,8 +572,8 @@ ls -l primitives/kernels/v1/car@f32/libcar.dylib
 nm -g primitives/kernels/v1/car@f32/libcar.dylib | grep cortex
 
 # Run with dlopen verbose errors
-DYLD_PRINT_LIBRARIES=1 ./cortex_adapter_native_loopback  # macOS
-LD_DEBUG=libs ./cortex_adapter_native_loopback           # Linux
+DYLD_PRINT_LIBRARIES=1 ./cortex_adapter_native  # macOS
+LD_DEBUG=libs ./cortex_adapter_native           # Linux
 ```
 
 ### Adapter Hangs in Window Loop
@@ -532,7 +588,7 @@ LD_DEBUG=libs ./cortex_adapter_native_loopback           # Linux
 **Debug:**
 ```bash
 # Attach debugger
-gdb ./cortex_adapter_native_loopback
+gdb ./cortex_adapter_native
 (gdb) attach <pid>
 (gdb) where  # Check stack trace
 
@@ -553,7 +609,7 @@ kill -ABRT <pid>
 **Debug:**
 ```bash
 # Profile with perf (Linux)
-perf record -g ./cortex_adapter_native_loopback
+perf record -g ./cortex_adapter_native
 perf report
 
 # Check CPU frequency

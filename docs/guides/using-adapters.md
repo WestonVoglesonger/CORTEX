@@ -14,11 +14,11 @@ Device adapters enable CORTEX to execute BCI kernels on different hardware platf
 
 | Adapter | Platform | Transport | Use Case |
 |---------|----------|-----------|----------|
-| **native@loopback** | Local x86/ARM | Socketpair | Default, testing, development |
+| **native** | Local x86/ARM | Socketpair | Default, testing, development |
 | **jetson@tcp** | Jetson Nano | TCP network | Remote GPU execution (Phase 2) |
 | **stm32@uart** | STM32H7 | Serial UART | Bare-metal embedded (Phase 3) |
 
-**Current Status:** Only `native@loopback` is available in v0.4.0. Network and embedded adapters coming in future releases.
+**Current Status:** Only `native` is available in v0.4.0. Network and embedded adapters coming in future releases.
 
 ---
 
@@ -32,15 +32,15 @@ Adapters are built automatically with `make all`:
 make all
 # Output includes:
 # Building device adapters...
-#   Building native@loopback adapter...
-# ✓ cortex_adapter_native_loopback (35KB)
+#   Building native adapter...
+# ✓ cortex_adapter_native (35KB)
 ```
 
 ### 2. Verify Adapter Binary
 
 ```bash
-ls -lh primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback
-# -rwxr-xr-x 1 user staff 35K Dec 29 12:51 cortex_adapter_native_loopback
+ls -lh primitives/adapters/v1/native/cortex_adapter_native
+# -rwxr-xr-x 1 user staff 35K Dec 29 12:51 cortex_adapter_native
 ```
 
 ### 3. Run Benchmarks
@@ -75,7 +75,7 @@ dataset:
 
 In auto-detect mode:
 - All kernels in `primitives/kernels/v*/` are discovered
-- Default adapter `native@loopback` is used automatically
+- Default adapter `native` is used automatically
 - Kernels run sequentially in alphabetical order
 
 ### Explicit Config (Specifying Adapter)
@@ -93,12 +93,12 @@ plugins:
   - name: "noop"
     status: ready
     spec_uri: "primitives/kernels/v1/noop@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
 
   - name: "car"
     status: ready
     spec_uri: "primitives/kernels/v1/car@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
 ```
 
 **Required fields:**
@@ -109,7 +109,7 @@ plugins:
 
 ## Running with Different Adapters
 
-### Local Execution (native@loopback)
+### Local Execution (native)
 
 Default adapter for local benchmarking:
 
@@ -117,7 +117,7 @@ Default adapter for local benchmarking:
 plugins:
   - name: "bandpass_fir"
     spec_uri: "primitives/kernels/v1/bandpass_fir@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
 ```
 
 **Characteristics:**
@@ -178,14 +178,14 @@ Some kernels accept runtime parameters:
 plugins:
   - name: "notch_iir"
     spec_uri: "primitives/kernels/v1/notch_iir@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     params:
       f0_hz: 60.0     # Notch frequency (Hz)
       Q: 30.0         # Quality factor
 
   - name: "goertzel"
     spec_uri: "primitives/kernels/v1/goertzel@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     params:
       alpha_low: 8.0
       alpha_high: 13.0
@@ -212,7 +212,7 @@ cortex calibrate \
 plugins:
   - name: "ica"
     spec_uri: "primitives/kernels/v1/ica@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     calibration_state: "ica_S001.cortex_state"
 ```
 
@@ -233,7 +233,7 @@ Device adapters report detailed timing information in telemetry:
   "start_ts_ns": 54101856358000,
   "end_ts_ns": 54101868461000,
 
-  "adapter_name": "native@loopback",
+  "adapter_name": "native",
   "device_tin_ns": 54101864289000,
   "device_tstart_ns": 54101864290000,
   "device_tend_ns": 54101864338000,
@@ -312,13 +312,13 @@ CORTEX_OUTPUT_DIR=/tmp/my_results cortex run primitives/configs/cortex.yaml
 **Solution:**
 ```bash
 # Rebuild adapters
-make -C primitives/adapters/v1/native@loopback/
+make -C primitives/adapters/v1/native/
 
 # Verify binary exists
-ls primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback
+ls primitives/adapters/v1/native/cortex_adapter_native
 
 # Check permissions
-chmod +x primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback
+chmod +x primitives/adapters/v1/native/cortex_adapter_native
 ```
 
 ### "Kernel library not found"
@@ -370,7 +370,7 @@ pkill cortex_adapter
 grep adapter_name results/run-*/kernel-data/*/telemetry.ndjson
 ```
 
-**Expected latencies (native@loopback):**
+**Expected latencies (native):**
 - noop: ~1-10 µs
 - car: ~20-100 µs
 - notch_iir: ~50-200 µs
@@ -501,7 +501,7 @@ dataset:
 5. **Don't modify adapter binaries manually**
    Always rebuild with `make`:
    ```bash
-   make -C primitives/adapters/v1/native@loopback/ clean all
+   make -C primitives/adapters/v1/native/ clean all
    ```
 
 ---
@@ -563,7 +563,7 @@ dataset:
 plugins:
   - name: "ica"
     spec_uri: "primitives/kernels/v1/ica@f32"
-    adapter_path: "primitives/adapters/v1/native@loopback/cortex_adapter_native_loopback"
+    adapter_path: "primitives/adapters/v1/native/cortex_adapter_native"
     calibration_state: "ica_S001.cortex_state"
 EOF
 
@@ -603,10 +603,10 @@ plugins:
 A: No. Starting with v0.4.0, ALL execution routes through adapters. This ensures consistent telemetry and enables future HIL testing.
 
 **Q: Which adapter should I use?**
-A: Use `native@loopback` for local benchmarking (current default). Future releases will add network and embedded adapters.
+A: Use `native` for local benchmarking (current default). Future releases will add network and embedded adapters.
 
 **Q: Do adapters affect benchmark results?**
-A: Yes, but minimally. native@loopback adds ~1-2µs overhead (measured in `experiments/noop-overhead-2025-12-05/`). Device timing fields let you factor out adapter overhead.
+A: Yes, but minimally. native adds ~1-2µs overhead (measured in `experiments/noop-overhead-2025-12-05/`). Device timing fields let you factor out adapter overhead.
 
 **Q: Can I run multiple kernels simultaneously?**
 A: No. CORTEX enforces sequential execution for measurement isolation. Running kernels in parallel would cause CPU contention and invalidate results.
