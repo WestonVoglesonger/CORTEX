@@ -46,6 +46,11 @@ typedef struct cortex_system_info {
     uint64_t total_ram_mb;   /* Total system RAM in MB */
     uint32_t cpu_count;      /* Number of CPU cores */
     float thermal_celsius;   /* Current thermal reading (-1.0 if unavailable) */
+
+    /* Device system info (where kernel executes - may differ from harness) */
+    char device_hostname[64]; /* Device hostname (from HELLO frame) */
+    char device_cpu[128];     /* Device CPU model (from HELLO frame) */
+    char device_os[64];       /* Device OS (from HELLO frame) */
 } cortex_system_info_t;
 
 /* Collect system information for telemetry metadata */

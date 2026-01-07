@@ -154,4 +154,19 @@ int cortex_adapter_send_result(
     uint32_t output_channels
 );
 
+/*
+ * System Information Helpers
+ *
+ * These functions gather device metadata for telemetry.
+ */
+
+/* Get device hostname (e.g., "jetson-nano", "macbook-air") */
+void cortex_get_device_hostname(char *out_hostname);  /* Buffer must be [32] bytes */
+
+/* Get device CPU description (e.g., "Apple M1", "ARM Cortex-A57") */
+void cortex_get_device_cpu(char *out_cpu);  /* Buffer must be [32] bytes */
+
+/* Get device OS description (e.g., "Darwin 23.2.0", "Linux 5.10.0") */
+void cortex_get_device_os(char *out_os);  /* Buffer must be [32] bytes */
+
 #endif /* CORTEX_ADAPTER_HELPERS_H */

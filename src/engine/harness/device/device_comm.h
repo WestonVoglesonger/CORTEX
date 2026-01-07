@@ -35,6 +35,9 @@ typedef struct cortex_device_init_result {
     uint32_t output_window_length_samples; /* Output W from ACK (0 = use config) */
     uint32_t output_channels;              /* Output C from ACK (0 = use config) */
     char adapter_name[32];                 /* Adapter name from HELLO frame */
+    char device_hostname[32];              /* Device hostname (from HELLO) */
+    char device_cpu[32];                   /* Device CPU (from HELLO) */
+    char device_os[32];                    /* Device OS (from HELLO) */
 } cortex_device_init_result_t;
 
 /*

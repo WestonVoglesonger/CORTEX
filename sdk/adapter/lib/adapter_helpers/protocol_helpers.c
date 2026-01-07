@@ -29,6 +29,21 @@ int cortex_adapter_send_hello(
     cortex_write_u32_le(payload + 40, max_window_samples);
     cortex_write_u32_le(payload + 44, max_channels);
 
+    /* Device system info (bytes 48-143) */
+    char device_hostname[32];
+    char device_cpu[32];
+    char device_os[32];
+    cortex_get_device_hostname(device_hostname);
+    cortex_get_device_cpu(device_cpu);
+    cortex_get_device_os(device_os);
+
+    memset(payload + 48, 0, 32);  /* device_hostname[32] */
+    snprintf((char *)(payload + 48), 32, "%s", device_hostname);
+    memset(payload + 80, 0, 32);  /* device_cpu[32] */
+    snprintf((char *)(payload + 80), 32, "%s", device_cpu);
+    memset(payload + 112, 0, 32);  /* device_os[32] */
+    snprintf((char *)(payload + 112), 32, "%s", device_os);
+
     /* Kernel name */
     memset(payload + sizeof(cortex_wire_hello_t), 0, 32);
     snprintf((char *)(payload + sizeof(cortex_wire_hello_t)), 32, "%s", kernel_name);

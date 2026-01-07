@@ -20,7 +20,8 @@ TRANSPORT_OBJS = ../../../../sdk/adapter/lib/transport/local/mock.o \
                  ../../../../sdk/adapter/lib/transport/network/tcp_client.o \
                  ../../../../sdk/adapter/lib/transport/network/tcp_server.o
 ADAPTER_HELPERS_OBJS = ../../../../sdk/adapter/lib/adapter_helpers/protocol_helpers.o \
-                       ../../../../sdk/adapter/lib/adapter_helpers/transport_helpers.o
+                       ../../../../sdk/adapter/lib/adapter_helpers/transport_helpers.o \
+                       ../../../../sdk/adapter/lib/adapter_helpers/system_info.o
 
 all: $(TARGET)
 

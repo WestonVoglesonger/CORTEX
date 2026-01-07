@@ -91,6 +91,9 @@ typedef struct __attribute__((packed)) {
     uint16_t reserved;             /* Padding */
     uint32_t max_window_samples;   /* Memory constraint */
     uint32_t max_channels;         /* Hardware limit */
+    char     device_hostname[32];  /* Device hostname (uname -n) */
+    char     device_cpu[32];       /* Device CPU (e.g., "Apple M1", "ARM Cortex-A57") */
+    char     device_os[32];        /* Device OS (uname -s -r, e.g., "Darwin 23.2.0") */
 } cortex_wire_hello_t;
 
 /*

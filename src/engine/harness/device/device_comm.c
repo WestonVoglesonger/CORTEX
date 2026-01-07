@@ -29,6 +29,9 @@ struct cortex_device_handle {
     uint32_t session_id;         /* Current session ID */
     uint32_t adapter_boot_id;    /* Adapter boot ID (from HELLO) */
     char adapter_name[32];       /* Adapter name (from HELLO) */
+    char device_hostname[32];    /* Device hostname (from HELLO) */
+    char device_cpu[32];         /* Device CPU (from HELLO) */
+    char device_os[32];          /* Device OS (from HELLO) */
 };
 
 /*
@@ -131,7 +134,10 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
 static int recv_hello(
     cortex_transport_t *transport,
     uint32_t *out_boot_id,
-    char *out_adapter_name
+    char *out_adapter_name,
+    char *out_device_hostname,
+    char *out_device_cpu,
+    char *out_device_os
 )
 {
     uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
@@ -163,6 +169,14 @@ static int recv_hello(
     *out_boot_id = cortex_read_u32_le(frame_buf + 0);
     memcpy(out_adapter_name, frame_buf + 4, 32);
     out_adapter_name[31] = '\0';  /* Ensure null termination */
+
+    /* Extract device system info (bytes 48-143) */
+    memcpy(out_device_hostname, frame_buf + 48, 32);
+    out_device_hostname[31] = '\0';
+    memcpy(out_device_cpu, frame_buf + 80, 32);
+    out_device_cpu[31] = '\0';
+    memcpy(out_device_os, frame_buf + 112, 32);
+    out_device_os[31] = '\0';
 
     /* TODO: Validate adapter_abi_version, num_kernels, etc. */
 
@@ -415,7 +429,8 @@ int device_comm_init(
     }
 
     /* Receive HELLO */
-    ret = recv_hello(handle->transport, &handle->adapter_boot_id, handle->adapter_name);
+    ret = recv_hello(handle->transport, &handle->adapter_boot_id, handle->adapter_name,
+                     handle->device_hostname, handle->device_cpu, handle->device_os);
     if (ret < 0) {
         device_comm_teardown(handle);
         return ret;
@@ -458,6 +473,12 @@ int device_comm_init(
     out_result->output_channels = output_channels;                     /* 0 = use config */
     strncpy(out_result->adapter_name, handle->adapter_name, sizeof(out_result->adapter_name) - 1);
     out_result->adapter_name[sizeof(out_result->adapter_name) - 1] = '\0';
+    strncpy(out_result->device_hostname, handle->device_hostname, sizeof(out_result->device_hostname) - 1);
+    out_result->device_hostname[sizeof(out_result->device_hostname) - 1] = '\0';
+    strncpy(out_result->device_cpu, handle->device_cpu, sizeof(out_result->device_cpu) - 1);
+    out_result->device_cpu[sizeof(out_result->device_cpu) - 1] = '\0';
+    strncpy(out_result->device_os, handle->device_os, sizeof(out_result->device_os) - 1);
+    out_result->device_os[sizeof(out_result->device_os) - 1] = '\0';
 
     return 0;
 }

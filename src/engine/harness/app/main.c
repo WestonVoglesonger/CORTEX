@@ -295,6 +295,14 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
             memset(&sysinfo, 0, sizeof(sysinfo));
         }
 
+        /* Add device system info from HELLO frame */
+        strncpy(sysinfo.device_hostname, device_result.device_hostname, sizeof(sysinfo.device_hostname) - 1);
+        sysinfo.device_hostname[sizeof(sysinfo.device_hostname) - 1] = '\0';
+        strncpy(sysinfo.device_cpu, device_result.device_cpu, sizeof(sysinfo.device_cpu) - 1);
+        sysinfo.device_cpu[sizeof(sysinfo.device_cpu) - 1] = '\0';
+        strncpy(sysinfo.device_os, device_result.device_os, sizeof(sysinfo.device_os) - 1);
+        sysinfo.device_os[sizeof(sysinfo.device_os) - 1] = '\0';
+
         const char *format = ctx->run_cfg.output.format;
         const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
 

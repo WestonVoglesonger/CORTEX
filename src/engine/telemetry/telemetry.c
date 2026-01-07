@@ -230,9 +230,13 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
     /* Write system info as first NDJSON line (metadata) */
     if (sysinfo) {
         char os_esc[128], cpu_esc[256], hostname_esc[128];
+        char device_os_esc[128], device_cpu_esc[256], device_hostname_esc[128];
         json_escape_string(os_esc, sizeof(os_esc), sysinfo->os);
         json_escape_string(cpu_esc, sizeof(cpu_esc), sysinfo->cpu_model);
         json_escape_string(hostname_esc, sizeof(hostname_esc), sysinfo->hostname);
+        json_escape_string(device_os_esc, sizeof(device_os_esc), sysinfo->device_os);
+        json_escape_string(device_cpu_esc, sizeof(device_cpu_esc), sysinfo->device_cpu);
+        json_escape_string(device_hostname_esc, sizeof(device_hostname_esc), sysinfo->device_hostname);
 
         fprintf(f, "{\"_type\":\"system_info\","
                    "\"os\":\"%s\","
@@ -245,10 +249,16 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
                 (unsigned long long)sysinfo->total_ram_mb);
 
         if (sysinfo->thermal_celsius >= 0.0f) {
-            fprintf(f, ",\"thermal_celsius\":%.1f}\n", sysinfo->thermal_celsius);
+            fprintf(f, ",\"thermal_celsius\":%.1f", sysinfo->thermal_celsius);
         } else {
-            fprintf(f, ",\"thermal_celsius\":null}\n");
+            fprintf(f, ",\"thermal_celsius\":null");
         }
+
+        /* Add device system info */
+        fprintf(f, ",\"device_hostname\":\"%s\","
+                   "\"device_cpu\":\"%s\","
+                   "\"device_os\":\"%s\"}\n",
+                device_hostname_esc, device_cpu_esc, device_os_esc);
     }
 
     char run_id_esc[128], plugin_esc[256], adapter_name_esc[64];
@@ -328,9 +338,13 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
     /* Write system info as first NDJSON line (metadata) */
     if (sysinfo) {
         char os_esc[128], cpu_esc[256], hostname_esc[128];
+        char device_os_esc[128], device_cpu_esc[256], device_hostname_esc[128];
         json_escape_string(os_esc, sizeof(os_esc), sysinfo->os);
         json_escape_string(cpu_esc, sizeof(cpu_esc), sysinfo->cpu_model);
         json_escape_string(hostname_esc, sizeof(hostname_esc), sysinfo->hostname);
+        json_escape_string(device_os_esc, sizeof(device_os_esc), sysinfo->device_os);
+        json_escape_string(device_cpu_esc, sizeof(device_cpu_esc), sysinfo->device_cpu);
+        json_escape_string(device_hostname_esc, sizeof(device_hostname_esc), sysinfo->device_hostname);
 
         fprintf(f, "{\"_type\":\"system_info\","
                    "\"os\":\"%s\","
@@ -343,10 +357,16 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
                 (unsigned long long)sysinfo->total_ram_mb);
 
         if (sysinfo->thermal_celsius >= 0.0f) {
-            fprintf(f, ",\"thermal_celsius\":%.1f}\n", sysinfo->thermal_celsius);
+            fprintf(f, ",\"thermal_celsius\":%.1f", sysinfo->thermal_celsius);
         } else {
-            fprintf(f, ",\"thermal_celsius\":null}\n");
+            fprintf(f, ",\"thermal_celsius\":null");
         }
+
+        /* Add device system info */
+        fprintf(f, ",\"device_hostname\":\"%s\","
+                   "\"device_cpu\":\"%s\","
+                   "\"device_os\":\"%s\"}\n",
+                device_hostname_esc, device_cpu_esc, device_os_esc);
     }
 
     char run_id_esc[128], plugin_esc[256], adapter_name_esc[64];
