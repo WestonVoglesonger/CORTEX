@@ -359,6 +359,11 @@ cortex run --device ubuntu@ec2-54-123-45-67.compute.amazonaws.com --kernel car
 - ❌ Requires cross-compilation toolchain setup
 - ❌ Flashing slower than network deployment
 
+**Key differences from SSH:**
+- `DeploymentResult.adapter_pid` will be `None` (firmware always listening, no process)
+- `cleanup()` means "close serial port + optionally reset device" (no files to remove)
+- Firmware is persistent across reboots (unlike ephemeral SSH deployment)
+
 #### DockerDeployer (Future: Containers)
 
 **Target devices:** Docker-enabled hosts
@@ -386,6 +391,8 @@ cortex run --device ubuntu@ec2-54-123-45-67.compute.amazonaws.com --kernel car
 - ❌ Requires state tracking (breaks ephemeral principle)
 
 **Why Protocol Matters:** Adding JTAGDeployer or DockerDeployer requires **0 changes** to CLI or orchestration code. Just implement the `Deployer` interface and add detection logic to `DeployerFactory`.
+
+**Design Constraint:** Protocol is designed for SSH → STM32 transition (Spring 2026). Don't over-engineer for speculative use cases (FPGA, cloud functions, etc.) until requirements are concrete. The interface may evolve when building JTAGDeployer—that's expected and healthy.
 
 ---
 
@@ -546,8 +553,13 @@ class DeploymentResult:
     """Result of successful deployment."""
     success: bool
     transport_uri: str           # e.g., "tcp://192.168.1.123:9000"
-    adapter_pid: Optional[int]   # Remote PID (None if not applicable)
+    adapter_pid: Optional[int]   # Remote PID (None for embedded/always-on adapters)
     metadata: dict[str, any]     # Platform info, build time, etc.
+
+    # Note: adapter_pid=None is a first-class case for:
+    #   - Embedded devices (STM32 firmware always listening)
+    #   - Persistent adapters (daemon already running)
+    #   - Hardware accelerators (FPGA, no process concept)
 
 @dataclass
 class CleanupResult:
@@ -610,12 +622,17 @@ class Deployer(Protocol):
             CleanupResult indicating success/failure
 
         Postconditions:
-            - Adapter process stopped
-            - All deployment files removed
-            - Device returned to pre-deployment state
+            - Device no longer responding to protocol messages (if applicable)
+            - Resources released (files, processes, ports, etc.)
+            - Device in clean state for next deployment
 
         Note:
             Must not raise exceptions (errors go in CleanupResult.errors)
+
+            What "cleanup" means is deployer-specific:
+                - SSH: kill process, rm files
+                - Serial: close port, optionally reset device
+                - Docker: stop container, remove image (optional)
         """
         ...
 ```
