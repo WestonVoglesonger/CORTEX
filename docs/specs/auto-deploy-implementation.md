@@ -38,17 +38,22 @@ Enable remote benchmarking on external devices with automatic deployment. User p
 ### 1.2 User Experience
 
 ```bash
-# Remote device (auto-deploy)
+# Remote device (auto-deploy via SSH)
 cortex run --device nvidia@192.168.1.123 --kernel car
+
+# Manual connection (adapter already running)
+cortex run --device tcp://192.168.1.123:9000 --kernel car
 
 # Local (default)
 cortex run --kernel car
-
-# Manual transport (power user)
-cortex run --transport tcp://192.168.1.123:9000 --kernel car
 ```
 
-**That's it. Three modes, zero configuration.**
+**That's it. One flag, format determines behavior, zero configuration.**
+
+**How it works:** The `--device` flag accepts multiple formats:
+- **Auto-deploy formats** (system handles setup): `user@host`, `stm32:port` (future)
+- **Manual formats** (adapter already running): `tcp://host:port`, `serial:///dev/device`, `shm://name`
+- Format determines whether deployment happens or system just connects
 
 ### 1.3 What Changed from v2.0 → v3.0
 
@@ -65,29 +70,33 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 **KEPT:**
 - ✅ SSH-based deployment (rsync + remote build)
 - ✅ Ephemeral execution (deploy → run → cleanup)
-- ✅ `--device` flag for remote execution
-- ✅ `--transport` flag for manual adapter management
+- ✅ `--device` flag for device specification
 
 ### 1.3.1 What Changed from v3.0 → v3.1
 
 **ADDED (Protocol-based architecture):**
 - ✅ `Deployer` Protocol interface for extensibility
-- ✅ `DeployerFactory` for device string parsing
+- ✅ `DeployerFactory` for unified device string parsing
 - ✅ Type-safe `DeploymentResult` and `CleanupResult` dataclasses
 - ✅ Explicit separation: deployment strategy vs transport layer
+- ✅ **Unified `--device` flag** (replaces separate `--device` + `--transport`)
 
 **WHY:** Multiple device types planned (SSH: Jetson/RPi, Serial: STM32 in Spring 2026). Protocol enables adding new deployers without modifying CLI or orchestration code. Cost: +125 LOC (+42%). Benefit: 10× extensibility.
 
+**Unified flag rationale:** Format self-documents intent (`user@host` = auto-deploy, `tcp://host:port` = manual connection). Simpler mental model, one concept instead of two, cleaner CLI.
+
 **Implementation impact:**
 - Functions → Classes (SSHDeployer implements Deployer protocol)
-- Add `base.py` (protocol definition), `factory.py` (device parsing)
-- Same CLI interface, same user experience
+- Add `base.py` (protocol definition), `factory.py` (device parsing + manual routing)
+- Simpler CLI: one flag instead of two
 - +0.5 days timeline (protocol abstraction overhead)
 
 ### 1.4 Core Principles
 
-**1. User Provides Connection String**
-- Standard SSH format: `user@host`
+**1. Format Determines Behavior**
+- Auto-deploy formats: `user@host` (SSH), `stm32:port` (JTAG, future)
+- Manual formats: `tcp://host:port`, `serial:///dev/device`, `shm://name`
+- User doesn't choose "mode"—format implies intent
 - Works with IPs: `nvidia@192.168.1.123`
 - Works with hostnames: `nvidia@jetson.local`
 - Works with DNS: `ubuntu@server.example.com`
@@ -164,58 +173,59 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 ### 3.1 Component Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                 cortex run / cortex pipeline                  │
-│                              │                                │
-│                              ▼                                │
-│                     parse_device_arg()                        │
-│                              │                                │
-│          ┌───────────────────┼──────────────────┐            │
-│          ▼                   ▼                  ▼            │
-│     --device           --transport         (default)         │
-│     user@host           tcp://uri           local            │
-│          │                   │                  │            │
-│          ▼                   │                  │            │
-│  ┌───────────────────┐       │                  │            │
-│  │ DeployerFactory   │       │                  │            │
-│  │ .from_device(str) │       │                  │            │
-│  └────────┬──────────┘       │                  │            │
-│           │                  │                  │            │
-│           ▼                  │                  │            │
-│  ┌───────────────────┐       │                  ▼            │
-│  │ Deployer Protocol │       │        spawn_local_adapter()  │
-│  │  - deploy()       │       │                               │
-│  │  - cleanup()      │       │                               │
-│  └────────┬──────────┘       │                               │
-│           │                  │                               │
-│           ▼                  │                               │
-│  ┌───────────────────┐       │                               │
-│  │ SSHDeployer       │       │                               │
-│  │  - rsync          │       │                               │
-│  │  - remote build   │       │                               │
-│  │  - start adapter  │       │                               │
-│  │  - wait for port  │───────┘                               │
-│  └────────┬──────────┘       │                               │
-│           │                  │                               │
-│           │ DeploymentResult │                               │
-│           │ (transport_uri)  │                               │
-│           └──────────────────┼───────────────┐               │
-│                              ▼                               │
-│                     execute_benchmark()                      │
-│                    (via transport_uri)                       │
-│                              │                               │
-│          ┌───────────────────┴──────────────┐                │
-│          ▼                                  ▼                │
-│     --device mode                      other modes           │
-│     deployer.cleanup()                 (no cleanup)          │
-│     (stop adapter, rm files)                                 │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                  cortex run / cortex pipeline                     │
+│                               │                                   │
+│                               ▼                                   │
+│                      --device <string>                            │
+│                               │                                   │
+│                               ▼                                   │
+│                    DeployerFactory.parse()                        │
+│         (format detection: @, tcp://, stm32:, etc.)               │
+│                               │                                   │
+│          ┌────────────────────┼────────────────────┐              │
+│          ▼                    ▼                    ▼              │
+│    Auto-Deploy          Manual Connect       (default)           │
+│    user@host            tcp://host:port       local://           │
+│    stm32:port                                                     │
+│          │                    │                    │              │
+│          ▼                    │                    │              │
+│  ┌───────────────────┐        │                    │              │
+│  │ Deployer Protocol │        │                    │              │
+│  │  - deploy()       │        │                    │              │
+│  │  - cleanup()      │        │                    │              │
+│  └────────┬──────────┘        │                    │              │
+│           │                   │                    │              │
+│           ▼                   │                    │              │
+│  ┌───────────────────┐        │                    │              │
+│  │ SSHDeployer       │        │                    │              │
+│  │  - rsync          │        │                    ▼              │
+│  │  - remote build   │        │          spawn_local_adapter()   │
+│  │  - start adapter  │        │                                   │
+│  │  - wait for port  │        │                                   │
+│  └────────┬──────────┘        │                                   │
+│           │                   │                                   │
+│           │ DeploymentResult  │                                   │
+│           │ (transport_uri)   │                                   │
+│           └───────────────────┼───────────────────┐               │
+│                               ▼                                   │
+│                      execute_benchmark()                          │
+│                     (via transport_uri)                           │
+│                               │                                   │
+│            ┌──────────────────┴────────────────┐                  │
+│            ▼                                   ▼                  │
+│      Auto-deploy mode                    Manual/local            │
+│      deployer.cleanup()                  (no cleanup)            │
+│      (stop adapter, rm files)                                    │
+└──────────────────────────────────────────────────────────────────┘
 
-Future extensibility:
-  DeployerFactory detects device type:
-    user@host     → SSHDeployer (implemented)
-    stm32:serial  → JTAGDeployer (future)
-    docker:image  → DockerDeployer (future)
+Format-based routing (DeployerFactory):
+  user@host          → SSHDeployer (auto-deploy)
+  stm32:serial       → JTAGDeployer (auto-deploy, future)
+  tcp://host:port    → Manual connection (adapter already running)
+  serial:///dev/tty  → Manual connection (adapter already running)
+  shm://name         → Manual connection (adapter already running)
+  local://           → Local adapter (default)
 ```
 
 ### 3.2 Execution Flow: `cortex run --device nvidia@192.168.1.123 --kernel car`
@@ -223,12 +233,17 @@ Future extensibility:
 ```
 1. Parse arguments
    ├─ --device nvidia@192.168.1.123
-   ├─ Parse device string → user=nvidia, host=192.168.1.123
+   ├─ --kernel car
 
-2. Create deployer (via factory)
-   ├─ DeployerFactory.from_device_string("nvidia@192.168.1.123")
-   │  ├─ Detect format: user@host → SSH deployment
+2. Route based on format (via factory)
+   ├─ DeployerFactory.parse("nvidia@192.168.1.123")
+   │  ├─ Detect format: contains '@' → SSH auto-deploy
    │  └─ Returns: SSHDeployer(user="nvidia", host="192.168.1.123")
+   │
+   │  # If format was tcp://192.168.1.123:9000 instead:
+   │  #   Detect format: starts with tcp:// → Manual connection
+   │  #   Returns: ManualTransport(uri="tcp://192.168.1.123:9000")
+   │  #   Skip deployment, go straight to step 4
 
 3. Deploy (ephemeral)
    ├─ deployer.detect_capabilities()
@@ -271,36 +286,18 @@ Future extensibility:
 
 ## 4. Execution Modes
 
-### 4.1 Mode A: Local Execution (Default)
+**The `--device` flag accepts multiple formats. Format determines behavior automatically—no mode selection required.**
 
-**When:**
-- No `--device` or `--transport` specified
+### 4.1 Format Category A: Auto-Deploy
 
-**Behavior:**
-```bash
-cortex run --kernel car
-# Uses local adapter (current behavior, unchanged)
-```
+**When format contains** `@` or starts with deployer prefix (`stm32:`, etc.)
 
----
+**Behavior:** System handles deployment, build, execution, cleanup
 
-### 4.2 Mode B: Remote Auto-Deploy
+**Examples:**
 
-**When:**
-- User provides `--device user@host`
+#### SSH Auto-Deploy (`user@host`)
 
-**Behavior:**
-```bash
-cortex run --device nvidia@192.168.1.123 --kernel car
-
-# System does:
-# 1. Parse: user=nvidia, host=192.168.1.123
-# 2. Deploy: rsync → remote build → start adapter
-# 3. Run: benchmark via tcp://192.168.1.123:9000
-# 4. Cleanup: stop adapter, delete files
-```
-
-**Supported formats:**
 ```bash
 # IP address
 cortex run --device nvidia@192.168.1.123 --kernel car
@@ -315,15 +312,83 @@ cortex run --device ubuntu@server.example.com --kernel car
 cortex run --device ubuntu@ec2-54-123-45-67.compute.amazonaws.com --kernel car
 ```
 
+**What happens:**
+1. Parse: `user=nvidia, host=192.168.1.123`
+2. Deploy: rsync → remote build → start adapter
+3. Run: benchmark via tcp://192.168.1.123:9000
+4. Cleanup: stop adapter, delete files
+
 **Key properties:**
-- ✅ Works with any SSH-accessible device
-- ✅ Ephemeral (always fresh build)
+- ✅ One command, zero setup
+- ✅ Ephemeral (fresh build every time)
 - ✅ Device clean after run
-- ❌ Rebuilds every time (~60s overhead)
+- ❌ Rebuild overhead (~60s per run)
 
-### 4.2.1 Deployment Strategies
+#### JTAG Auto-Deploy (`stm32:` prefix) - Future
 
-**The Deployer protocol enables different deployment strategies based on device capabilities:**
+```bash
+cortex run --device stm32:/dev/ttyUSB0 --kernel car
+# Cross-compile → flash firmware → run benchmark → close port
+```
+
+---
+
+### 4.2 Format Category B: Manual Connection
+
+**When format starts with** `tcp://`, `serial://`, `shm://`, or `local://`
+
+**Behavior:** Connect to existing adapter (no deployment, no cleanup)
+
+**Use case:** Fast iteration, debugging, persistent adapter
+
+**Examples:**
+
+```bash
+# TCP (adapter already running on remote device)
+cortex run --device tcp://192.168.1.123:9000 --kernel car
+
+# Serial (firmware already running on STM32)
+cortex run --device serial:///dev/ttyUSB0?baud=115200 --kernel car
+
+# Shared memory (local high-performance IPC)
+cortex run --device shm://bench01 --kernel car
+
+# Local (default, socketpair)
+cortex run --device local:// --kernel car
+cortex run --kernel car  # Same as above (default)
+```
+
+**What happens:**
+1. Parse transport URI
+2. Connect to adapter at specified endpoint
+3. Run benchmark
+4. **No cleanup** (user manages adapter lifecycle)
+
+**Key properties:**
+- ✅ Zero deployment overhead (instant)
+- ✅ Fast iteration (no rebuild)
+- ✅ Full control over adapter lifecycle
+- ❌ Manual setup required
+- ❌ State persists between runs
+
+**Setup example (TCP):**
+```bash
+# One-time setup (on device):
+ssh nvidia@192.168.1.123
+cd cortex && make all
+./primitives/adapters/v1/native/cortex_adapter_native tcp://:9000 &
+
+# Fast iteration (on host):
+cortex run --device tcp://192.168.1.123:9000 --kernel car    # Instant
+cortex run --device tcp://192.168.1.123:9000 --kernel noop   # Instant
+# ... repeat 20 times, saves 20 × 60s = 20 minutes
+```
+
+---
+
+### 4.3 Deployment Strategy Reference
+
+**The Deployer protocol enables different deployment strategies. Format determines which deployer is used:**
 
 #### SSHDeployer (Initial Implementation)
 
@@ -399,50 +464,60 @@ cortex run --device ubuntu@ec2-54-123-45-67.compute.amazonaws.com --kernel car
 
 ---
 
-### 4.3 Mode C: Manual Transport
+### 4.4 Format Detection Logic
 
-**When:**
-- User provides `--transport <uri>` flag
-
-**Behavior:**
-```bash
-cortex run --transport tcp://192.168.1.123:9000 --kernel car
-
-# System does:
-# 1. Connect to adapter at tcp://192.168.1.123:9000
-# 2. Run benchmark
-# 3. No deployment, no cleanup (user manages lifecycle)
-```
-
-**Use case:**
-- User has manually deployed adapter
-- User wants persistent adapter (fast iteration)
-- Testing/debugging adapter issues
-
----
-
-### 4.4 Priority Resolution
+**DeployerFactory uses format patterns to route requests:**
 
 ```python
-def determine_execution_mode(args):
-    # 1. CLI --device (highest priority)
-    if args.device:
-        user, host = args.device.split('@')
-        return AutoDeployMode(user=user, host=host)
+def parse_device_string(device: str) -> Union[Deployer, str]:
+    """
+    Parse device string, return Deployer (auto-deploy) or transport URI (manual).
 
-    # 2. CLI --transport
-    if args.transport:
-        return ManualTransportMode(uri=args.transport)
+    Auto-deploy formats (return Deployer):
+        user@host          → SSHDeployer
+        stm32:serial       → JTAGDeployer (future)
 
-    # 3. Default: local
-    return LocalMode()
+    Manual formats (return transport URI string):
+        tcp://host:port    → "tcp://host:port"
+        serial:///dev/tty  → "serial:///dev/tty"
+        shm://name         → "shm://name"
+        local://           → "local://"
+
+    Default:
+        None or empty      → "local://"
+    """
+
+    if not device:
+        return "local://"  # Default
+
+    if '@' in device:
+        # SSH auto-deploy
+        user, host = device.split('@', 1)
+        return SSHDeployer(user, host)
+
+    if device.startswith('stm32:'):
+        # JTAG auto-deploy (future)
+        return JTAGDeployer(device)
+
+    if device.startswith(('tcp://', 'serial://', 'shm://', 'local://')):
+        # Manual connection (transport URI)
+        return device  # Return URI string as-is
+
+    raise ValueError(f"Unknown device format: {device}")
 ```
 
 **Examples:**
 ```bash
-# Override is always CLI first
-cortex run --device nvidia@jetson config.yaml  # Uses nvidia@jetson (ignores config)
-cortex run --transport local:// config.yaml    # Forces local (ignores config)
+# Auto-deploy (returns Deployer object)
+cortex run --device nvidia@192.168.1.123           # SSHDeployer
+cortex run --device stm32:/dev/ttyUSB0             # JTAGDeployer (future)
+
+# Manual connection (returns transport URI string)
+cortex run --device tcp://192.168.1.123:9000       # "tcp://192.168.1.123:9000"
+cortex run --device serial:///dev/ttyUSB0          # "serial:///dev/ttyUSB0"
+
+# Default
+cortex run --kernel car                            # "local://"
 ```
 
 ---
@@ -479,8 +554,8 @@ class DeploymentResult:
 # factory.py
 class DeployerFactory:
     @staticmethod
-    def from_device_string(device: str) -> Deployer:
-        """Parse device string, return appropriate deployer."""
+    def from_device_string(device: str) -> Union[Deployer, str]:
+        """Parse device string, return deployer or transport URI."""
 
 # ssh_deployer.py
 class SSHDeployer:
@@ -643,43 +718,70 @@ class Deployer(Protocol):
 #### DeployerFactory
 
 ```python
+from typing import Union
+
 class DeployerFactory:
-    """Factory for creating deployers from device strings."""
+    """Factory for parsing device strings into deployers or transport URIs."""
 
     @staticmethod
-    def from_device_string(device: str) -> Deployer:
+    def from_device_string(device: str) -> Union[Deployer, str]:
         """
-        Parse device string and return appropriate deployer.
+        Parse device string and return deployer (auto-deploy) or transport URI (manual).
 
         Args:
-            device: Device connection string
+            device: Device connection string (or None for local default)
 
         Returns:
-            Deployer instance for the device type
+            - Deployer instance for auto-deploy formats (user@host, stm32:)
+            - Transport URI string for manual formats (tcp://, serial://, etc.)
 
-        Supported formats:
-            user@host         → SSHDeployer
-            stm32:serial      → JTAGDeployer (future)
-            docker:image      → DockerDeployer (future)
+        Auto-deploy formats (return Deployer):
+            user@host         → SSHDeployer(user, host)
+            stm32:serial      → JTAGDeployer(device) [future]
+
+        Manual formats (return transport URI string):
+            tcp://host:port   → "tcp://host:port"
+            serial:///dev/tty → "serial:///dev/tty?baud=115200"
+            shm://name        → "shm://name"
+            local://          → "local://"
 
         Raises:
             ValueError: If format not recognized
 
-        Example:
-            deployer = DeployerFactory.from_device_string("nvidia@192.168.1.123")
-            result = deployer.deploy()
-            # ... run benchmark ...
-            deployer.cleanup()
+        Example (auto-deploy):
+            result = DeployerFactory.from_device_string("nvidia@192.168.1.123")
+            if isinstance(result, Deployer):
+                deploy_result = result.deploy()
+                transport_uri = deploy_result.transport_uri
+                # ... run benchmark with transport_uri ...
+                result.cleanup()
+
+        Example (manual):
+            result = DeployerFactory.from_device_string("tcp://192.168.1.123:9000")
+            if isinstance(result, str):
+                transport_uri = result  # Adapter already running
+                # ... run benchmark with transport_uri ...
+                # No cleanup needed (adapter is persistent)
         """
+        if not device:
+            return "local://"  # Default to local adapter
+
         if '@' in device:
-            user, host = device.split('@')
+            user, host = device.split('@', 1)
             return SSHDeployer(user, host)
-        elif device.startswith('stm32:'):
-            raise NotImplementedError("JTAGDeployer not yet implemented")
-        elif device.startswith('docker:'):
-            raise NotImplementedError("DockerDeployer not yet implemented")
-        else:
-            raise ValueError(f"Unsupported device format: {device}")
+
+        if device.startswith('stm32:'):
+            raise NotImplementedError("JTAGDeployer not yet implemented (Spring 2026)")
+
+        # Manual transport formats - return URI as-is
+        if device.startswith(('tcp://', 'serial://', 'shm://', 'local://')):
+            return device
+
+        raise ValueError(
+            f"Unknown device format: {device}\n"
+            f"Expected: user@host | tcp://host:port | serial:///dev/device | "
+            f"shm://name | local:// | stm32:device"
+        )
 ```
 
 ---
@@ -885,7 +987,7 @@ docs/guides/
 
 ### 8.1 Updated Commands
 
-#### `cortex run` (add --device flag)
+#### `cortex run` (unified --device flag)
 
 ```bash
 cortex run [OPTIONS]
@@ -894,8 +996,7 @@ Options:
   --kernel TEXT       Run specific kernel
   --all               Run all kernels
   --config PATH       Config file path
-  --device TEXT       Remote device (user@host)
-  --transport TEXT    Transport URI (manual mode)
+  --device TEXT       Device connection string (auto-deploy or manual)
   --duration INT      Override duration
   --repeats INT       Override repeats
   --warmup INT        Override warmup
@@ -906,17 +1007,28 @@ Examples:
   # Local execution (default):
   cortex run --kernel car
 
-  # Remote auto-deploy:
-  cortex run --device nvidia@192.168.1.123 --kernel car
-  cortex run --device nvidia@jetson.local --kernel car
+  # Auto-deploy formats (system handles setup):
+  cortex run --device nvidia@192.168.1.123 --kernel car        # SSH to Jetson
+  cortex run --device pi@raspberrypi.local --kernel car        # SSH to RPi
+  cortex run --device nvidia@jetson.local --kernel car         # SSH via mDNS
 
-  # Manual transport:
-  cortex run --transport tcp://192.168.1.123:9000 --kernel car
+  # Manual connection formats (adapter already running):
+  cortex run --device tcp://192.168.1.123:9000 --kernel car    # TCP connection
+  cortex run --device serial:///dev/ttyUSB0 --kernel car       # Serial/UART
+  cortex run --device shm://bench01 --kernel car               # Shared memory
+  cortex run --device local:// --kernel car                    # Explicit local
+
+  # Future auto-deploy formats:
+  cortex run --device stm32:/dev/ttyUSB0 --kernel car          # JTAG/SWD (Spring 2026)
 ```
 
-**Priority:** `--device` > `--transport` > default (local)
+**Format determines behavior:**
+- `user@host` → Auto-deploy via SSH (rsync + build + start adapter)
+- `tcp://host:port` → Connect to existing adapter (no deployment)
+- `serial://`, `shm://`, `local://` → Direct transport connection
+- `stm32:device` → Auto-deploy via JTAG/SWD (future)
 
-#### `cortex pipeline` (add --device flag)
+#### `cortex pipeline` (unified --device flag)
 
 ```bash
 cortex pipeline [OPTIONS]
@@ -924,8 +1036,7 @@ cortex pipeline [OPTIONS]
 Run full pipeline: build → validate → run → analyze
 
 Options:
-  --device TEXT       Remote device (run all kernels on remote)
-  --transport TEXT    Transport URI (manual mode)
+  --device TEXT       Device connection string (auto-deploy or manual)
   --skip-build        Skip build step
   --skip-validate     Skip validation
   --duration INT      Override duration
@@ -935,21 +1046,24 @@ Options:
   --help              Show help
 
 Examples:
-  # Local pipeline:
+  # Local pipeline (default):
   cortex pipeline
 
-  # Remote pipeline (auto-deploy once, run all kernels, cleanup):
+  # Remote auto-deploy (deploys once, runs all kernels, cleans up):
   cortex pipeline --device nvidia@192.168.1.123
+  cortex pipeline --device pi@raspberrypi.local
 
-  # Manual transport:
-  cortex pipeline --transport tcp://192.168.1.123:9000
+  # Manual connection (adapter already running):
+  cortex pipeline --device tcp://192.168.1.123:9000
+
+  # Future embedded deployment:
+  cortex pipeline --device stm32:/dev/ttyUSB0
 ```
 
 **Special behavior for pipeline:**
-- Deploys ONCE at start
-- Runs ALL kernels sequentially
-- Cleans up ONCE at end
-- Faster than running kernels individually
+- **Auto-deploy mode**: Deploys ONCE at start → runs ALL kernels → cleans up ONCE at end
+- **Manual mode**: Connects to existing adapter → runs ALL kernels (no cleanup)
+- Faster than running kernels individually (avoids repeated deployment overhead)
 
 ---
 
@@ -959,14 +1073,19 @@ Examples:
 
 **1. Invalid --device format:**
 ```
-Error: Invalid device format: '192.168.1.123'
+Error: Unknown device format: '192.168.1.123'
 
-Expected format: user@host
+Expected formats:
+  Auto-deploy:  user@host | stm32:device
+  Manual:       tcp://host:port | serial:///dev/device | shm://name | local://
 
-Examples:
+Examples (auto-deploy):
   cortex run --device nvidia@192.168.1.123 --kernel car
   cortex run --device pi@raspberrypi.local --kernel car
-  cortex run --device ubuntu@server.example.com --kernel car
+
+Examples (manual):
+  cortex run --device tcp://192.168.1.123:9000 --kernel car
+  cortex run --device serial:///dev/ttyUSB0 --kernel car
 ```
 
 **2. SSH connection failed:**
@@ -1263,7 +1382,7 @@ ssh nvidia@192.168.1.123 "ls ~/cortex-temp"
 
 [3. Run Pipeline]
   For each kernel in [car, notch_iir, bandpass_fir, goertzel, welch_psd, noop]:
-    cortex run --transport tcp://192.168.1.123:9000 --kernel <kernel>
+    cortex run --device tcp://192.168.1.123:9000 --kernel <kernel>
     Results → results/run-*/kernel-data/<kernel>/
 
   Total benchmark time: ~6 × 5s = 30s (with short duration)
@@ -1317,7 +1436,7 @@ ssh nvidia@192.168.1.123 \
 
 **4. Run benchmark:**
 ```bash
-cortex run --transport tcp://192.168.1.123:9000 --kernel car
+cortex run --device tcp://192.168.1.123:9000 --kernel car
 ```
 
 **5. Cleanup:**
