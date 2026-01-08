@@ -1,8 +1,8 @@
 # Auto-Deploy Device Adapters: Implementation Specification
 
-**Version:** 3.4
+**Version:** 3.5
 **Date:** January 8, 2026
-**Status:** Ready for Implementation
+**Status:** Ready for Implementation (Production-Hardened)
 **Estimated Effort:** 445 LOC, 4.5 days
 
 ---
