@@ -1,9 +1,9 @@
 # Auto-Deploy Device Adapters: Implementation Specification
 
-**Version:** 3.0
-**Date:** January 6, 2026
+**Version:** 3.1
+**Date:** January 8, 2026
 **Status:** Ready for Implementation
-**Estimated Effort:** 400 LOC, 4 days
+**Estimated Effort:** 425 LOC, 4.5 days
 
 ---
 
@@ -47,7 +47,7 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 
 **That's it. Three modes, zero configuration.**
 
-### 1.3 What Changed from v2.0
+### 1.3 What Changed from v2.0 → v3.0
 
 **REMOVED (600 LOC saved):**
 - ❌ Network scanning / auto-discovery
@@ -64,6 +64,22 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 - ✅ Ephemeral execution (deploy → run → cleanup)
 - ✅ `--device` flag for remote execution
 - ✅ `--transport` flag for manual adapter management
+
+### 1.3.1 What Changed from v3.0 → v3.1
+
+**ADDED (Protocol-based architecture):**
+- ✅ `Deployer` Protocol interface for extensibility
+- ✅ `DeployerFactory` for device string parsing
+- ✅ Type-safe `DeploymentResult` and `CleanupResult` dataclasses
+- ✅ Explicit separation: deployment strategy vs transport layer
+
+**WHY:** Multiple device types planned (Jetson, STM32, RPi, FPGA). Protocol enables adding new deployers without modifying CLI or orchestration code. Cost: +125 LOC (+42%). Benefit: 10× extensibility.
+
+**Implementation impact:**
+- Functions → Classes (SSHDeployer implements Deployer protocol)
+- Add `base.py` (protocol definition), `factory.py` (device parsing)
+- Same CLI interface, same user experience
+- +0.5 days timeline (protocol abstraction overhead)
 
 ### 1.4 Core Principles
 
@@ -97,10 +113,11 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 
 | Metric | Value |
 |--------|-------|
-| **Total LOC** | 400 |
-| Core implementation | 300 |
+| **Total LOC** | 425 |
+| Protocol layer (base.py, factory.py) | 150 |
+| SSH implementation (ssh_deployer.py) | 175 |
 | CLI integration | 100 |
-| **Timeline** | 4 days |
+| **Timeline** | 4.5 days |
 | **Risk Level** | Low (validated manually) |
 
 ---
@@ -144,36 +161,58 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 ### 3.1 Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                cortex run / cortex pipeline              │
-│                           │                              │
-│                           ▼                              │
-│                  parse_device_arg()                      │
-│                           │                              │
-│         ┌─────────────────┼─────────────────┐           │
-│         ▼                 ▼                 ▼           │
-│    --device         --transport        (default)        │
-│    user@host         tcp://uri          local           │
-│         │                 │                 │           │
-│         ▼                 │                 ▼           │
-│   ephemeral_deploy()      │        spawn_local_adapter()│
-│   ┌──────────────┐        │                             │
-│   │ 1. rsync     │        │                             │
-│   │ 2. build     │        │                             │
-│   │ 3. start     │        │                             │
-│   │ 4. wait      │────────┘                             │
-│   └──────────────┘        │                             │
-│         │                 │                             │
-│         └─────────────────┼─────────────────┐           │
-│                           ▼                             │
-│                  execute_benchmark()                    │
-│                           │                             │
-│         ┌─────────────────┴─────────────────┐           │
-│         ▼                                   ▼           │
-│    --device mode                       other modes      │
-│    cleanup_device()                    (no cleanup)     │
-│    (stop adapter, rm files)                             │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                 cortex run / cortex pipeline                  │
+│                              │                                │
+│                              ▼                                │
+│                     parse_device_arg()                        │
+│                              │                                │
+│          ┌───────────────────┼──────────────────┐            │
+│          ▼                   ▼                  ▼            │
+│     --device           --transport         (default)         │
+│     user@host           tcp://uri           local            │
+│          │                   │                  │            │
+│          ▼                   │                  │            │
+│  ┌───────────────────┐       │                  │            │
+│  │ DeployerFactory   │       │                  │            │
+│  │ .from_device(str) │       │                  │            │
+│  └────────┬──────────┘       │                  │            │
+│           │                  │                  │            │
+│           ▼                  │                  │            │
+│  ┌───────────────────┐       │                  ▼            │
+│  │ Deployer Protocol │       │        spawn_local_adapter()  │
+│  │  - deploy()       │       │                               │
+│  │  - cleanup()      │       │                               │
+│  └────────┬──────────┘       │                               │
+│           │                  │                               │
+│           ▼                  │                               │
+│  ┌───────────────────┐       │                               │
+│  │ SSHDeployer       │       │                               │
+│  │  - rsync          │       │                               │
+│  │  - remote build   │       │                               │
+│  │  - start adapter  │       │                               │
+│  │  - wait for port  │───────┘                               │
+│  └────────┬──────────┘       │                               │
+│           │                  │                               │
+│           │ DeploymentResult │                               │
+│           │ (transport_uri)  │                               │
+│           └──────────────────┼───────────────┐               │
+│                              ▼                               │
+│                     execute_benchmark()                      │
+│                    (via transport_uri)                       │
+│                              │                               │
+│          ┌───────────────────┴──────────────┐                │
+│          ▼                                  ▼                │
+│     --device mode                      other modes           │
+│     deployer.cleanup()                 (no cleanup)          │
+│     (stop adapter, rm files)                                 │
+└──────────────────────────────────────────────────────────────┘
+
+Future extensibility:
+  DeployerFactory detects device type:
+    user@host     → SSHDeployer (implemented)
+    stm32:serial  → JTAGDeployer (future)
+    docker:image  → DockerDeployer (future)
 ```
 
 ### 3.2 Execution Flow: `cortex run --device nvidia@192.168.1.123 --kernel car`
@@ -181,29 +220,47 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 ```
 1. Parse arguments
    ├─ --device nvidia@192.168.1.123
-   ├─ Split on '@' → user=nvidia, host=192.168.1.123
+   ├─ Parse device string → user=nvidia, host=192.168.1.123
 
-2. Deploy (ephemeral)
-   ├─ rsync code: ~/CORTEX/ → nvidia@192.168.1.123:~/cortex-temp/
-   │  └─ Exclude: .git, results, *.o, *.dylib, *.so
-   │
-   ├─ Remote build: ssh nvidia@192.168.1.123 "cd ~/cortex-temp && make clean && make all"
-   │  └─ Stream output if --verbose
-   │
-   ├─ Start adapter: ssh nvidia@192.168.1.123 "nohup ~/cortex-temp/.../cortex_adapter_native tcp://:9000 &"
-   │  ├─ Capture PID: echo $! > /tmp/cortex-adapter.pid
-   │  └─ Wait for port: nc -z 192.168.1.123 9000 (retry 30s)
+2. Create deployer (via factory)
+   ├─ DeployerFactory.from_device_string("nvidia@192.168.1.123")
+   │  ├─ Detect format: user@host → SSH deployment
+   │  └─ Returns: SSHDeployer(user="nvidia", host="192.168.1.123")
 
-3. Run benchmark
-   ├─ Use transport: tcp://192.168.1.123:9000
-   ├─ Execute kernel: car
+3. Deploy (ephemeral)
+   ├─ deployer.detect_capabilities()
+   │  └─ Returns: {platform: "linux", arch: "arm64", ssh: True}
+   │
+   ├─ deployer.deploy(verbose=False)
+   │  ├─ rsync code: ~/CORTEX/ → nvidia@192.168.1.123:~/cortex-temp/
+   │  │  └─ Exclude: .git, results, *.o, *.dylib, *.so
+   │  │
+   │  ├─ Remote build: ssh "cd ~/cortex-temp && make clean && make all"
+   │  │  └─ Stream output if verbose=True
+   │  │
+   │  ├─ Start adapter: ssh "nohup .../cortex_adapter_native tcp://:9000 &"
+   │  │  ├─ Capture PID: echo $! > /tmp/cortex-adapter.pid
+   │  │  └─ Wait for port: nc -z 192.168.1.123 9000 (retry 30s)
+   │  │
+   │  └─ Returns: DeploymentResult(
+   │        success=True,
+   │        transport_uri="tcp://192.168.1.123:9000",
+   │        adapter_pid=4579,
+   │        metadata={"platform": "linux", "arch": "arm64"}
+   │      )
+
+4. Run benchmark
+   ├─ Use: deployment_result.transport_uri
+   ├─ Execute kernel: car (via tcp://192.168.1.123:9000)
    └─ Save results: results/run-*/kernel-data/car/telemetry.ndjson
 
-4. Cleanup
-   ├─ Stop adapter: ssh nvidia@192.168.1.123 "kill $(cat /tmp/cortex-adapter.pid)"
-   └─ Delete files: ssh nvidia@192.168.1.123 "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+5. Cleanup
+   ├─ deployer.cleanup()
+   │  ├─ Stop adapter: ssh "kill $(cat /tmp/cortex-adapter.pid)"
+   │  ├─ Delete files: ssh "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+   │  └─ Returns: CleanupResult(success=True, errors=[])
 
-5. Done
+6. Done
    └─ Device is clean (no CORTEX artifacts)
 ```
 
@@ -261,6 +318,75 @@ cortex run --device ubuntu@ec2-54-123-45-67.compute.amazonaws.com --kernel car
 - ✅ Device clean after run
 - ❌ Rebuilds every time (~60s overhead)
 
+### 4.2.1 Deployment Strategies
+
+**The Deployer protocol enables different deployment strategies based on device capabilities:**
+
+#### SSHDeployer (Initial Implementation)
+
+**Target devices:** Jetson, Raspberry Pi, Linux SBCs, cloud VMs
+**Device string format:** `user@host`
+**Requirements:** SSH server, build tools (gcc, make)
+**Deployment method:**
+- Copy source via rsync
+- Build on device (`make all`)
+- Start adapter as daemon (nohup)
+
+**Pros:**
+- ✅ Device compiles for its own architecture (no cross-compile)
+- ✅ Works over network (WiFi, Ethernet, internet)
+- ✅ Standard SSH tooling (no custom protocols)
+
+**Cons:**
+- ❌ Requires build tools on device (~500 MB)
+- ❌ Rebuild overhead every run (~60s)
+
+#### JTAGDeployer (Future: STM32, Bare Metal)
+
+**Target devices:** STM32, ESP32, bare metal ARM
+**Device string format:** `stm32:serial` or `stm32:/dev/ttyUSB0`
+**Requirements:** Cross-compiler on host, JTAG/SWD programmer
+**Deployment method:**
+- Cross-compile on host (arm-none-eabi-gcc)
+- Flash firmware via OpenOCD/st-flash
+- No build on device (pre-compiled binary)
+
+**Pros:**
+- ✅ Works on resource-constrained devices (no compiler needed)
+- ✅ Deterministic binary (host-compiled)
+
+**Cons:**
+- ❌ Requires cross-compilation toolchain setup
+- ❌ Flashing slower than network deployment
+
+#### DockerDeployer (Future: Containers)
+
+**Target devices:** Docker-enabled hosts
+**Device string format:** `docker:image-name`
+**Deployment method:**
+- Build container locally (`docker build`)
+- Push to registry / copy via docker save
+- Run adapter in container
+
+**Pros:**
+- ✅ Isolated environment
+- ✅ Reproducible builds
+
+#### PersistentDeployer (Future: Fast Iteration)
+
+**Target devices:** Any (caches adapter between runs)
+**Deployment method:**
+- Deploy once, reuse adapter across benchmarks
+- Only rebuild if source changed (checksum)
+
+**Pros:**
+- ✅ Eliminates rebuild overhead (0s vs 60s)
+
+**Cons:**
+- ❌ Requires state tracking (breaks ephemeral principle)
+
+**Why Protocol Matters:** Adding JTAGDeployer or DockerDeployer requires **0 changes** to CLI or orchestration code. Just implement the `Deployer` interface and add detection logic to `DeployerFactory`.
+
 ---
 
 ### 4.3 Mode C: Manual Transport
@@ -313,30 +439,56 @@ cortex run --transport local:// config.yaml    # Forces local (ignores config)
 
 ## 5. Implementation Phases
 
-### Phase 1: SSH Deployment (2 days, 300 LOC)
+### Phase 1: Deployment Framework (2.5 days, 325 LOC)
 
 **Deliverables:**
-- SSH deployment subsystem
-- Remote build orchestration
-- Adapter lifecycle management
+- Protocol layer (abstract interface)
+- Factory pattern (device string parsing)
+- SSH deployment implementation
 
 **Files:**
-- `src/cortex/deploy/ssh_deployer.py` (300 LOC)
+- `src/cortex/deploy/base.py` (100 LOC)
+- `src/cortex/deploy/factory.py` (50 LOC)
+- `src/cortex/deploy/ssh_deployer.py` (175 LOC)
 
-**Functions:**
+**Key classes:**
 ```python
-def ephemeral_deploy(user, host, verbose=False):
-    """Deploy code, build remotely, start adapter."""
+# base.py
+class Deployer(Protocol):
+    def detect_capabilities(self) -> dict: ...
+    def deploy(self, verbose: bool) -> DeploymentResult: ...
+    def cleanup(self) -> CleanupResult: ...
 
-def cleanup_deployment(user, host):
-    """Stop adapter, delete files."""
+@dataclass
+class DeploymentResult:
+    success: bool
+    transport_uri: str
+    adapter_pid: Optional[int]
+    metadata: dict
+
+# factory.py
+class DeployerFactory:
+    @staticmethod
+    def from_device_string(device: str) -> Deployer:
+        """Parse device string, return appropriate deployer."""
+
+# ssh_deployer.py
+class SSHDeployer:
+    def __init__(self, user: str, host: str): ...
+    def deploy(self, verbose: bool) -> DeploymentResult:
+        """rsync + build + start adapter"""
+    def cleanup(self) -> CleanupResult:
+        """kill adapter + rm files"""
 ```
 
 **Success Criteria:**
-- [ ] Can rsync code to remote device
-- [ ] Can build remotely via `make all`
-- [ ] Can start adapter as background daemon
-- [ ] Can stop adapter and cleanup files
+- [ ] Protocol interface documented with type hints
+- [ ] Factory can parse `user@host` format
+- [ ] SSHDeployer can rsync code to remote device
+- [ ] SSHDeployer can build remotely via `make all`
+- [ ] SSHDeployer can start adapter as background daemon
+- [ ] SSHDeployer can stop adapter and cleanup files
+- [ ] Returns type-safe DeploymentResult and CleanupResult
 
 ---
 
@@ -379,9 +531,251 @@ def cleanup_deployment(user, host):
 
 ## 6. API Reference
 
-### 6.1 Core Functions
+### 6.0 Deployer Protocol (Core Interface)
 
-#### `ephemeral_deploy()`
+**The `Deployer` protocol defines the contract all deployment strategies must implement.**
+
+#### Protocol Definition
+
+```python
+from typing import Protocol, Optional
+from dataclasses import dataclass
+
+@dataclass
+class DeploymentResult:
+    """Result of successful deployment."""
+    success: bool
+    transport_uri: str           # e.g., "tcp://192.168.1.123:9000"
+    adapter_pid: Optional[int]   # Remote PID (None if not applicable)
+    metadata: dict[str, any]     # Platform info, build time, etc.
+
+@dataclass
+class CleanupResult:
+    """Result of cleanup operation."""
+    success: bool
+    errors: list[str]            # Any non-fatal issues encountered
+
+class Deployer(Protocol):
+    """
+    Interface for device deployment strategies.
+
+    All deployers must implement these methods to integrate with
+    cortex run/pipeline commands.
+    """
+
+    def detect_capabilities(self) -> dict[str, any]:
+        """
+        Detect device platform, architecture, and available tools.
+
+        Returns:
+            Dictionary with device metadata:
+            {
+                "platform": "linux" | "stm32" | "docker",
+                "arch": "arm64" | "x86_64" | "cortex-m4",
+                "ssh": bool,  # SSH available
+                "build_tools": bool,  # gcc/make available
+                ...
+            }
+
+        Raises:
+            DeploymentError: If device unreachable or detection fails
+        """
+        ...
+
+    def deploy(self, verbose: bool = False) -> DeploymentResult:
+        """
+        Deploy code, build (if needed), start adapter.
+
+        Args:
+            verbose: Stream build output to user
+
+        Returns:
+            DeploymentResult with transport_uri and metadata
+
+        Raises:
+            DeploymentError: If deployment fails at any step
+
+        Postconditions:
+            - Adapter is running and listening on transport_uri
+            - Device has all necessary files to run benchmarks
+            - Cleanup must be called after benchmarking
+        """
+        ...
+
+    def cleanup(self) -> CleanupResult:
+        """
+        Stop adapter and remove all deployment artifacts.
+
+        Returns:
+            CleanupResult indicating success/failure
+
+        Postconditions:
+            - Adapter process stopped
+            - All deployment files removed
+            - Device returned to pre-deployment state
+
+        Note:
+            Must not raise exceptions (errors go in CleanupResult.errors)
+        """
+        ...
+```
+
+#### DeployerFactory
+
+```python
+class DeployerFactory:
+    """Factory for creating deployers from device strings."""
+
+    @staticmethod
+    def from_device_string(device: str) -> Deployer:
+        """
+        Parse device string and return appropriate deployer.
+
+        Args:
+            device: Device connection string
+
+        Returns:
+            Deployer instance for the device type
+
+        Supported formats:
+            user@host         → SSHDeployer
+            stm32:serial      → JTAGDeployer (future)
+            docker:image      → DockerDeployer (future)
+
+        Raises:
+            ValueError: If format not recognized
+
+        Example:
+            deployer = DeployerFactory.from_device_string("nvidia@192.168.1.123")
+            result = deployer.deploy()
+            # ... run benchmark ...
+            deployer.cleanup()
+        """
+        if '@' in device:
+            user, host = device.split('@')
+            return SSHDeployer(user, host)
+        elif device.startswith('stm32:'):
+            raise NotImplementedError("JTAGDeployer not yet implemented")
+        elif device.startswith('docker:'):
+            raise NotImplementedError("DockerDeployer not yet implemented")
+        else:
+            raise ValueError(f"Unsupported device format: {device}")
+```
+
+---
+
+### 6.1 SSHDeployer (Initial Implementation)
+
+**SSHDeployer implements the Deployer protocol for SSH-accessible devices.**
+
+#### Class Definition
+
+```python
+class SSHDeployer:
+    """
+    Deploys via SSH: rsync → remote build → start adapter.
+
+    Target devices: Jetson, Raspberry Pi, Linux SBCs, cloud VMs
+    Requirements: SSH server, build tools (gcc, make)
+    """
+
+    def __init__(
+        self,
+        user: str,
+        host: str,
+        port: int = 22,
+        adapter_port: int = 9000
+    ):
+        """
+        Initialize SSH deployer.
+
+        Args:
+            user: SSH username (e.g., "nvidia")
+            host: IP or hostname (e.g., "192.168.1.123" or "jetson.local")
+            port: SSH port (default: 22)
+            adapter_port: Port for adapter to listen on (default: 9000)
+        """
+        self.user = user
+        self.host = host
+        self.port = port
+        self.adapter_port = adapter_port
+
+    def detect_capabilities(self) -> dict[str, any]:
+        """
+        Detect device platform via SSH.
+
+        Commands run:
+            uname -s          # OS (Linux/Darwin)
+            uname -m          # Architecture (arm64/x86_64)
+            which gcc make    # Build tools available
+
+        Returns:
+            {
+                "platform": "linux",
+                "arch": "arm64",
+                "ssh": True,
+                "build_tools": True,
+                "hostname": "jetson-nano",
+                "os_version": "Ubuntu 20.04"
+            }
+        """
+        ...
+
+    def deploy(self, verbose: bool = False) -> DeploymentResult:
+        """
+        Deploy via SSH.
+
+        Steps:
+            1. rsync code to ~/cortex-temp/
+               - Exclude: .git, results, *.o, *.dylib, *.so, __pycache__
+            2. ssh "cd ~/cortex-temp && make clean && make all"
+               - Stream output if verbose=True
+            3. ssh "nohup .../cortex_adapter_native tcp://:9000 &"
+               - Capture PID: echo $! > /tmp/cortex-adapter.pid
+            4. Wait for port: nc -z host 9000 (retry 30s timeout)
+
+        Returns:
+            DeploymentResult(
+                success=True,
+                transport_uri=f"tcp://{self.host}:{self.adapter_port}",
+                adapter_pid=<remote PID>,
+                metadata=<capabilities dict>
+            )
+
+        Files on device after deployment:
+            ~/cortex-temp/                   # Source code
+            /tmp/cortex-adapter.pid          # PID file
+            /tmp/cortex-adapter.log          # Adapter logs
+
+        Raises:
+            DeploymentError: If any step fails
+        """
+        ...
+
+    def cleanup(self) -> CleanupResult:
+        """
+        Stop adapter and delete files.
+
+        Commands:
+            ssh "kill $(cat /tmp/cortex-adapter.pid) 2>/dev/null || true"
+            ssh "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+
+        Returns:
+            CleanupResult(success=True, errors=[])
+
+        Note:
+            Never raises exceptions. All errors captured in result.errors.
+        """
+        ...
+```
+
+---
+
+### 6.2 Legacy Functions (Deprecated)
+
+**The following functions are deprecated in favor of the Deployer protocol:**
+
+#### `ephemeral_deploy()` (DEPRECATED)
 
 ```python
 def ephemeral_deploy(
@@ -444,21 +838,26 @@ def cleanup_deployment(
 ```
 src/cortex/
 ├── deploy/
-│   ├── __init__.py
-│   └── ssh_deployer.py         # ephemeral_deploy(), cleanup() (300 LOC)
+│   ├── __init__.py             # Export: Deployer, DeployerFactory, DeploymentResult
+│   ├── base.py                 # Deployer protocol, result types (100 LOC)
+│   ├── factory.py              # DeployerFactory.from_device_string() (50 LOC)
+│   ├── ssh_deployer.py         # SSHDeployer class (175 LOC)
+│   └── exceptions.py           # DeploymentError, CleanupError (25 LOC)
 ├── commands/
 │   ├── run.py                  # Update: add --device flag (50 LOC)
 │   └── pipeline.py             # Update: add --device flag (50 LOC)
 
 tests/
 └── deploy/
-    └── test_ssh_deployer.py    # Deployment logic tests (100 LOC)
+    ├── test_deployer_protocol.py  # Protocol conformance tests (50 LOC)
+    └── test_ssh_deployer.py       # SSHDeployer tests (100 LOC)
 
 docs/guides/
 └── remote-deployment.md        # User guide (100 LOC)
 ```
 
-**Total:** ~400 LOC
+**Total:** ~600 LOC (implementation: 400, tests: 150, docs: 50)
+**Core implementation:** 425 LOC (protocol: 150, SSH: 175, CLI: 100)
 
 ---
 
@@ -601,34 +1000,97 @@ Troubleshooting:
 
 ## 10. Testing Strategy
 
-### 10.1 Unit Tests (~100 LOC)
+### 10.1 Unit Tests (~150 LOC)
+
+#### Protocol Conformance Tests
+
+```python
+# tests/deploy/test_deployer_protocol.py
+def test_ssh_deployer_implements_protocol():
+    """Verify SSHDeployer conforms to Deployer protocol."""
+    from cortex.deploy.base import Deployer
+    from cortex.deploy.ssh_deployer import SSHDeployer
+
+    deployer = SSHDeployer("nvidia", "192.168.1.123")
+    assert isinstance(deployer, Deployer)
+    assert hasattr(deployer, 'detect_capabilities')
+    assert hasattr(deployer, 'deploy')
+    assert hasattr(deployer, 'cleanup')
+
+def test_deployment_result_structure():
+    """Ensure DeploymentResult has required fields."""
+    from cortex.deploy.base import DeploymentResult
+
+    result = DeploymentResult(
+        success=True,
+        transport_uri="tcp://192.168.1.123:9000",
+        adapter_pid=1234,
+        metadata={"platform": "linux", "arch": "arm64"}
+    )
+    assert result.success is True
+    assert result.transport_uri.startswith("tcp://")
+    assert result.adapter_pid == 1234
+
+def test_deployer_factory_ssh_format():
+    """Test factory creates SSHDeployer for user@host format."""
+    from cortex.deploy.factory import DeployerFactory
+    from cortex.deploy.ssh_deployer import SSHDeployer
+
+    deployer = DeployerFactory.from_device_string("nvidia@192.168.1.123")
+    assert isinstance(deployer, SSHDeployer)
+    assert deployer.user == "nvidia"
+    assert deployer.host == "192.168.1.123"
+
+def test_deployer_factory_invalid_format():
+    """Test factory raises on invalid format."""
+    from cortex.deploy.factory import DeployerFactory
+
+    with pytest.raises(ValueError):
+        DeployerFactory.from_device_string("192.168.1.123")  # Missing user@
+```
+
+#### SSHDeployer Tests
 
 ```python
 # tests/deploy/test_ssh_deployer.py
-def test_ephemeral_deploy_success(mocker):
+def test_ssh_deploy_success(mocker):
     """Test successful deployment flow."""
-    mock_ssh = mocker.patch('subprocess.run')
-    mock_ssh.return_value.returncode = 0
+    from cortex.deploy.ssh_deployer import SSHDeployer
 
-    success, pid = ephemeral_deploy('nvidia', '192.168.1.123')
-    assert success is True
-    assert pid is not None
+    mock_subprocess = mocker.patch('subprocess.run')
+    mock_subprocess.return_value.returncode = 0
 
-def test_ephemeral_deploy_build_failure(mocker):
+    deployer = SSHDeployer("nvidia", "192.168.1.123")
+    result = deployer.deploy()
+
+    assert result.success is True
+    assert result.transport_uri == "tcp://192.168.1.123:9000"
+    assert result.adapter_pid is not None
+
+def test_ssh_deploy_build_failure(mocker):
     """Test build failure handling."""
-    mock_ssh = mocker.patch('subprocess.run')
-    mock_ssh.return_value.returncode = 1  # Build failed
+    from cortex.deploy.ssh_deployer import SSHDeployer
+    from cortex.deploy.exceptions import DeploymentError
 
-    success, pid = ephemeral_deploy('nvidia', '192.168.1.123')
-    assert success is False
+    mock_subprocess = mocker.patch('subprocess.run')
+    mock_subprocess.return_value.returncode = 1  # Build failed
 
-def test_cleanup_deployment(mocker):
+    deployer = SSHDeployer("nvidia", "192.168.1.123")
+    with pytest.raises(DeploymentError):
+        deployer.deploy()
+
+def test_ssh_cleanup_success(mocker):
     """Test cleanup removes all files."""
-    mock_ssh = mocker.patch('subprocess.run')
-    mock_ssh.return_value.returncode = 0
+    from cortex.deploy.ssh_deployer import SSHDeployer
 
-    result = cleanup_deployment('nvidia', '192.168.1.123')
-    assert result is True
+    mock_subprocess = mocker.patch('subprocess.run')
+    mock_subprocess.return_value.returncode = 0
+
+    deployer = SSHDeployer("nvidia", "192.168.1.123")
+    result = deployer.cleanup()
+
+    assert result.success is True
+    assert len(result.errors) == 0
 ```
 
 ### 10.2 Integration Test (Manual)
@@ -646,36 +1108,44 @@ pytest tests/integration/test_jetson_deploy.py -v
 
 ## 11. Timeline & Milestones
 
-**Total:** 4 days (1 week)
+**Total:** 4.5 days (1 week)
 
-### Days 1-2: Core Implementation
+### Days 1-2.5: Core Implementation
 
-**Phase 1:** SSH Deployment
-- rsync code deployment
-- Remote build orchestration
-- Adapter lifecycle (start/stop)
-- Cleanup logic
+**Phase 1:** Deployment Framework
+- Protocol layer (base.py: Deployer interface, result types)
+- Factory pattern (factory.py: device string parsing)
+- SSH implementation (ssh_deployer.py: rsync + build + start)
+- Exception types (exceptions.py: DeploymentError, CleanupError)
 
-**Milestone:** Can deploy to Jetson, run benchmark, cleanup
+**Breakdown:**
+- Day 1: Protocol + Factory (150 LOC)
+- Days 2-2.5: SSHDeployer implementation (175 LOC)
+
+**Milestone:** Can deploy to Jetson via protocol, run benchmark, cleanup
 
 ### Day 3: Integration
 
 **Phase 2:** CLI Integration
 - Add `--device` flag to `run` and `pipeline`
-- Mode resolution logic
-- Error handling
+- Integrate DeployerFactory for mode resolution
+- Error handling and user messaging
 
-**Milestone:** `cortex run --device nvidia@jetson` works
+**Milestone:** `cortex run --device nvidia@jetson` works end-to-end
 
-### Day 4: Testing & Polish
+### Day 4-4.5: Testing & Polish
 
 **Phase 3:** Testing & Documentation
-- Unit tests
+- Protocol conformance tests (50 LOC)
+- SSHDeployer unit tests (100 LOC)
 - Manual Jetson validation
 - Error message polish
 - User documentation
 
 **Milestone:** Feature-complete, tested, documented
+
+**Protocol Overhead:** +0.5 days for abstraction layer (+42% LOC, +12.5% time)
+**Benefit:** Future deployers (JTAG, Docker) require 0 CLI changes
 
 ---
 
