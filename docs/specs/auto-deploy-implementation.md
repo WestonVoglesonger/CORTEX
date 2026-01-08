@@ -685,7 +685,7 @@ def execute(args):
 #### Protocol Definition
 
 ```python
-from typing import Protocol, Optional
+from typing import Protocol, Optional, runtime_checkable
 from dataclasses import dataclass
 
 @dataclass
@@ -707,12 +707,17 @@ class CleanupResult:
     success: bool
     errors: list[str]            # Any non-fatal issues encountered
 
+@runtime_checkable
 class Deployer(Protocol):
     """
     Interface for device deployment strategies.
 
     All deployers must implement these methods to integrate with
     cortex run/pipeline commands.
+
+    @runtime_checkable decorator enables isinstance() checks:
+        deployer = SSHDeployer(...)
+        assert isinstance(deployer, Deployer)  # Works at runtime
     """
 
     def detect_capabilities(self) -> dict[str, any]:
@@ -798,8 +803,11 @@ class DeployerFactory:
             - Transport URI string for manual formats (tcp://, serial://, etc.)
 
         Auto-deploy formats (return Deployer):
-            user@host         → SSHDeployer(user, host)
-            stm32:serial      → JTAGDeployer(device) [future]
+            user@host              → SSHDeployer(user, host, port=22)
+            user@host:2222         → SSHDeployer(user, host, port=2222)
+            user@[fe80::1]         → SSHDeployer(user, "fe80::1", port=22)
+            user@[fe80::1]:2222    → SSHDeployer(user, "fe80::1", port=2222)
+            stm32:serial           → JTAGDeployer(device) [future]
 
         Manual formats (return transport URI string):
             tcp://host:port   → "tcp://host:port"
@@ -829,8 +837,29 @@ class DeployerFactory:
             return "local://"  # Default to local adapter
 
         if '@' in device:
-            user, host = device.split('@', 1)
-            return SSHDeployer(user, host)
+            # Parse SSH format: user@host[:port]
+            # Also handle IPv6: user@[fe80::1][:port]
+            user, host_part = device.split('@', 1)
+
+            # Check for IPv6 brackets
+            if host_part.startswith('['):
+                # IPv6: user@[fe80::1] or user@[fe80::1]:2222
+                bracket_end = host_part.find(']')
+                if bracket_end == -1:
+                    raise ValueError(f"Malformed IPv6 address: {device}")
+                host = host_part[1:bracket_end]  # Strip brackets
+                remainder = host_part[bracket_end+1:]
+                port = int(remainder[1:]) if remainder.startswith(':') else 22
+            else:
+                # IPv4 or hostname: user@host or user@host:port
+                if ':' in host_part:
+                    host, port_str = host_part.rsplit(':', 1)
+                    port = int(port_str)
+                else:
+                    host = host_part
+                    port = 22
+
+            return SSHDeployer(user, host, port=port)
 
         if device.startswith('stm32:'):
             raise NotImplementedError("JTAGDeployer not yet implemented (Spring 2026)")
@@ -878,6 +907,23 @@ class SSHDeployer:
             host: IP or hostname (e.g., "192.168.1.123" or "jetson.local")
             port: SSH port (default: 22)
             adapter_port: Port for adapter to listen on (default: 9000)
+
+        Port Collision Handling:
+            Fixed adapter_port=9000 will randomly fail if port already in use.
+            Two strategies available:
+
+            1. User-specified port:
+               SSHDeployer(user, host, adapter_port=9001)
+               Caller's responsibility to avoid conflicts
+
+            2. Ephemeral port (future):
+               adapter_port=0 → Adapter binds to OS-assigned ephemeral port
+               Requires protocol enhancement: adapter reports bound port in HELLO
+               Not implemented in v1 (needs HELLO message extension)
+
+            Current implementation: Strategy 1 (user-specified, default 9000)
+            Known limitation: May fail if 9000 already bound
+            Workaround: Pass explicit adapter_port or kill conflicting process
         """
         self.user = user
         self.host = host
@@ -931,7 +977,19 @@ class SSHDeployer:
             4. ssh "nohup .../cortex_adapter_native tcp://:9000 &"
                - Capture PID: echo $! > /tmp/cortex-adapter.pid
 
-            5. Wait for port: nc -z host 9000 (retry 30s timeout)
+            5. Readiness checks (both remote + host):
+               Remote check: ssh "lsof -i :9000" (adapter bound to port)
+               Host check: nc -z host 9000 (host can connect to adapter)
+               Both must succeed (retry 30s timeout with exponential backoff)
+
+               Why both checks:
+                 - Remote only: Doesn't verify network connectivity
+                 - Host only: Doesn't detect adapter crash after bind
+                 - Both: Full verification that harness can communicate
+
+               Failure modes:
+                 - Remote fails: Adapter didn't start (check logs)
+                 - Host fails: Firewall/network issue (check route, ping host)
 
         Args:
             verbose: Stream build/validation output to console
@@ -962,9 +1020,19 @@ class SSHDeployer:
         """
         Stop adapter and delete files.
 
-        Commands:
-            ssh "kill $(cat /tmp/cortex-adapter.pid) 2>/dev/null || true"
-            ssh "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+        Shutdown sequence (robust):
+            1. SIGTERM: ssh "kill $(cat /tmp/cortex-adapter.pid)"
+               Wait 5 seconds for graceful shutdown
+
+            2. SIGKILL: ssh "kill -9 $(cat /tmp/cortex-adapter.pid) 2>/dev/null || true"
+               Force kill if SIGTERM failed
+
+            3. Cleanup files: ssh "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+
+        Rationale:
+            SIGTERM alone is insufficient if adapter is hung or unresponsive.
+            SIGKILL ensures process termination (unkillable except by kernel).
+            5-second timeout balances graceful shutdown vs user wait time.
 
         Returns:
             CleanupResult(success=True, errors=[])
@@ -980,6 +1048,8 @@ class SSHDeployer:
 ### 6.2 JTAGDeployer (Future - Spring 2026)
 
 **JTAGDeployer implements deployment for embedded devices (STM32, bare metal ARM).**
+
+**⚠️ DRAFT INTERFACE**: This design is speculative and will likely change during implementation (Spring 2026). Included for architectural completeness, but expect significant revisions based on actual STM32 requirements, OpenOCD limitations, and cross-compilation complexities. Do NOT implement this interface yet—it serves as a placeholder to guide protocol design decisions.
 
 #### Key Differences from SSHDeployer
 
@@ -1181,6 +1251,7 @@ Options:
   --duration INT      Override duration
   --repeats INT       Override repeats
   --warmup INT        Override warmup
+  --skip-validate     Skip oracle validation (faster, trust correctness)
   --verbose           Show detailed output
   --help              Show help
 
@@ -1192,6 +1263,9 @@ Examples:
   cortex run --device nvidia@192.168.1.123 --kernel car        # SSH to Jetson
   cortex run --device pi@raspberrypi.local --kernel car        # SSH to RPi
   cortex run --device nvidia@jetson.local --kernel car         # SSH via mDNS
+
+  # Skip validation (faster iteration, trust correctness):
+  cortex run --device nvidia@192.168.1.123 --kernel car --skip-validate
 
   # Manual connection formats (adapter already running):
   cortex run --device tcp://192.168.1.123:9000 --kernel car    # TCP connection
@@ -1351,6 +1425,66 @@ device: "nvidia@jetson"  # Priority 2
 cortex run --config test_config.yaml --device pi@raspberrypi --kernel car
 # Result: Uses pi@raspberrypi (CLI --device overrides config)
 ```
+
+---
+
+### 8.3 Debugging Features (Nice-to-Have)
+
+**These features are optional enhancements for troubleshooting deployment issues.**
+
+#### --print-commands Flag
+
+```bash
+cortex run --device nvidia@192.168.1.123 --kernel car --print-commands
+```
+
+**Behavior:** Print all SSH/rsync commands before executing them, enabling users to:
+- Reproduce deployment steps manually
+- Debug permission issues
+- Understand what automation is doing
+- Copy-paste commands for experimentation
+
+**Example output:**
+```
+[CMD] rsync -av --exclude='.git' --exclude='results' ... nvidia@192.168.1.123:~/cortex-temp/
+[CMD] ssh -p 22 nvidia@192.168.1.123 "cd ~/cortex-temp && make clean && make all"
+[CMD] ssh -p 22 nvidia@192.168.1.123 "which python3 && python3 -c 'import scipy'"
+[CMD] ssh -p 22 nvidia@192.168.1.123 "nohup ~/cortex-temp/.../cortex_adapter_native tcp://:9000 > /tmp/cortex-adapter.log 2>&1 & echo \$! > /tmp/cortex-adapter.pid"
+[CMD] nc -z 192.168.1.123 9000
+```
+
+**Implementation:** Add `print_commands: bool` parameter to SSHDeployer, log to stderr before subprocess.run()
+
+**Value:** Low implementation cost (~10 LOC), high debugging value for SSH/network issues
+
+#### Remote Log Tail on Failure
+
+**Behavior:** When adapter fails to start, automatically fetch last 40 lines of remote log
+
+**Example:**
+```
+Error: Adapter failed to start on remote device
+
+Port 9000 not responding after 30 seconds.
+
+Remote adapter log (last 40 lines):
+  [2026-01-08 14:32:15] cortex_adapter_native starting...
+  [2026-01-08 14:32:15] Binding to tcp://:9000
+  [2026-01-08 14:32:15] ERROR: Address already in use (errno 98)
+  [2026-01-08 14:32:15] Fatal: Cannot bind to port 9000
+  [2026-01-08 14:32:15] Exiting with code 1
+
+Troubleshooting:
+  # Check if port in use:
+  ssh nvidia@192.168.1.123 "lsof -i :9000"
+
+  # Kill conflicting process:
+  ssh nvidia@192.168.1.123 "kill \$(lsof -t -i :9000)"
+```
+
+**Implementation:** Add `fetch_logs()` method to SSHDeployer, call on deployment failure
+
+**Value:** Saves manual SSH → cat log round-trip, immediately shows root cause
 
 ---
 
@@ -1672,9 +1806,10 @@ ssh nvidia@192.168.1.123 "ls ~/cortex-temp"
 
 [3. Run Pipeline]
   For each kernel in [car, notch_iir, bandpass_fir, goertzel, welch_psd, noop]:
-    cortex run --device tcp://192.168.1.123:9000 --kernel <kernel>
+    Execute benchmark via tcp://192.168.1.123:9000
     Results → results/run-*/kernel-data/<kernel>/
 
+  Note: Pipeline runs kernels internally (not via subprocess cortex run)
   Total benchmark time: ~6 × 5s = 30s (with short duration)
 
 [4. Cleanup]
