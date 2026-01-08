@@ -582,14 +582,56 @@ class SSHDeployer:
 **Deliverables:**
 - Add `--device` flag to `cortex run` and `cortex pipeline`
 - Mode resolution logic
+- Pipeline integration (skip host build/validate when using auto-deploy)
 
 **Files:**
 - `src/cortex/commands/run.py` (50 LOC changes)
 - `src/cortex/commands/pipeline.py` (50 LOC changes)
 
+**Key Integration Logic:**
+
+```python
+# pipeline.py
+if args.device:
+    # Parse device string
+    result = DeployerFactory.from_device_string(args.device)
+
+    if isinstance(result, Deployer):
+        # Auto-deploy mode: deployer handles build + validation
+        print("Remote device mode:")
+        print("  → Build: On device (via deployment)")
+        print("  → Validate: On device (if Python available)")
+        print("  → Benchmark: On device")
+
+        deploy_result = result.deploy(
+            verbose=args.verbose,
+            skip_validation=args.skip_validate
+        )
+
+        try:
+            # Skip host build/validate (deployer already did it)
+            results_dir = runner.run_all_kernels(
+                ..., transport_uri=deploy_result.transport_uri
+            )
+        finally:
+            result.cleanup()
+    else:
+        # Manual mode: adapter already running, just connect
+        results_dir = runner.run_all_kernels(..., transport_uri=result)
+else:
+    # Local mode: build + validate + run on host (existing behavior)
+    if not args.skip_build:
+        smart_build(...)
+    if not args.skip_validate:
+        validate.execute(...)
+    results_dir = runner.run_all_kernels(...)
+```
+
 **Success Criteria:**
 - [ ] `cortex run --device nvidia@192.168.1.123 --kernel car` works end-to-end
-- [ ] `cortex pipeline --device nvidia@192.168.1.123` works
+- [ ] `cortex pipeline --device nvidia@192.168.1.123` works (skips host build/validate)
+- [ ] `cortex pipeline --device nvidia@192.168.1.123 --skip-validate` skips device validation
+- [ ] Device validation gracefully degrades if Python missing
 - [ ] CLI flags override config
 
 ---
@@ -843,34 +885,56 @@ class SSHDeployer:
         """
         ...
 
-    def deploy(self, verbose: bool = False) -> DeploymentResult:
+    def deploy(self, verbose: bool = False, skip_validation: bool = False) -> DeploymentResult:
         """
-        Deploy via SSH.
+        Deploy via SSH: rsync → build → validate → start adapter.
 
         Steps:
             1. rsync code to ~/cortex-temp/
                - Exclude: .git, results, *.o, *.dylib, *.so, __pycache__
+
             2. ssh "cd ~/cortex-temp && make clean && make all"
+               - Native build on device
                - Stream output if verbose=True
-            3. ssh "nohup .../cortex_adapter_native tcp://:9000 &"
+
+            3. Validation (optional, device-side):
+               If not skip_validation:
+                   - Check: ssh "which python3 && python3 -c 'import scipy'"
+                   - If available: ssh "cd ~/cortex-temp && cortex validate"
+                   - If missing: Print warning, continue
+                   - If validation fails: Raise DeploymentError
+
+               Rationale: Full Linux devices (Jetson, RPi) can install Python/SciPy.
+                         Device-side validation catches target-specific bugs.
+                         Graceful fallback if Python missing (user can validate locally).
+
+            4. ssh "nohup .../cortex_adapter_native tcp://:9000 &"
                - Capture PID: echo $! > /tmp/cortex-adapter.pid
-            4. Wait for port: nc -z host 9000 (retry 30s timeout)
+
+            5. Wait for port: nc -z host 9000 (retry 30s timeout)
+
+        Args:
+            verbose: Stream build/validation output to console
+            skip_validation: Skip device-side validation (faster, trust local validation)
 
         Returns:
             DeploymentResult(
                 success=True,
                 transport_uri=f"tcp://{self.host}:{self.adapter_port}",
                 adapter_pid=<remote PID>,
-                metadata=<capabilities dict>
+                metadata={
+                    **capabilities,
+                    "validation": "passed" | "skipped" | "unavailable"
+                }
             )
 
         Files on device after deployment:
-            ~/cortex-temp/                   # Source code
+            ~/cortex-temp/                   # Source code + built binaries
             /tmp/cortex-adapter.pid          # PID file
             /tmp/cortex-adapter.log          # Adapter logs
 
         Raises:
-            DeploymentError: If any step fails
+            DeploymentError: If rsync, build, or validation fails
         """
         ...
 
@@ -893,7 +957,104 @@ class SSHDeployer:
 
 ---
 
-### 6.2 Legacy Functions (Deprecated)
+### 6.2 JTAGDeployer (Future - Spring 2026)
+
+**JTAGDeployer implements deployment for embedded devices (STM32, bare metal ARM).**
+
+#### Key Differences from SSHDeployer
+
+```python
+class JTAGDeployer:
+    """
+    Deploys via JTAG/SWD: cross-compile → validate → flash firmware.
+
+    Target devices: STM32, embedded ARM Cortex-M
+    Requirements: OpenOCD, arm-none-eabi-gcc (host-side)
+    """
+
+    def __init__(self, device: str):
+        """
+        Args:
+            device: Serial device path (e.g., "/dev/ttyUSB0", "stm32:/dev/ttyUSB0")
+        """
+        self.device = device
+
+    def deploy(self, verbose: bool = False, skip_validation: bool = False) -> DeploymentResult:
+        """
+        Deploy via JTAG: cross-compile → validate → flash.
+
+        Steps:
+            1. Cross-compile on host:
+               - Use arm-none-eabi-gcc (ARM Cortex-M toolchain)
+               - Build for target architecture (e.g., STM32H7)
+
+            2. Validation (REQUIRED on host):
+               If not skip_validation:
+                   - Run cortex validate (host-side oracle)
+                   - MUST pass before flashing
+                   - No fallback (Python impossible on embedded device)
+
+               Rationale: Embedded devices lack Python interpreter.
+                         Host validation is the ONLY opportunity to verify correctness.
+                         Flashing unvalidated code wastes time (flash + test cycle is slow).
+
+            3. Flash firmware via OpenOCD:
+               - openocd -f interface/stlink.cfg -f target/stm32h7x.cfg -c "program firmware.elf verify reset exit"
+
+            4. Verify connection:
+               - Open serial port (e.g., /dev/ttyUSB0 @ 115200 baud)
+               - Wait for HELLO message from adapter firmware
+
+        Args:
+            verbose: Stream build/flash output to console
+            skip_validation: Skip host validation (NOT RECOMMENDED - no device-side validation possible)
+
+        Returns:
+            DeploymentResult(
+                success=True,
+                transport_uri=f"serial://{self.device}?baud=115200",
+                adapter_pid=None,  # Firmware is always listening (no process concept)
+                metadata={
+                    "platform": "stm32",
+                    "arch": "cortex-m7",
+                    "validation": "passed" | "skipped"
+                }
+            )
+
+        Raises:
+            DeploymentError: If cross-compile, validation, or flash fails
+        """
+        ...
+
+    def cleanup(self) -> CleanupResult:
+        """
+        Cleanup for embedded device.
+
+        Actions:
+            - Close serial port
+            - Optionally: Reset device via OpenOCD
+
+        Note:
+            Firmware is persistent across reboots (no files to delete).
+            Unlike SSH, there's no ephemeral state to clean up.
+        """
+        ...
+```
+
+#### Validation Strategy Comparison
+
+| Deployer | Build Location | Validation Location | Fallback if Missing |
+|----------|----------------|---------------------|---------------------|
+| **SSHDeployer** | Device (native) | Device (preferred) | Warn, continue |
+| **JTAGDeployer** | Host (cross-compile) | Host (required) | Fail (no fallback) |
+
+**Why the difference:**
+- SSH targets are full Linux (can install Python/SciPy)
+- Embedded targets are bare metal (no OS, no Python possible)
+
+---
+
+### 6.3 Legacy Functions (Deprecated)
 
 **The following functions are deprecated in favor of the Deployer protocol:**
 
