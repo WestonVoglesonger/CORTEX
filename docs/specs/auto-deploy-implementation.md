@@ -1,9 +1,9 @@
 # Auto-Deploy Device Adapters: Implementation Specification
 
-**Version:** 3.3
+**Version:** 3.4
 **Date:** January 8, 2026
 **Status:** Ready for Implementation
-**Estimated Effort:** 455 LOC, 4.5 days
+**Estimated Effort:** 445 LOC, 4.5 days
 
 ---
 
@@ -593,13 +593,11 @@ class SSHDeployer:
 ```python
 # Helper function (shared between run.py and pipeline.py)
 def resolve_device_string(args, config) -> str:
-    """Resolve device with priority: CLI --device > config > CLI --transport > default"""
+    """Resolve device with priority: CLI --device > config > default"""
     if hasattr(args, 'device') and args.device:
         return args.device
     if config and 'device' in config:
         return config['device']
-    if hasattr(args, 'transport') and args.transport:
-        return args.transport
     return "local://"
 
 # pipeline.py (and similar for run.py)
@@ -654,8 +652,7 @@ def execute(args):
 - [ ] Device validation gracefully degrades if Python missing
 - [ ] Config `device:` field works (priority 2)
 - [ ] CLI `--device` overrides config (priority 1)
-- [ ] Legacy `--transport` still works (priority 3, backward compat)
-- [ ] Priority chain fully tested (all 4 levels)
+- [ ] Priority chain fully tested (all 3 levels)
 
 ---
 
@@ -1291,20 +1288,19 @@ benchmark:
 ```
 1. CLI --device flag            (highest priority)
 2. Config device: field
-3. CLI --transport flag         (backward compatibility)
-4. Default "local://"           (lowest priority)
+3. Default "local://"           (lowest priority)
 ```
 
 **Implementation:**
 ```python
 def resolve_device_string(args, config) -> str:
     """
-    Resolve device string with priority chain.
+    Resolve device string with 3-level priority chain.
 
     Returns:
         Device string for DeployerFactory.from_device_string()
     """
-    # Priority 1: CLI --device (new unified flag)
+    # Priority 1: CLI --device flag
     if hasattr(args, 'device') and args.device:
         return args.device
 
@@ -1312,11 +1308,7 @@ def resolve_device_string(args, config) -> str:
     if config and 'device' in config:
         return config['device']
 
-    # Priority 3: CLI --transport (backward compat, deprecated)
-    if hasattr(args, 'transport') and args.transport:
-        return args.transport
-
-    # Priority 4: Default local
+    # Priority 3: Default local
     return "local://"
 ```
 
@@ -1340,7 +1332,7 @@ cortex run --config jetson_config.yaml --device pi@192.168.1.200 --kernel car
 # Config says Jetson, CLI overrides to RPi
 ```
 
-**Example 3: Config with manual transport**
+**Example 3: Config with manual connection**
 ```yaml
 # manual_config.yaml
 device: "tcp://192.168.1.123:9000"
@@ -1350,37 +1342,15 @@ cortex run --config manual_config.yaml --kernel car
 # Connects to existing adapter (no auto-deploy)
 ```
 
-**Example 4: Backward compatibility (existing --transport users)**
-```bash
-cortex run --transport tcp://192.168.1.100:9000 --kernel car
-# Still works (priority 3)
-```
-
-**Example 5: Multiple overrides (priority test)**
+**Example 4: Priority test (CLI overrides config)**
 ```yaml
 # test_config.yaml
 device: "nvidia@jetson"  # Priority 2
 ```
 ```bash
-cortex run --config test_config.yaml \
-           --transport tcp://old-style:9000 \
-           --device pi@raspberrypi \
-           --kernel car
-
-# Result: Uses pi@raspberrypi (--device has highest priority)
+cortex run --config test_config.yaml --device pi@raspberrypi --kernel car
+# Result: Uses pi@raspberrypi (CLI --device overrides config)
 ```
-
-#### Backward Compatibility
-
-| User Input | Behavior | Breaking? |
-|------------|----------|-----------|
-| `--transport tcp://...` | Works (priority 3) | ✅ No |
-| No flags, no config `device:` | Local adapter | ✅ No |
-| Config without `device:` field | Local adapter | ✅ No |
-| **New:** `--device tcp://...` | Works (priority 1) | ✅ New feature |
-| **New:** Config `device: ...` | Works (priority 2) | ✅ New feature |
-
-**Zero breaking changes for existing users.**
 
 ---
 
@@ -1617,8 +1587,7 @@ pytest tests/integration/test_jetson_deploy.py -v
 - [ ] Works with IP addresses, hostnames, and DNS names
 - [ ] Config `device:` field works (auto-deploy from config)
 - [ ] CLI `--device` overrides config `device:` field
-- [ ] Legacy `--transport` flag still works (backward compatibility)
-- [ ] Priority resolution: CLI --device > config > CLI --transport > local
+- [ ] Priority resolution: CLI --device > config > local (3 levels)
 
 **Error Handling:**
 - [ ] Invalid format shows helpful error
