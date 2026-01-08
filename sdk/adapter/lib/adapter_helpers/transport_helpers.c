@@ -280,25 +280,12 @@ cortex_transport_t *cortex_adapter_transport_create(const char *config_uri) {
             return NULL;
         }
 
-        /* Use custom timeout if specified, else default */
-        uint32_t timeout_ms = uri.timeout_ms ? uri.timeout_ms : CORTEX_ACCEPT_TIMEOUT_MS;
+        fprintf(stderr, "Adapter: Listening on TCP port %u (daemon mode: call accept() in loop)...\n",
+                uri.port);
 
-        fprintf(stderr, "Adapter: Listening on TCP port %u (%u ms timeout)...\n",
-                uri.port, timeout_ms);
-
-        /* Accept ONE connection (blocking with timeout) */
-        cortex_transport_t *client = cortex_transport_tcp_server_accept(server, timeout_ms);
-
-        /* Close listening socket (no longer needed) */
-        cortex_transport_destroy(server);
-
-        if (!client) {
-            fprintf(stderr, "Adapter: Failed to accept TCP connection (timeout or error)\n");
-            return NULL;
-        }
-
-        fprintf(stderr, "Adapter: TCP connection established\n");
-        return client;
+        /* For daemon mode (tcp://:port), return listening socket
+         * Caller will call cortex_transport_tcp_server_accept() in loop */
+        return server;
 
     } else if (strcmp(uri.scheme, "serial") == 0) {
         /*

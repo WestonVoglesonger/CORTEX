@@ -24,6 +24,20 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <stdbool.h>
+
+/* Global shutdown flag for signal handling */
+static volatile sig_atomic_t g_shutdown = 0;
+
+/* Signal handler for graceful shutdown */
+static void signal_handler(int sig)
+{
+    if (sig == SIGINT || sig == SIGTERM) {
+        g_shutdown = 1;
+    }
+}
 
 /* Kernel plugin API (from cortex_plugin.h) */
 typedef struct cortex_plugin_config {
@@ -349,6 +363,11 @@ int main(int argc, char **argv)
 {
     uint32_t boot_id = generate_boot_id();
 
+    /* Install signal handlers for graceful shutdown */
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGPIPE, SIG_IGN);  /* Don't crash on broken pipe */
+
     /* Parse transport config from argv[1] (defaults to "local://") */
     const char *config_uri = (argc > 1) ? argv[1] : "local://";
 
@@ -358,18 +377,67 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* Create transport from URI configuration */
-    cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
-    if (!tp) {
-        fprintf(stderr, "Failed to create transport from URI: %s\n", config_uri);
+    /* Parse URI to detect transport mode */
+    cortex_uri_t uri;
+    if (cortex_parse_adapter_uri(config_uri, &uri) != 0) {
+        fprintf(stderr, "Invalid URI: %s\n", config_uri);
         return 1;
     }
 
-    /* Run single session */
-    int ret = run_session(tp, boot_id);
+    /* Check if TCP server mode (daemon) */
+    bool is_tcp_server = (strcmp(uri.scheme, "tcp") == 0 && uri.host[0] == '\0');
 
-    /* Cleanup */
-    cortex_transport_destroy(tp);
+    if (is_tcp_server) {
+        /* TCP daemon mode: accept multiple connections */
+        cortex_transport_t *listener = cortex_adapter_transport_create(config_uri);
+        if (!listener) {
+            fprintf(stderr, "Failed to create TCP listener\n");
+            return 1;
+        }
 
-    return (ret < 0) ? 1 : 0;
+        fprintf(stderr, "[adapter] TCP daemon mode active. Press Ctrl+C to exit.\n");
+
+        /* Accept loop */
+        while (!g_shutdown) {
+            cortex_transport_t *conn = cortex_transport_tcp_server_accept(listener, 5000);
+
+            if (!conn) {
+                if (errno == ETIMEDOUT) {
+                    continue;  /* Timeout - check shutdown flag and retry */
+                }
+                fprintf(stderr, "[adapter] Accept error: %d\n", errno);
+                break;
+            }
+
+            fprintf(stderr, "[adapter] Connection established, running session...\n");
+
+            int ret = run_session(conn, boot_id);
+            cortex_transport_destroy(conn);
+
+            if (ret < 0) {
+                fprintf(stderr, "[adapter] Session failed, waiting for next connection...\n");
+                /* Continue loop - bad session doesn't kill daemon */
+            } else {
+                fprintf(stderr, "[adapter] Session completed normally.\n");
+            }
+        }
+
+        cortex_transport_destroy(listener);
+        fprintf(stderr, "[adapter] Shutdown requested, exiting.\n");
+
+    } else {
+        /* Local/serial: single session */
+        cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
+        if (!tp) {
+            fprintf(stderr, "Failed to create transport from URI: %s\n", config_uri);
+            return 1;
+        }
+
+        int ret = run_session(tp, boot_id);
+        cortex_transport_destroy(tp);
+
+        return (ret < 0) ? 1 : 0;
+    }
+
+    return 0;
 }
