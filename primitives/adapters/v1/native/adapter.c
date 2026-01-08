@@ -215,34 +215,19 @@ static void unload_kernel_plugin(kernel_plugin_t *plugin)
     memset(plugin, 0, sizeof(*plugin));
 }
 
-/* Main adapter loop */
-int main(int argc, char **argv)
+/**
+ * Run a single session: handshake + window loop + cleanup
+ * Returns: 0 on normal close, -1 on error
+ */
+static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 {
-    uint32_t boot_id = generate_boot_id();
     uint32_t session_id = 0;
     uint32_t sequence = 0;
-
-    /* Parse transport config from argv[1] (defaults to "local://") */
-    const char *config_uri = (argc > 1) ? argv[1] : "local://";
-
-    /* Validate URI length to prevent malformed input from crashing */
-    if (config_uri && strlen(config_uri) > 512) {
-        fprintf(stderr, "Transport URI too long (max 512 chars): %zu\n", strlen(config_uri));
-        return 1;
-    }
-
-    /* Create transport from URI configuration */
-    cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
-    if (!tp) {
-        fprintf(stderr, "Failed to create transport from URI: %s\n", config_uri);
-        return 1;
-    }
 
     /* 1. Send HELLO */
     if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
-        cortex_transport_destroy(tp);
-        return 1;
+        return -1;
     }
 
     /* 2. Receive CONFIG */
@@ -255,8 +240,7 @@ int main(int argc, char **argv)
                                     &hop_samples, &channels, plugin_name, plugin_params,
                                     &calibration_state, &calibration_state_size) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
-        cortex_transport_destroy(tp);
-        return 1;
+        return -1;
     }
 
     /* 3. Load kernel plugin */
@@ -265,8 +249,7 @@ int main(int argc, char **argv)
                            channels, plugin_params, calibration_state, calibration_state_size, &kernel_plugin) < 0) {
         fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
         free(calibration_state);  /* Free calibration state on error */
-        cortex_transport_destroy(tp);
-        return 1;
+        return -1;
     }
 
     /* 4. Send ACK (kernel ready, with output dimensions) */
@@ -277,17 +260,15 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to send ACK\n");
         free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
-        cortex_transport_destroy(tp);
-        return 1;
+        return -1;
     }
 
-    /* 4. Window loop */
+    /* 5. Allocate window buffers */
     float *window_buf = (float *)malloc(window_samples * channels * sizeof(float));
 
     /* Allocate output buffer based on kernel's actual output shape */
     size_t output_samples = kernel_plugin.output_window_length_samples * kernel_plugin.output_channels;
     float *output_buf = (float *)malloc(output_samples * sizeof(float));
-
 
     if (!window_buf || !output_buf) {
         fprintf(stderr, "Failed to allocate window buffers\n");
@@ -295,10 +276,10 @@ int main(int argc, char **argv)
         free(output_buf);
         free(calibration_state);
         unload_kernel_plugin(&kernel_plugin);
-        cortex_transport_destroy(tp);
-        return 1;
+        return -1;
     }
 
+    /* 6. Window processing loop */
     while (1) {
         /* Receive chunked WINDOW */
         uint32_t received_window_samples = 0;
@@ -354,11 +335,41 @@ int main(int argc, char **argv)
         sequence++;
     }
 
+    /* 7. Cleanup */
     free(window_buf);
     free(output_buf);
     free(calibration_state);  /* Free calibration state if it was allocated */
     unload_kernel_plugin(&kernel_plugin);
-    cortex_transport_destroy(tp);
 
     return 0;
+}
+
+/* Main adapter loop */
+int main(int argc, char **argv)
+{
+    uint32_t boot_id = generate_boot_id();
+
+    /* Parse transport config from argv[1] (defaults to "local://") */
+    const char *config_uri = (argc > 1) ? argv[1] : "local://";
+
+    /* Validate URI length to prevent malformed input from crashing */
+    if (config_uri && strlen(config_uri) > 512) {
+        fprintf(stderr, "Transport URI too long (max 512 chars): %zu\n", strlen(config_uri));
+        return 1;
+    }
+
+    /* Create transport from URI configuration */
+    cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
+    if (!tp) {
+        fprintf(stderr, "Failed to create transport from URI: %s\n", config_uri);
+        return 1;
+    }
+
+    /* Run single session */
+    int ret = run_session(tp, boot_id);
+
+    /* Cleanup */
+    cortex_transport_destroy(tp);
+
+    return (ret < 0) ? 1 : 0;
 }
