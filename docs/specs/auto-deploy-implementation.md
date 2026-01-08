@@ -1,9 +1,9 @@
 # Auto-Deploy Device Adapters: Implementation Specification
 
-**Version:** 3.1
+**Version:** 3.3
 **Date:** January 8, 2026
 **Status:** Ready for Implementation
-**Estimated Effort:** 425 LOC, 4.5 days
+**Estimated Effort:** 455 LOC, 4.5 days
 
 ---
 
@@ -591,10 +591,27 @@ class SSHDeployer:
 **Key Integration Logic:**
 
 ```python
-# pipeline.py
-if args.device:
-    # Parse device string
-    result = DeployerFactory.from_device_string(args.device)
+# Helper function (shared between run.py and pipeline.py)
+def resolve_device_string(args, config) -> str:
+    """Resolve device with priority: CLI --device > config > CLI --transport > default"""
+    if hasattr(args, 'device') and args.device:
+        return args.device
+    if config and 'device' in config:
+        return config['device']
+    if hasattr(args, 'transport') and args.transport:
+        return args.transport
+    return "local://"
+
+# pipeline.py (and similar for run.py)
+def execute(args):
+    # Load config (if using config mode)
+    config = load_config(args.config) if args.config else {}
+
+    # Resolve device string with priority chain
+    device_string = resolve_device_string(args, config)
+
+    # Parse device string (returns Deployer or transport URI)
+    result = DeployerFactory.from_device_string(device_string)
 
     if isinstance(result, Deployer):
         # Auto-deploy mode: deployer handles build + validation
@@ -615,16 +632,19 @@ if args.device:
             )
         finally:
             result.cleanup()
-    else:
+
+    elif result != "local://":
         # Manual mode: adapter already running, just connect
+        print(f"Connecting to existing adapter: {result}")
         results_dir = runner.run_all_kernels(..., transport_uri=result)
-else:
-    # Local mode: build + validate + run on host (existing behavior)
-    if not args.skip_build:
-        smart_build(...)
-    if not args.skip_validate:
-        validate.execute(...)
-    results_dir = runner.run_all_kernels(...)
+
+    else:
+        # Local mode: build + validate + run on host (existing behavior)
+        if not args.skip_build:
+            smart_build(...)
+        if not args.skip_validate:
+            validate.execute(...)
+        results_dir = runner.run_all_kernels(...)
 ```
 
 **Success Criteria:**
@@ -632,7 +652,10 @@ else:
 - [ ] `cortex pipeline --device nvidia@192.168.1.123` works (skips host build/validate)
 - [ ] `cortex pipeline --device nvidia@192.168.1.123 --skip-validate` skips device validation
 - [ ] Device validation gracefully degrades if Python missing
-- [ ] CLI flags override config
+- [ ] Config `device:` field works (priority 2)
+- [ ] CLI `--device` overrides config (priority 1)
+- [ ] Legacy `--transport` still works (priority 3, backward compat)
+- [ ] Priority chain fully tested (all 4 levels)
 
 ---
 
@@ -1228,6 +1251,139 @@ Examples:
 
 ---
 
+### 8.2 Config-Based Device Specification
+
+**Device can be specified in YAML config files for reproducibility.**
+
+#### Config Schema Addition
+
+```yaml
+# cortex.yaml (or custom config)
+cortex_version: 1
+
+system:
+  name: "cortex"
+  description: "EEG-first benchmark"
+
+dataset:
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+
+# NEW: Optional device field
+# Specifies target device for benchmarking
+# CLI --device flag overrides this value
+device: "nvidia@192.168.1.123"  # or "tcp://192.168.1.123:9000", etc.
+
+benchmark:
+  metrics: [latency, jitter, throughput]
+  parameters:
+    duration_seconds: 30
+    repeats: 3
+    warmup_seconds: 5
+```
+
+#### Priority Resolution
+
+**Device string is resolved with following priority:**
+
+```
+1. CLI --device flag            (highest priority)
+2. Config device: field
+3. CLI --transport flag         (backward compatibility)
+4. Default "local://"           (lowest priority)
+```
+
+**Implementation:**
+```python
+def resolve_device_string(args, config) -> str:
+    """
+    Resolve device string with priority chain.
+
+    Returns:
+        Device string for DeployerFactory.from_device_string()
+    """
+    # Priority 1: CLI --device (new unified flag)
+    if hasattr(args, 'device') and args.device:
+        return args.device
+
+    # Priority 2: Config device: field
+    if config and 'device' in config:
+        return config['device']
+
+    # Priority 3: CLI --transport (backward compat, deprecated)
+    if hasattr(args, 'transport') and args.transport:
+        return args.transport
+
+    # Priority 4: Default local
+    return "local://"
+```
+
+#### Usage Examples
+
+**Example 1: Config specifies device**
+```yaml
+# jetson_config.yaml
+device: "nvidia@192.168.1.123"
+benchmark:
+  duration_seconds: 60
+```
+```bash
+cortex run --config jetson_config.yaml --kernel car
+# Auto-deploys to Jetson from config
+```
+
+**Example 2: CLI overrides config**
+```bash
+cortex run --config jetson_config.yaml --device pi@192.168.1.200 --kernel car
+# Config says Jetson, CLI overrides to RPi
+```
+
+**Example 3: Config with manual transport**
+```yaml
+# manual_config.yaml
+device: "tcp://192.168.1.123:9000"
+```
+```bash
+cortex run --config manual_config.yaml --kernel car
+# Connects to existing adapter (no auto-deploy)
+```
+
+**Example 4: Backward compatibility (existing --transport users)**
+```bash
+cortex run --transport tcp://192.168.1.100:9000 --kernel car
+# Still works (priority 3)
+```
+
+**Example 5: Multiple overrides (priority test)**
+```yaml
+# test_config.yaml
+device: "nvidia@jetson"  # Priority 2
+```
+```bash
+cortex run --config test_config.yaml \
+           --transport tcp://old-style:9000 \
+           --device pi@raspberrypi \
+           --kernel car
+
+# Result: Uses pi@raspberrypi (--device has highest priority)
+```
+
+#### Backward Compatibility
+
+| User Input | Behavior | Breaking? |
+|------------|----------|-----------|
+| `--transport tcp://...` | Works (priority 3) | ✅ No |
+| No flags, no config `device:` | Local adapter | ✅ No |
+| Config without `device:` field | Local adapter | ✅ No |
+| **New:** `--device tcp://...` | Works (priority 1) | ✅ New feature |
+| **New:** Config `device: ...` | Works (priority 2) | ✅ New feature |
+
+**Zero breaking changes for existing users.**
+
+---
+
 ## 9. Error Handling
 
 ### 9.1 Error Scenarios
@@ -1459,6 +1615,10 @@ pytest tests/integration/test_jetson_deploy.py -v
 - [ ] Device is clean after benchmark (no files left)
 - [ ] Rebuild happens every run (ephemeral)
 - [ ] Works with IP addresses, hostnames, and DNS names
+- [ ] Config `device:` field works (auto-deploy from config)
+- [ ] CLI `--device` overrides config `device:` field
+- [ ] Legacy `--transport` flag still works (backward compatibility)
+- [ ] Priority resolution: CLI --device > config > CLI --transport > local
 
 **Error Handling:**
 - [ ] Invalid format shows helpful error
