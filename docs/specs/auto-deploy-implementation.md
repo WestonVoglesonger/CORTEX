@@ -30,7 +30,10 @@
 
 ### 1.1 Goal
 
-Enable remote benchmarking on any SSH-accessible device with automatic deployment. User provides `user@host`, system handles the rest.
+Enable remote benchmarking on external devices with automatic deployment. User provides device connection string, system handles deployment, build, and execution.
+
+**Initial scope (v3.1):** SSH-accessible devices (Jetson, Raspberry Pi, Linux SBCs)
+**Planned (Spring 2026):** Serial/JTAG devices (STM32, embedded ARM)
 
 ### 1.2 User Experience
 
@@ -73,7 +76,7 @@ cortex run --transport tcp://192.168.1.123:9000 --kernel car
 - ✅ Type-safe `DeploymentResult` and `CleanupResult` dataclasses
 - ✅ Explicit separation: deployment strategy vs transport layer
 
-**WHY:** Multiple device types planned (Jetson, STM32, RPi, FPGA). Protocol enables adding new deployers without modifying CLI or orchestration code. Cost: +125 LOC (+42%). Benefit: 10× extensibility.
+**WHY:** Multiple device types planned (SSH: Jetson/RPi, Serial: STM32 in Spring 2026). Protocol enables adding new deployers without modifying CLI or orchestration code. Cost: +125 LOC (+42%). Benefit: 10× extensibility.
 
 **Implementation impact:**
 - Functions → Classes (SSHDeployer implements Deployer protocol)
