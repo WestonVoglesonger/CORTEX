@@ -272,7 +272,8 @@ class SSHDeployer:
 
             if python_check.returncode == 0:
                 # Python available, run validation
-                validate_cmd = f"cd {self.remote_dir} && python3 -m cortex.commands.validate"
+                # Use PYTHONPATH to make cortex module importable from rsync'd source
+                validate_cmd = f"cd {self.remote_dir} && PYTHONPATH={self.remote_dir}/src python3 -m cortex.commands.validate"
                 try:
                     result = self._run_ssh(validate_cmd, capture_output=not verbose)
                     if verbose and result.stdout:
