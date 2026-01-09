@@ -199,21 +199,23 @@ def execute(args):
                     transport_uri=deploy_result.transport_uri
                 )
 
-            except DeploymentError as e:
-                print(f"\nDeployment failed: {e}")
-                return 1
-            finally:
-                # Always cleanup
+                # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")
                 cleanup_result = deployer.cleanup()
                 if not cleanup_result.success:
                     print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
 
-            if results_dir:
-                print(f"\n✓ Benchmark complete")
-                print(f"Results: {results_dir}")
-                return 0
-            else:
+                if results_dir:
+                    print(f"\n✓ Benchmark complete")
+                    print(f"Results: {results_dir}")
+                    return 0
+                else:
+                    return 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                # Cleanup on deployment failure
+                cleanup_result = deployer.cleanup()
                 return 1
 
         else:
@@ -277,17 +279,19 @@ def execute(args):
                     transport_uri=deploy_result.transport_uri
                 )
 
-            except DeploymentError as e:
-                print(f"\nDeployment failed: {e}")
-                return 1
-            finally:
-                # Always cleanup
+                # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")
                 cleanup_result = deployer.cleanup()
                 if not cleanup_result.success:
                     print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
 
-            return 0 if results_dir else 1
+                return 0 if results_dir else 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                # Cleanup on deployment failure
+                cleanup_result = deployer.cleanup()
+                return 1
 
         else:
             # Manual mode: result is transport URI string
@@ -345,17 +349,19 @@ def execute(args):
                     transport_uri=deploy_result.transport_uri
                 )
 
-            except DeploymentError as e:
-                print(f"\nDeployment failed: {e}")
-                return 1
-            finally:
-                # Always cleanup
+                # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")
                 cleanup_result = deployer.cleanup()
                 if not cleanup_result.success:
                     print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
 
-            return 0 if results_dir else 1
+                return 0 if results_dir else 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                # Cleanup on deployment failure
+                cleanup_result = deployer.cleanup()
+                return 1
 
         else:
             # Manual mode: result is transport URI string
