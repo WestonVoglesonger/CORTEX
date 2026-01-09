@@ -76,6 +76,47 @@ class SSHDeployer:
         cmd = self._ssh_cmd(command)
         return subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
 
+    def _check_passwordless_ssh(self) -> None:
+        """
+        Verify passwordless SSH is configured.
+
+        Raises:
+            DeploymentError: If passwordless SSH is not set up
+        """
+        # Test SSH without password authentication
+        test_cmd = [
+            "ssh",
+            "-p", str(self.ssh_port),
+            "-o", "PasswordAuthentication=no",
+            "-o", "BatchMode=yes",  # Fail immediately if password needed
+            "-o", "ConnectTimeout=5",
+            f"{self.user}@{self.host}",
+            "echo OK"
+        ]
+
+        result = subprocess.run(test_cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise DeploymentError(
+                f"❌ Passwordless SSH not configured for {self.user}@{self.host}\n\n"
+                f"Auto-deploy requires passwordless SSH authentication.\n"
+                f"This is a one-time setup that takes 30 seconds.\n\n"
+                f"🔧 Setup Instructions:\n\n"
+                f"  1. Run this command on your Mac:\n"
+                f"     ssh-copy-id {'-p ' + str(self.ssh_port) + ' ' if self.ssh_port != 22 else ''}{self.user}@{self.host}\n\n"
+                f"  2. Enter your password when prompted (last time!)\n\n"
+                f"  3. Test it worked:\n"
+                f"     ssh {'-p ' + str(self.ssh_port) + ' ' if self.ssh_port != 22 else ''}{self.user}@{self.host} \"echo 'Success!'\"\n"
+                f"     (should NOT ask for password)\n\n"
+                f"  4. Re-run your cortex command\n\n"
+                f"📚 Why: SSH keys are more secure than passwords and enable automation.\n"
+                f"   Learn more: https://www.ssh.com/academy/ssh/copy-id\n\n"
+                f"❓ Troubleshooting:\n"
+                f"   - If ssh-copy-id doesn't exist: brew install ssh-copy-id\n"
+                f"   - If you don't have an SSH key: ssh-keygen -t rsa -b 4096\n"
+                f"   - Manual setup: cat ~/.ssh/id_rsa.pub | ssh {self.user}@{self.host} \"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\""
+            )
+
     def detect_capabilities(self) -> dict[str, any]:
         """
         Detect device platform via SSH.
@@ -134,6 +175,7 @@ class SSHDeployer:
         Deploy via SSH: rsync → build → validate → start adapter.
 
         Steps:
+            0. Check passwordless SSH configured
             1. rsync code to ~/cortex-temp/
             2. ssh "make clean && make all"
             3. Validation (optional, device-side with graceful fallback)
@@ -150,7 +192,12 @@ class SSHDeployer:
         Raises:
             DeploymentError: If rsync, build, or validation fails
         """
-        # Step 0: Detect capabilities
+        # Step 0: Pre-flight check - Verify passwordless SSH
+        if verbose:
+            print(f"[0/5] Checking SSH configuration...")
+        self._check_passwordless_ssh()
+
+        # Step 1: Detect capabilities
         if verbose:
             print(f"[1/5] Detecting capabilities on {self.host}...")
         capabilities = self.detect_capabilities()
@@ -163,7 +210,7 @@ class SSHDeployer:
                 f"  # or equivalent for your distro"
             )
 
-        # Step 1: rsync code
+        # Step 2: rsync code
         if verbose:
             print(f"[2/5] Deploying code to {self.host}...")
 
@@ -196,7 +243,7 @@ class SSHDeployer:
                 f"  3. Verify write permissions: ssh {self.user}@{self.host} ls -ld ~"
             )
 
-        # Step 2: Build on device
+        # Step 3: Build on device
         if verbose:
             print(f"[3/5] Building on device...")
 
@@ -214,7 +261,7 @@ class SSHDeployer:
                 f"  ssh -p {self.ssh_port} {self.user}@{self.host} \"cd {self.remote_dir} && make clean && make all V=1\""
             )
 
-        # Step 3: Validation (optional, device-side)
+        # Step 4: Validation (optional, device-side)
         validation_status = "skipped"
         if not skip_validation:
             if verbose:
@@ -244,7 +291,7 @@ class SSHDeployer:
                     print(f"      (Validation should be done on host before deployment)")
                 validation_status = "unavailable"
 
-        # Step 4: Start adapter
+        # Step 5: Start adapter
         if verbose:
             print(f"[5/5] Starting adapter...")
 
@@ -267,7 +314,7 @@ class SSHDeployer:
                 f"  ssh -p {self.ssh_port} {self.user}@{self.host} cat /tmp/cortex-adapter.log"
             )
 
-        # Step 5: Wait for adapter ready (dual checks: remote + host)
+        # Step 6: Wait for adapter ready (dual checks: remote + host)
         if verbose:
             print(f"  Waiting for adapter (PID {self.adapter_pid}) to be ready...")
 
