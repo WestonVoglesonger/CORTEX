@@ -262,6 +262,9 @@ def execute(args):
                     skip_validation=args.skip_validate
                 )
 
+                # Create run directory structure (required by runner)
+                create_run_structure(run_name)
+
                 # Run benchmark using deployed adapter
                 results_dir = runner.run_single_kernel(
                     args.kernel,
@@ -327,6 +330,9 @@ def execute(args):
                     verbose=args.verbose,
                     skip_validation=args.skip_validate
                 )
+
+                # Create run directory structure (required by runner)
+                create_run_structure(run_name)
 
                 # Run benchmark using deployed adapter
                 results_dir = runner.run_all_kernels(
