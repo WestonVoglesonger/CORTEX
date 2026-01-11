@@ -84,8 +84,23 @@ def execute(args):
 
     print(f"\nRun name: {run_name}")
 
-    # Parse device string
-    device_string = args.device if hasattr(args, 'device') and args.device else "local://"
+    # Load default config to check for device field
+    fs = RealFileSystemService()
+    config_loader = YamlConfigLoader(fs)
+    try:
+        config = config_loader.load_yaml("primitives/configs/cortex.yaml")
+    except Exception:
+        config = None  # Config loading failed, proceed with CLI/default
+
+    # Parse device string (CLI > config > default)
+    device_string = None
+    if hasattr(args, 'device') and args.device:
+        device_string = args.device  # Priority 1: CLI flag
+    elif config and 'device' in config:
+        device_string = config['device']  # Priority 2: Config field
+    else:
+        device_string = "local://"  # Priority 3: Default
+
     try:
         device_result = DeployerFactory.from_device_string(device_string)
     except ValueError as e:
@@ -292,6 +307,23 @@ def execute(args):
         if not results_dir:
             print("\n✗ Benchmark execution failed")
             return 1
+
+        # Fetch logs BEFORE cleanup (in finally block to ensure it runs)
+        if deployer and hasattr(deployer, 'fetch_logs'):
+            from cortex.utils.paths import get_deployment_dir
+            deployment_dir = get_deployment_dir(run_name)
+
+            try:
+                print("\n" + "=" * 80)
+                print("FETCHING LOGS: Retrieving deployment logs")
+                print("=" * 80)
+                fetch_result = deployer.fetch_logs(str(deployment_dir))
+                if not fetch_result["success"]:
+                    print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                else:
+                    print(f"✓ Deployment logs saved: {deployment_dir}/")
+            except Exception as e:
+                print(f"⚠️  Failed to fetch logs: {e}")
 
     finally:
         # Cleanup deployment if auto-deploy mode

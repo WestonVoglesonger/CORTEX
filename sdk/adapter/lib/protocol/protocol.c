@@ -3,6 +3,7 @@
 #include "cortex_protocol.h"
 #include "crc32.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -167,6 +168,9 @@ int cortex_protocol_recv_frame(
 
     /* 4. Validate version */
     if (version != CORTEX_PROTOCOL_VERSION) {
+        fprintf(stderr, "[protocol] Version mismatch: received v%u, expected v%u\n",
+                version, CORTEX_PROTOCOL_VERSION);
+        fprintf(stderr, "[protocol] Protocol versions must match exactly. Rebuild adapter or harness.\n");
         return CORTEX_EPROTO_VERSION_MISMATCH;
     }
 

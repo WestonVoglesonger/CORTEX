@@ -9,6 +9,8 @@
 #include "device_comm.h"
 #include "../../../../sdk/adapter/include/cortex_transport.h"
 #include "../../../../sdk/adapter/include/cortex_protocol.h"
+#include "../../../../sdk/adapter/include/cortex_wire.h"
+#include "../../../../sdk/adapter/include/cortex_endian.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -125,6 +127,40 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
 }
 
 /*
+ * parse_error_frame - Parse ERROR frame payload from adapter
+ *
+ * Extracts error code and message from ERROR frame for logging/debugging.
+ *
+ * Args:
+ *   payload:          ERROR frame payload buffer
+ *   payload_len:      Payload length in bytes
+ *   out_error_code:   Pointer to store error code
+ *   out_error_message: Buffer to store error message (must be [256] bytes)
+ *
+ * Returns:
+ *    0: Success (error info extracted)
+ *   <0: Invalid ERROR frame
+ */
+static int parse_error_frame(
+    const uint8_t *payload,
+    size_t payload_len,
+    uint32_t *out_error_code,
+    char *out_error_message
+)
+{
+    if (payload_len < sizeof(cortex_wire_error_t)) {
+        return CORTEX_EPROTO_INVALID_FRAME;
+    }
+
+    /* Parse ERROR payload (little-endian) */
+    *out_error_code = cortex_read_u32_le(payload + 0);
+    memcpy(out_error_message, payload + 4, CORTEX_MAX_ERROR_MESSAGE);
+    out_error_message[CORTEX_MAX_ERROR_MESSAGE - 1] = '\0';  /* Ensure null termination */
+
+    return 0;
+}
+
+/*
  * recv_hello - Receive HELLO frame from adapter
  *
  * Returns:
@@ -155,6 +191,20 @@ static int recv_hello(
 
     if (ret < 0) {
         return ret;
+    }
+
+    /* Check for ERROR frame before expecting HELLO */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
     }
 
     if (frame_type != CORTEX_FRAME_HELLO) {
@@ -264,6 +314,20 @@ static int recv_ack(cortex_transport_t *transport,
 
     if (ret < 0) {
         return ret;
+    }
+
+    /* Check for ERROR frame before expecting ACK */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
     }
 
     if (frame_type != CORTEX_FRAME_ACK) {
@@ -526,6 +590,20 @@ int device_comm_execute_window(
 
     if (ret < 0) {
         return ret;
+    }
+
+    /* Check for ERROR frame before expecting RESULT */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
     }
 
     if (frame_type != CORTEX_FRAME_RESULT) {

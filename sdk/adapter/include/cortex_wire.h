@@ -195,5 +195,7 @@ typedef struct __attribute__((packed)) {
 #define CORTEX_ERROR_KERNEL_INIT_FAILED 4
 #define CORTEX_ERROR_KERNEL_EXEC_FAILED 5
 #define CORTEX_ERROR_SESSION_MISMATCH   6
+#define CORTEX_ERROR_VERSION_MISMATCH   7
+#define CORTEX_ERROR_SHUTDOWN           8
 
 #endif /* CORTEX_WIRE_H */

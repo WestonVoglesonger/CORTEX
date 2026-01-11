@@ -47,6 +47,7 @@ class TelemetryAnalyzer:
     def __init__(self, filesystem: FileSystemService, logger: Logger):
         self.fs = filesystem
         self.log = logger
+        self.system_info = {}  # Store system/device metadata
 
     @staticmethod
     def _extract_kernel_name(file_path: Path) -> Optional[str]:
@@ -141,6 +142,24 @@ class TelemetryAnalyzer:
                     df = pd.read_json(file_path, lines=True)
                 else:  # csv
                     df = pd.read_csv(file_path)
+
+                # Extract and remove system_info metadata rows (NDJSON only)
+                if '_type' in df.columns:
+                    system_info_rows = df[df['_type'] == 'system_info']
+                    if not system_info_rows.empty:
+                        # Store system info (only keep first occurrence per kernel)
+                        if kernel_name not in self.system_info:
+                            info = system_info_rows.iloc[0].to_dict()
+                            # Extract relevant metadata
+                            self.system_info[kernel_name] = {
+                                'device_hostname': info.get('device_hostname'),
+                                'device_cpu': info.get('device_cpu'),
+                                'device_os': info.get('device_os'),
+                                'host_os': info.get('os'),
+                                'host_cpu': info.get('cpu'),
+                            }
+                    # Remove system_info rows from telemetry data
+                    df = df[df['_type'] != 'system_info'].copy()
 
                 # Add or normalize plugin column
                 if 'plugin' not in df.columns:
@@ -481,6 +500,38 @@ class TelemetryAnalyzer:
 
             markdown_lines.append("# Latency Comparison Summary\n\n")
             markdown_lines.append(f"Generated: {timestamp}\n\n")
+
+            # Add device/system information if available
+            if self.system_info:
+                # Get first kernel's info (assume all same device for a run)
+                first_kernel = list(self.system_info.keys())[0]
+                info = self.system_info[first_kernel]
+
+                # Determine if remote execution
+                # For local execution, device_* fields match host_* fields
+                # For remote execution, they differ
+                device_host = info.get('device_hostname', '')
+                device_cpu = info.get('device_cpu', '')
+                device_os = info.get('device_os', '')
+                host_cpu = info.get('host_cpu', '')
+                host_os = info.get('host_os', '')
+
+                # Remote if device fields differ from host fields
+                is_remote = (device_host and host_os and
+                           (device_cpu != host_cpu or device_os != host_os))
+
+                markdown_lines.append("## Execution Environment\n\n")
+                if is_remote:
+                    markdown_lines.append(f"- **Execution Mode**: Remote\n")
+                    markdown_lines.append(f"- **Device**: {device_host or 'Unknown'}\n")
+                    markdown_lines.append(f"- **Device CPU**: {info.get('device_cpu') or 'Unknown'}\n")
+                    markdown_lines.append(f"- **Device OS**: {info.get('device_os') or 'Unknown'}\n")
+                else:
+                    markdown_lines.append(f"- **Execution Mode**: Local\n")
+                    markdown_lines.append(f"- **CPU**: {info.get('host_cpu') or info.get('device_cpu') or 'Unknown'}\n")
+                    markdown_lines.append(f"- **OS**: {info.get('host_os') or info.get('device_os') or 'Unknown'}\n")
+                markdown_lines.append("\n")
+
             markdown_lines.append("## Latency Statistics (μs)\n\n")
 
             # Write table header

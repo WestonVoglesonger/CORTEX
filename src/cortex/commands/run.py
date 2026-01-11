@@ -47,7 +47,11 @@ def resolve_device_string(args, config) -> str:
 
 
 def setup_parser(parser):
-    """Setup argument parser for run command"""
+    """Setup argument parser for run command
+
+    cortex run executes benchmarks without validation (fast iteration).
+    For comprehensive verification, use 'cortex pipeline'.
+    """
     parser.add_argument(
         '--kernel',
         help='Run single kernel (e.g., goertzel, notch_iir)'
@@ -85,11 +89,6 @@ def setup_parser(parser):
         help='Path to calibration state file (.cortex_state) for trainable kernels'
     )
     parser.add_argument(
-        '--skip-validate',
-        action='store_true',
-        help='Skip oracle validation (faster, trust correctness)'
-    )
-    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Show verbose harness output'
@@ -97,7 +96,8 @@ def setup_parser(parser):
     parser.add_argument(
         '--device',
         help='Device connection string (auto-deploy or manual). '
-             'Examples: nvidia@192.168.1.123 | tcp://192.168.1.123:9000 | local://'
+             'Examples: nvidia@192.168.1.123 | tcp://192.168.1.123:9000 | local://. '
+             'Note: cortex run does NOT validate correctness - use cortex pipeline for verification.'
     )
 
 
@@ -145,10 +145,11 @@ def execute(args):
 
     # Create production runner with real dependencies
     filesystem = RealFileSystemService()
+    config_loader = YamlConfigLoader(filesystem)
     runner = HarnessRunner(
         filesystem=filesystem,
         process_executor=SubprocessExecutor(),
-        config_loader=YamlConfigLoader(filesystem),
+        config_loader=config_loader,
         time_provider=SystemTimeProvider(),
         env_provider=SystemEnvironmentProvider(),
         tool_locator=SystemToolLocator(),
@@ -161,7 +162,7 @@ def execute(args):
 
         # Load config to check for device field
         try:
-            config = runner.config_loader.load(args.config)
+            config = config_loader.load_yaml(args.config)
         except Exception as e:
             print(f"Error loading config: {e}")
             return 1
@@ -185,7 +186,7 @@ def execute(args):
                 # Deploy
                 deploy_result = deployer.deploy(
                     verbose=args.verbose,
-                    skip_validation=args.skip_validate
+                    skip_validation=True
                 )
 
                 # Create run directory structure (required by runner)
@@ -198,6 +199,21 @@ def execute(args):
                     verbose=args.verbose,
                     transport_uri=deploy_result.transport_uri
                 )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
 
                 # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")
@@ -261,7 +277,7 @@ def execute(args):
                 # Deploy
                 deploy_result = deployer.deploy(
                     verbose=args.verbose,
-                    skip_validation=args.skip_validate
+                    skip_validation=True
                 )
 
                 # Create run directory structure (required by runner)
@@ -278,6 +294,21 @@ def execute(args):
                     verbose=args.verbose,
                     transport_uri=deploy_result.transport_uri
                 )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
 
                 # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")
@@ -332,7 +363,7 @@ def execute(args):
                 # Deploy
                 deploy_result = deployer.deploy(
                     verbose=args.verbose,
-                    skip_validation=args.skip_validate
+                    skip_validation=True
                 )
 
                 # Create run directory structure (required by runner)
@@ -348,6 +379,21 @@ def execute(args):
                     verbose=args.verbose,
                     transport_uri=deploy_result.transport_uri
                 )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
 
                 # Cleanup after benchmark completes
                 print("\nCleaning up deployment...")

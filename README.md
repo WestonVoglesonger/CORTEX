@@ -48,11 +48,31 @@ pip install -e .
 # Build C engine, device adapters, and kernel plugins
 make all
 
-# Run full benchmarking pipeline
+# Run full benchmarking pipeline (validates + benchmarks + analyzes)
 cortex pipeline
+
+# OR: Run fast benchmark without validation (after initial verification)
+cortex run --kernel noop
 
 # View results and analysis
 cat results/run-*/analysis/SUMMARY.md
+```
+
+### Workflow
+
+**First Time (Verify Correctness):**
+```bash
+cortex pipeline  # Comprehensive: validate → benchmark → analyze
+```
+
+**Iteration (After Verification):**
+```bash
+cortex run --kernel goertzel --duration 10  # Fast execution only
+```
+
+**CI/CD:**
+```bash
+cortex pipeline  # Full verification before trusting results
 ```
 
 **See [Quick Start Guide](docs/getting-started/quickstart.md) for detailed setup and configuration instructions.**

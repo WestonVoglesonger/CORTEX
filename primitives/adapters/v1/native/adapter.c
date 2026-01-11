@@ -17,6 +17,7 @@
 #include "cortex_adapter_transport.h"
 #include "cortex_protocol.h"
 #include "cortex_adapter_helpers.h"
+#include "cortex_wire.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -235,35 +236,43 @@ static void unload_kernel_plugin(kernel_plugin_t *plugin)
  */
 static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 {
+    int rc = -1;
     uint32_t session_id = 0;
     uint32_t sequence = 0;
+    void *calibration_state = NULL;
+    float *window_buf = NULL;
+    float *output_buf = NULL;
+    kernel_plugin_t kernel_plugin = {0};
 
     /* 1. Send HELLO */
     if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
         fprintf(stderr, "Failed to send HELLO\n");
-        return -1;
+        goto cleanup;
     }
 
     /* 2. Receive CONFIG */
     uint32_t sample_rate_hz, window_samples, hop_samples, channels;
     char plugin_name[64], plugin_params[256];
-    void *calibration_state = NULL;
     uint32_t calibration_state_size = 0;
 
     if (cortex_adapter_recv_config(tp, &session_id, &sample_rate_hz, &window_samples,
                                     &hop_samples, &channels, plugin_name, plugin_params,
                                     &calibration_state, &calibration_state_size) < 0) {
         fprintf(stderr, "Failed to receive CONFIG\n");
-        return -1;
+        goto cleanup;
     }
 
     /* 3. Load kernel plugin */
-    kernel_plugin_t kernel_plugin = {0};
     if (load_kernel_plugin(plugin_name, sample_rate_hz, window_samples, hop_samples,
                            channels, plugin_params, calibration_state, calibration_state_size, &kernel_plugin) < 0) {
         fprintf(stderr, "Failed to load kernel: %s\n", plugin_name);
-        free(calibration_state);  /* Free calibration state on error */
-        return -1;
+
+        /* Send ERROR frame to harness */
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "Failed to load kernel plugin: %s", plugin_name);
+        cortex_adapter_send_error(tp, CORTEX_ERROR_KERNEL_INIT_FAILED, error_msg);
+
+        goto cleanup;
     }
 
     /* 4. Send ACK (kernel ready, with output dimensions) */
@@ -272,29 +281,41 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
                                          kernel_plugin.output_window_length_samples,
                                          kernel_plugin.output_channels) < 0) {
         fprintf(stderr, "Failed to send ACK\n");
-        free(calibration_state);
-        unload_kernel_plugin(&kernel_plugin);
-        return -1;
+        goto cleanup;
     }
 
     /* 5. Allocate window buffers */
-    float *window_buf = (float *)malloc(window_samples * channels * sizeof(float));
+    window_buf = (float *)malloc(window_samples * channels * sizeof(float));
 
     /* Allocate output buffer based on kernel's actual output shape */
     size_t output_samples = kernel_plugin.output_window_length_samples * kernel_plugin.output_channels;
-    float *output_buf = (float *)malloc(output_samples * sizeof(float));
+    output_buf = (float *)malloc(output_samples * sizeof(float));
 
     if (!window_buf || !output_buf) {
         fprintf(stderr, "Failed to allocate window buffers\n");
-        free(window_buf);
-        free(output_buf);
-        free(calibration_state);
-        unload_kernel_plugin(&kernel_plugin);
-        return -1;
+
+        /* Send ERROR frame to harness */
+        char error_msg[256];
+        size_t window_buf_size = window_samples * channels * sizeof(float);
+        snprintf(error_msg, sizeof(error_msg),
+                 "Failed to allocate window buffers (window: %zu bytes, output: %zu bytes)",
+                 window_buf_size, output_samples * sizeof(float));
+        cortex_adapter_send_error(tp, CORTEX_ERROR_KERNEL_INIT_FAILED, error_msg);
+
+        goto cleanup;
     }
 
     /* 6. Window processing loop */
     while (1) {
+        /* Check for shutdown signal (Ctrl+C, SIGTERM) */
+        if (g_shutdown) {
+            fprintf(stderr, "[adapter] Shutdown requested, stopping gracefully\n");
+            cortex_adapter_send_error(tp, CORTEX_ERROR_SHUTDOWN,
+                                      "Adapter shutting down (signal received)");
+            rc = 0;  /* Clean exit, not an error */
+            goto cleanup;
+        }
+
         /* Receive chunked WINDOW */
         uint32_t received_window_samples = 0;
         uint32_t received_channels = 0;
@@ -349,13 +370,19 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
         sequence++;
     }
 
-    /* 7. Cleanup */
+    /* Normal completion */
+    rc = 0;
+
+cleanup:
+    /* 7. Cleanup - always executed regardless of error path */
     free(window_buf);
     free(output_buf);
-    free(calibration_state);  /* Free calibration state if it was allocated */
-    unload_kernel_plugin(&kernel_plugin);
+    free(calibration_state);
+    if (kernel_plugin.dl_handle) {
+        unload_kernel_plugin(&kernel_plugin);
+    }
 
-    return 0;
+    return rc;
 }
 
 /* Main adapter loop */

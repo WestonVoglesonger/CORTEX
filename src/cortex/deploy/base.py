@@ -140,3 +140,46 @@ class Deployer(Protocol):
                 print(f"Cleanup issues: {result.errors}")
         """
         ...
+
+    def fetch_logs(self, output_dir: str) -> dict[str, any]:
+        """
+        Fetch deployment logs from device and save to output_dir.
+
+        MUST be called BEFORE cleanup() to retrieve logs before deletion.
+
+        Optional method: Not all deployers have logs to fetch.
+        Implementations that don't fetch logs can return empty success result.
+
+        Args:
+            output_dir: Directory to save logs (e.g., results/run-*/deployment/)
+
+        Returns:
+            Dictionary with fetch results:
+            {
+                "success": bool,              # True if all fetches succeeded
+                "files_fetched": list[str],   # Files successfully written
+                "errors": list[str],          # Any errors encountered
+                "sizes": dict[str, int]       # File sizes in bytes
+            }
+
+        Side effects:
+            - Creates output_dir/ if it doesn't exist
+            - Writes log files (adapter.log, build.log, etc.)
+            - May write metadata.json with deployment info
+
+        Note:
+            Must not raise exceptions (errors go in result dict)
+            Large files (>10MB) should be truncated with warning
+
+        Example:
+            result = deployer.fetch_logs("results/run-001/deployment")
+            if not result["success"]:
+                print(f"Log fetch issues: {result['errors']}")
+        """
+        # Default implementation for deployers without logs
+        return {
+            "success": True,
+            "files_fetched": [],
+            "errors": [],
+            "sizes": {}
+        }

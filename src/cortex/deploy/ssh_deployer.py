@@ -247,13 +247,15 @@ class SSHDeployer:
         if verbose:
             print(f"[3/5] Building on device...")
 
-        build_cmd = f"cd {self.remote_dir} && make clean && make all"
+        build_cmd = f"cd {self.remote_dir} && make clean && make build-only"
         try:
-            result = self._run_ssh(build_cmd, capture_output=not verbose)
+            result = self._run_ssh(build_cmd, capture_output=True)  # Always capture for log fetch
+            self._build_output = result.stdout  # Store for fetch_logs()
             if verbose and result.stdout:
                 print(result.stdout)
         except subprocess.CalledProcessError as e:
             error_output = e.stderr if e.stderr else str(e)
+            self._build_output = error_output  # Capture errors too
             raise DeploymentError(
                 f"Build failed on {self.host}\n\n"
                 f"Last lines of build output:\n{error_output[-1000:]}\n\n"
@@ -263,6 +265,7 @@ class SSHDeployer:
 
         # Step 4: Validation (optional, device-side)
         validation_status = "skipped"
+        self._validation_output = None  # Initialize
         if not skip_validation:
             if verbose:
                 print(f"[4/5] Validating kernels...")
@@ -275,14 +278,17 @@ class SSHDeployer:
                 # Use PYTHONPATH to make cortex module importable from rsync'd source
                 validate_cmd = f"cd {self.remote_dir} && PYTHONPATH={self.remote_dir}/src python3 -m cortex.commands.validate"
                 try:
-                    result = self._run_ssh(validate_cmd, capture_output=not verbose)
+                    result = self._run_ssh(validate_cmd, capture_output=True)  # Always capture for log fetch
+                    self._validation_output = result.stdout  # Store for fetch_logs()
                     if verbose and result.stdout:
                         print(result.stdout)
                     validation_status = "passed"
                 except subprocess.CalledProcessError as e:
+                    error_output = e.stderr if e.stderr else e.stdout
+                    self._validation_output = error_output  # Capture errors too
                     raise DeploymentError(
                         f"Validation failed on {self.host}\n"
-                        f"Output: {e.stderr if e.stderr else e.stdout}\n\n"
+                        f"Output: {error_output}\n\n"
                         f"This indicates kernel correctness issues. Fix before benchmarking."
                     )
             else:
@@ -296,12 +302,13 @@ class SSHDeployer:
         if verbose:
             print(f"[5/5] Starting adapter...")
 
-        adapter_path = f"{self.remote_dir}/primitives/adapters/v1/native/cortex_adapter_native"
+        # Start adapter in background with all I/O streams redirected to prevent SSH hanging
+        # Critical: Redirect stdin (<), stdout (>), and stderr (2>&1) to close SSH streams
         start_cmd = (
-            f"nohup {adapter_path} tcp://:{self.adapter_port} "
-            f"> /tmp/cortex-adapter.log 2>&1 & "
-            f"echo $! > /tmp/cortex-adapter.pid && "
-            f"cat /tmp/cortex-adapter.pid"
+            f"cd {self.remote_dir} && "
+            f"nohup ./primitives/adapters/v1/native/cortex_adapter_native tcp://:{self.adapter_port} "
+            f"</dev/null >/tmp/cortex-adapter.log 2>&1 & "
+            f"echo $! | tee /tmp/cortex-adapter.pid"
         )
 
         try:
@@ -371,18 +378,185 @@ class SSHDeployer:
             }
         )
 
+    def fetch_logs(self, output_dir: str) -> dict[str, any]:
+        """
+        Fetch deployment logs from remote device and save to output_dir.
+
+        This method MUST be called BEFORE cleanup() to retrieve logs before deletion.
+
+        Args:
+            output_dir: Directory to save logs (e.g., results/run-*/deployment/)
+
+        Returns:
+            {
+                "success": bool,
+                "files_fetched": ["adapter.log", "build.log", ...],
+                "errors": ["adapter.log: file not found", ...],
+                "sizes": {"adapter.log": 2847, "build.log": 15234}
+            }
+
+        Side effects:
+            Creates output_dir/ if it doesn't exist
+            Writes files: adapter.log, build.log, validation.log, metadata.json, README.txt
+
+        Error handling:
+            Never raises exceptions (returns errors in result dict)
+            Missing files are logged as errors but don't fail the operation
+            Large files (>10MB) are truncated with warning
+        """
+        import os
+        import json
+        from datetime import datetime
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        files_fetched = []
+        errors = []
+        sizes = {}
+        MAX_LOG_SIZE = 10_000_000  # 10MB
+
+        # 1. Fetch adapter log from remote
+        try:
+            result = self._run_ssh("cat /tmp/cortex-adapter.log", check=False)
+            if result.returncode == 0:
+                adapter_log_path = os.path.join(output_dir, "adapter.log")
+
+                # Size limit check (10MB)
+                content = result.stdout
+                if len(content) > MAX_LOG_SIZE:
+                    errors.append("adapter.log: truncated (>10MB)")
+                    content = content[-MAX_LOG_SIZE:]  # Keep last 10MB
+                    content = "[... truncated to last 10MB ...]\n" + content
+
+                with open(adapter_log_path, 'w') as f:
+                    f.write(content)
+
+                files_fetched.append("adapter.log")
+                sizes["adapter.log"] = len(content)
+            else:
+                errors.append(f"adapter.log: {result.stderr}")
+        except Exception as e:
+            errors.append(f"adapter.log: {str(e)}")
+
+        # 2. Write build output (captured during deploy)
+        if hasattr(self, '_build_output') and self._build_output:
+            try:
+                build_log_path = os.path.join(output_dir, "build.log")
+                content = self._build_output
+
+                # Size limit check
+                if len(content) > MAX_LOG_SIZE:
+                    errors.append("build.log: truncated (>10MB)")
+                    content = content[-MAX_LOG_SIZE:]
+                    content = "[... truncated to last 10MB ...]\n" + content
+
+                with open(build_log_path, 'w') as f:
+                    f.write(content)
+
+                files_fetched.append("build.log")
+                sizes["build.log"] = len(content)
+            except Exception as e:
+                errors.append(f"build.log: {str(e)}")
+
+        # 3. Write validation output (captured during deploy)
+        if hasattr(self, '_validation_output') and self._validation_output:
+            try:
+                validation_log_path = os.path.join(output_dir, "validation.log")
+                content = self._validation_output
+
+                # Size limit check
+                if len(content) > MAX_LOG_SIZE:
+                    errors.append("validation.log: truncated (>10MB)")
+                    content = content[-MAX_LOG_SIZE:]
+                    content = "[... truncated to last 10MB ...]\n" + content
+
+                with open(validation_log_path, 'w') as f:
+                    f.write(content)
+
+                files_fetched.append("validation.log")
+                sizes["validation.log"] = len(content)
+            except Exception as e:
+                errors.append(f"validation.log: {str(e)}")
+
+        # 4. Write metadata.json
+        try:
+            metadata = {
+                "deployment": {
+                    "device_string": f"{self.user}@{self.host}",
+                    "transport_uri": f"tcp://{self.host}:{self.adapter_port}",
+                    "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                    "adapter_pid": self.adapter_pid,
+                    "success": True
+                },
+                "device": {
+                    "hostname": self.host,
+                    "ssh_port": self.ssh_port,
+                    "adapter_port": self.adapter_port
+                },
+                "logs": {
+                    "adapter_log": "adapter.log" if "adapter.log" in files_fetched else None,
+                    "build_log": "build.log" if "build.log" in files_fetched else None,
+                    "validation_log": "validation.log" if "validation.log" in files_fetched else None,
+                    "adapter_log_size_bytes": sizes.get("adapter.log"),
+                    "build_log_size_bytes": sizes.get("build.log"),
+                    "validation_log_size_bytes": sizes.get("validation.log"),
+                    "fetch_timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                    "fetch_errors": errors
+                }
+            }
+
+            metadata_path = os.path.join(output_dir, "metadata.json")
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+
+            files_fetched.append("metadata.json")
+        except Exception as e:
+            errors.append(f"metadata.json: {str(e)}")
+
+        # 5. Write README.txt
+        try:
+            readme_path = os.path.join(output_dir, "README.txt")
+            readme_content = """# Deployment Logs
+
+This directory contains logs and metadata from remote device deployment.
+
+Files:
+  adapter.log     - Adapter stdout/stderr from /tmp/cortex-adapter.log on device
+  build.log       - Build output from 'make clean && make all' on device
+  validation.log  - Validation output from 'cortex validate' on device
+  metadata.json   - Deployment metadata (device info, timestamps, file sizes)
+
+These logs are fetched BEFORE cleanup() deletes remote files.
+They are useful for debugging deployment failures and adapter issues.
+
+Note: Logs >10MB are truncated to prevent disk space issues.
+"""
+            with open(readme_path, 'w') as f:
+                f.write(readme_content)
+
+            files_fetched.append("README.txt")
+        except Exception as e:
+            errors.append(f"README.txt: {str(e)}")
+
+        return {
+            "success": len(errors) == 0,
+            "files_fetched": files_fetched,
+            "errors": errors,
+            "sizes": sizes
+        }
+
     def cleanup(self) -> CleanupResult:
         """
         Stop adapter and delete files.
 
         Shutdown sequence (robust):
-            1. SIGTERM: ssh "kill $(cat /tmp/cortex-adapter.pid)"
+            1. Read PID file if it exists
+            2. Kill process tree (parent + children) with SIGTERM
                Wait 5 seconds for graceful shutdown
-
-            2. SIGKILL: ssh "kill -9 $(cat /tmp/cortex-adapter.pid)"
-               Force kill if SIGTERM failed
-
-            3. Cleanup files: ssh "rm -rf ~/cortex-temp /tmp/cortex-adapter.*"
+            3. Kill process tree with SIGKILL if still running
+            4. Fallback: killall cortex_adapter_* by name
+            5. Verify processes are gone
+            6. Delete temp files
 
         Returns:
             CleanupResult(success=True, errors=[])
@@ -392,19 +566,94 @@ class SSHDeployer:
         """
         errors = []
 
+        # Step 1: Get PID (prefer file, fallback to stored value)
+        pid = None
         try:
-            # Step 1: SIGTERM (graceful shutdown)
-            self._run_ssh(f"kill $(cat /tmp/cortex-adapter.pid) 2>/dev/null || true", check=False)
-            time.sleep(5)  # Wait for graceful shutdown
+            result = self._run_ssh("cat /tmp/cortex-adapter.pid 2>/dev/null || echo ''", check=False)
+            pid_str = result.stdout.strip()
+            if pid_str:
+                pid = int(pid_str)
+            elif hasattr(self, 'adapter_pid') and self.adapter_pid:
+                # Fallback to PID stored during deploy()
+                pid = self.adapter_pid
+        except (ValueError, subprocess.CalledProcessError):
+            # Last resort: use stored PID
+            if hasattr(self, 'adapter_pid') and self.adapter_pid:
+                pid = self.adapter_pid
 
-            # Step 2: SIGKILL (force kill if still running)
-            self._run_ssh(f"kill -9 $(cat /tmp/cortex-adapter.pid) 2>/dev/null || true", check=False)
+        # Step 2: Kill process tree (graceful)
+        try:
+            if pid:
+                # Kill parent + children (handles bash wrapper + actual adapter)
+                self._run_ssh(f"pkill -TERM -P {pid} 2>/dev/null || true", check=False)
+                self._run_ssh(f"kill -TERM {pid} 2>/dev/null || true", check=False)
+                time.sleep(5)  # Wait for graceful shutdown
+
+                # Step 3: SIGKILL if still running
+                self._run_ssh(f"pkill -KILL -P {pid} 2>/dev/null || true", check=False)
+                self._run_ssh(f"kill -KILL {pid} 2>/dev/null || true", check=False)
+                time.sleep(1)
 
         except Exception as e:
-            errors.append(f"Failed to stop adapter: {e}")
+            errors.append(f"Failed to stop adapter via PID: {e}")
 
+        # Step 4: Fallback - kill by exact binary name (handles double-forked daemons)
         try:
-            # Step 3: Cleanup files
+            # Use killall with exact binary name (more reliable than pkill pattern matching)
+            self._run_ssh("killall -9 cortex_adapter_native 2>/dev/null || true", check=False)
+            time.sleep(3)  # Wait for kernel to fully reap processes after SIGKILL
+        except Exception as e:
+            errors.append(f"Failed to killall adapter: {e}")
+
+        # Step 5: Verify processes are gone (with zombie detection)
+        try:
+            # Check for any remaining adapter processes
+            result = self._run_ssh("pgrep -f cortex_adapter_native || echo ''", check=False)
+            if result.stdout.strip():
+                pids_str = result.stdout.strip().split()
+
+                # Check each PID's state to distinguish zombies from running processes
+                running_pids = []
+                zombie_pids = []
+
+                for pid in pids_str:
+                    # Get process state (R=running, S=sleeping, Z=zombie, etc.)
+                    state_cmd = f"ps -p {pid} -o state= 2>/dev/null || echo ''"
+                    state_result = self._run_ssh(state_cmd, check=False)
+                    state = state_result.stdout.strip()
+
+                    if not state:
+                        # Process already reaped between pgrep and ps
+                        continue
+                    elif state == 'Z':
+                        # Zombie process - will be reaped by kernel, not an error
+                        zombie_pids.append(pid)
+                    else:
+                        # Actually running - this is a problem
+                        running_pids.append((pid, state))
+
+                # If zombies exist, wait longer for kernel to reap them
+                if zombie_pids and not running_pids:
+                    time.sleep(7)  # Total 10 seconds for zombie reaping
+                    # Re-check zombies are gone
+                    still_zombies = []
+                    for pid in zombie_pids:
+                        check_result = self._run_ssh(f"ps -p {pid} -o state= 2>/dev/null || echo ''", check=False)
+                        if check_result.stdout.strip() == 'Z':
+                            still_zombies.append(pid)
+                    if still_zombies:
+                        errors.append(f"Zombie processes not reaped after 10s: {','.join(still_zombies)}")
+
+                # Report truly running processes as errors
+                if running_pids:
+                    running_info = ', '.join([f"{pid} (state={state})" for pid, state in running_pids])
+                    errors.append(f"Adapter processes still running: {running_info}")
+
+        except Exception as e:
+            errors.append(f"Failed to verify adapter stopped: {e}")
+
+        # Step 6: Cleanup files (only after killing processes)
+        try:
             self._run_ssh(f"rm -rf {self.remote_dir} /tmp/cortex-adapter.*", check=False)
         except Exception as e:
             errors.append(f"Failed to cleanup files: {e}")

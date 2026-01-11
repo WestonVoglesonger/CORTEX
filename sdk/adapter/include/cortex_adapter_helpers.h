@@ -155,6 +155,30 @@ int cortex_adapter_send_result(
 );
 
 /*
+ * cortex_adapter_send_error - Send ERROR frame to harness
+ *
+ * Sends error report with code and human-readable message. Use this when
+ * adapter encounters unrecoverable errors during handshake or execution.
+ *
+ * Args:
+ *   transport:     Transport to send on
+ *   error_code:    Error code (CORTEX_ERROR_* constants from cortex_wire.h)
+ *   error_message: Human-readable error description (max 255 chars)
+ *
+ * Returns:
+ *    0: Success (ERROR frame sent)
+ *   <0: Transport error
+ *
+ * NOTE: Only send ERROR when harness is expecting a response (CONFIG received).
+ *       Don't send ERROR during startup failures or after transport errors.
+ */
+int cortex_adapter_send_error(
+    cortex_transport_t *transport,
+    uint32_t error_code,
+    const char *error_message
+);
+
+/*
  * System Information Helpers
  *
  * These functions gather device metadata for telemetry.

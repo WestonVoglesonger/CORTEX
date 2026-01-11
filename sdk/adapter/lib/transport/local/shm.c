@@ -474,8 +474,9 @@ cortex_transport_t *cortex_transport_shm_create_adapter(const char *name)
      */
     char sem_name[128];
 
-    /* Retry loop for harness to create semaphores */
-    for (int retry = 0; retry < 10; retry++) {
+    /* Retry loop for harness to create semaphores (with exponential backoff) */
+    int retry_delay_us = 10000;  /* Start at 10ms */
+    for (int retry = 0; retry < 20; retry++) {  /* Increased from 10 to 20 retries */
         snprintf(sem_name, sizeof(sem_name), "/cortex_sem_h2a_%s", name);
         shm->data_ready_sem = sem_open(sem_name, 0);  /* Open existing only */
 
@@ -489,7 +490,12 @@ cortex_transport_t *cortex_transport_shm_create_adapter(const char *name)
         if (shm->data_ready_sem != SEM_FAILED) sem_close(shm->data_ready_sem);
         if (shm->space_avail_sem != SEM_FAILED) sem_close(shm->space_avail_sem);
 
-        usleep(10000);  /* Wait 10ms and retry */
+        usleep(retry_delay_us);
+
+        /* Exponential backoff: 10ms → 20ms → 40ms → 80ms → 100ms (capped) */
+        if (retry_delay_us < 100000) {  /* Cap at 100ms */
+            retry_delay_us *= 2;
+        }
     }
 
     if (shm->data_ready_sem == SEM_FAILED || shm->space_avail_sem == SEM_FAILED) {

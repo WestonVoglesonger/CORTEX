@@ -81,6 +81,46 @@ def check_harness_needs_rebuild() -> bool:
     return False
 
 
+def check_adapter_needs_rebuild(adapter_path: str = "primitives/adapters/v1/native") -> bool:
+    """
+    Check if adapter binary needs rebuilding.
+
+    Args:
+        adapter_path: Path to adapter directory
+
+    Returns:
+        True if adapter needs rebuilding, False if up-to-date
+    """
+    adapter_dir = Path(adapter_path)
+    adapter_binary = adapter_dir / "cortex_adapter_native"
+
+    # If binary doesn't exist, need to build
+    if not adapter_binary.exists():
+        return True
+
+    # Get binary timestamp
+    binary_mtime = adapter_binary.stat().st_mtime
+
+    # Check adapter source files
+    for src_file in adapter_dir.rglob("*.c"):
+        if src_file.stat().st_mtime > binary_mtime:
+            return True
+
+    # Check SDK adapter library sources (adapter depends on these)
+    sdk_adapter_dir = Path("sdk/adapter/lib")
+    if sdk_adapter_dir.exists():
+        for src_file in sdk_adapter_dir.rglob("*.c"):
+            if src_file.stat().st_mtime > binary_mtime:
+                return True
+
+        for header_file in sdk_adapter_dir.rglob("*.h"):
+            if header_file.stat().st_mtime > binary_mtime:
+                return True
+
+    # Binary is up-to-date
+    return False
+
+
 def build_specific_kernels(kernel_spec_uris: List[str], verbose: bool = False) -> bool:
     """
     Build only specific kernels.
@@ -147,6 +187,7 @@ def smart_build(
         {
             'success': bool,
             'harness_rebuilt': bool,
+            'adapter_rebuilt': bool,
             'kernels_rebuilt': List[str],
             'kernels_skipped': List[str],
             'errors': List[str]
@@ -155,6 +196,7 @@ def smart_build(
     results = {
         'success': True,
         'harness_rebuilt': False,
+        'adapter_rebuilt': False,
         'kernels_rebuilt': [],
         'kernels_skipped': [],
         'errors': []
@@ -178,6 +220,42 @@ def smart_build(
         print("✓ Harness rebuilt")
     else:
         print("✓ Harness up-to-date")
+
+    # Check adapter
+    if force_rebuild or check_adapter_needs_rebuild():
+        print("Adapter needs rebuilding...")
+        adapter_dir = Path("primitives/adapters/v1/native")
+
+        # First build SDK adapter libraries
+        result = subprocess.run(
+            ['make'],
+            cwd='sdk/adapter/lib',
+            capture_output=not verbose,
+            text=True
+        )
+
+        if result.returncode != 0:
+            results['success'] = False
+            results['errors'].append('SDK adapter library build failed')
+            return results
+
+        # Then build adapter binary
+        result = subprocess.run(
+            ['make'],
+            cwd=str(adapter_dir),
+            capture_output=not verbose,
+            text=True
+        )
+
+        if result.returncode != 0:
+            results['success'] = False
+            results['errors'].append('adapter build failed')
+            return results
+
+        results['adapter_rebuilt'] = True
+        print("✓ Adapter rebuilt")
+    else:
+        print("✓ Adapter up-to-date")
 
     # Check each kernel
     kernels_to_build = []
