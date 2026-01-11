@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11 -I../../../include
 
 # Network transport sources
-SOURCES = tcp_client.c tcp_server.c
+SOURCES = tcp_common.c tcp_client.c tcp_server.c
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(OBJECTS)

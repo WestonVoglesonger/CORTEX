@@ -4,7 +4,6 @@ DeployerFactory - Parse device strings and route to appropriate deployers.
 Format-based routing:
     user@host              → SSHDeployer (auto-deploy)
     user@host:2222         → SSHDeployer with custom SSH port
-    user@[fe80::1]:2222    → SSHDeployer with IPv6
     tcp://host:port        → Manual connection (return URI string)
     serial:///dev/ttyUSB0  → Manual connection (return URI string)
     stm32:/dev/ttyUSB0     → JTAGDeployer (future, not yet implemented)
@@ -31,8 +30,6 @@ class DeployerFactory:
         Auto-deploy formats (return Deployer):
             user@host              → SSHDeployer(user, host, port=22)
             user@host:2222         → SSHDeployer(user, host, port=2222)
-            user@[fe80::1]         → SSHDeployer(user, "fe80::1", port=22)
-            user@[fe80::1]:2222    → SSHDeployer(user, "fe80::1", port=2222)
             stm32:serial           → JTAGDeployer(device) [future]
 
         Manual formats (return transport URI string):
@@ -67,26 +64,15 @@ class DeployerFactory:
 
         if '@' in device:
             # Parse SSH format: user@host[:port]
-            # Also handle IPv6: user@[fe80::1][:port]
             user, host_part = device.split('@', 1)
 
-            # Check for IPv6 brackets
-            if host_part.startswith('['):
-                # IPv6: user@[fe80::1] or user@[fe80::1]:2222
-                bracket_end = host_part.find(']')
-                if bracket_end == -1:
-                    raise ValueError(f"Malformed IPv6 address: {device}")
-                host = host_part[1:bracket_end]  # Strip brackets
-                remainder = host_part[bracket_end+1:]
-                port = int(remainder[1:]) if remainder.startswith(':') else 22
+            # Parse port if specified
+            if ':' in host_part:
+                host, port_str = host_part.rsplit(':', 1)
+                port = int(port_str)
             else:
-                # IPv4 or hostname: user@host or user@host:port
-                if ':' in host_part:
-                    host, port_str = host_part.rsplit(':', 1)
-                    port = int(port_str)
-                else:
-                    host = host_part
-                    port = 22
+                host = host_part
+                port = 22
 
             return SSHDeployer(user, host, ssh_port=port)
 

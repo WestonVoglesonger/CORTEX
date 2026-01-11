@@ -63,30 +63,6 @@ class Deployer(Protocol):
         - DockerDeployer: container-based deployment [future]
     """
 
-    def detect_capabilities(self) -> dict[str, any]:
-        """
-        Detect device platform, architecture, and available tools.
-
-        Returns:
-            Dictionary with device metadata:
-            {
-                "platform": "linux" | "stm32" | "docker",
-                "arch": "arm64" | "x86_64" | "cortex-m4",
-                "ssh": bool,  # SSH available
-                "build_tools": bool,  # gcc/make available
-                ...
-            }
-
-        Raises:
-            DeploymentError: If device unreachable or detection fails
-
-        Example:
-            caps = deployer.detect_capabilities()
-            if caps["arch"] == "arm64":
-                print("Target is ARM64 device")
-        """
-        ...
-
     def deploy(self, verbose: bool = False, skip_validation: bool = False) -> DeploymentResult:
         """
         Deploy code, build (if needed), start adapter.

@@ -9,13 +9,13 @@ Public API:
     - Deployer: Protocol interface
     - DeployerFactory: Parse device strings
     - DeploymentResult, CleanupResult: Result types
-    - DeploymentError, CleanupError: Exceptions
+    - DeploymentError: Exception for deployment failures
     - SSHDeployer: SSH deployment implementation
 """
 
 from .base import Deployer, DeploymentResult, CleanupResult
 from .factory import DeployerFactory
-from .exceptions import DeploymentError, CleanupError
+from .exceptions import DeploymentError
 from .ssh_deployer import SSHDeployer
 
 __all__ = [
@@ -29,7 +29,6 @@ __all__ = [
 
     # Exceptions
     "DeploymentError",
-    "CleanupError",
 
     # Implementations
     "SSHDeployer",

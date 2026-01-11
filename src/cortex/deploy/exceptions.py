@@ -16,14 +16,3 @@ class DeploymentError(Exception):
         - Validation failed
     """
     pass
-
-
-class CleanupError(Exception):
-    """
-    Raised when cleanup fails (rare, since cleanup should not raise).
-
-    Note: cleanup() method should return CleanupResult with errors
-    instead of raising this exception. This exception exists for
-    catastrophic failures where returning a result is impossible.
-    """
-    pass

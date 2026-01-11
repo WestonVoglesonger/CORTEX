@@ -20,6 +20,7 @@
 
 #include "cortex_transport.h"
 #include "cortex_wire.h"
+#include "tcp_common.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -44,108 +45,51 @@ typedef struct {
 } tcp_connected_ctx_t;
 
 /*
- * tcp_server_recv - Receive data with timeout (same as tcp_client)
+ * tcp_server_recv - Receive data with timeout (uses shared helper)
  */
 static ssize_t tcp_server_recv(void *ctx, void *buf, size_t len, uint32_t timeout_ms)
 {
     tcp_connected_ctx_t *conn = (tcp_connected_ctx_t *)ctx;
-
-    struct pollfd pfd = {
-        .fd = conn->client_fd,
-        .events = POLLIN,
-        .revents = 0
-    };
-
-    int poll_ret = poll(&pfd, 1, (int)timeout_ms);
-
-    if (poll_ret < 0) {
-        return (errno == EINTR) ? CORTEX_ETIMEDOUT : -errno;
-    }
-
-    if (poll_ret == 0) {
-        return CORTEX_ETIMEDOUT;
-    }
-
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        return CORTEX_ECONNRESET;
-    }
-
-    ssize_t n = recv(conn->client_fd, buf, len, 0);
-
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return CORTEX_ETIMEDOUT;
-        }
-        return -errno;
-    }
-
-    if (n == 0) {
-        return CORTEX_ECONNRESET;
-    }
-
-    return n;
+    return cortex_tcp_recv(conn->client_fd, buf, len, timeout_ms);
 }
 
 /*
- * tcp_server_send - Send data (blocking, same as tcp_client)
+ * tcp_server_send - Send data (blocking, uses shared helper)
  */
 static ssize_t tcp_server_send(void *ctx, const void *buf, size_t len)
 {
     tcp_connected_ctx_t *conn = (tcp_connected_ctx_t *)ctx;
-
-    /* Use MSG_NOSIGNAL on Linux to prevent SIGPIPE (macOS uses SO_NOSIGPIPE socket option) */
-#ifdef __linux__
-    ssize_t n = send(conn->client_fd, buf, len, MSG_NOSIGNAL);
-#else
-    ssize_t n = send(conn->client_fd, buf, len, 0);
-#endif
-
-    if (n < 0) {
-        return (errno == EPIPE || errno == ECONNRESET) ? CORTEX_ECONNRESET : -errno;
-    }
-
-    return n;
+    return cortex_tcp_send(conn->client_fd, buf, len);
 }
 
 /*
- * tcp_server_close - Close connection and cleanup
+ * tcp_server_close - Close listening socket and cleanup
  */
 static void tcp_server_close(void *ctx)
 {
     tcp_server_ctx_t *srv = (tcp_server_ctx_t *)ctx;
-
     if (srv->listen_fd >= 0) {
         close(srv->listen_fd);
-        srv->listen_fd = -1;
     }
-
     free(srv);
 }
 
 /*
- * tcp_connected_close - Close connected client and cleanup
+ * tcp_connected_close - Close connected client and cleanup (uses shared helper)
  */
 static void tcp_connected_close(void *ctx)
 {
     tcp_connected_ctx_t *conn = (tcp_connected_ctx_t *)ctx;
-
-    if (conn->client_fd >= 0) {
-        shutdown(conn->client_fd, SHUT_RDWR);
-        close(conn->client_fd);
-        conn->client_fd = -1;
-    }
-
+    cortex_tcp_close(conn->client_fd);
     free(conn);
 }
 
 /*
- * tcp_server_get_timestamp_ns - Platform timestamp
+ * tcp_server_get_timestamp_ns - Platform timestamp (uses shared helper)
  */
 static uint64_t tcp_server_get_timestamp_ns(void)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+    return cortex_tcp_get_timestamp_ns();
 }
 
 /*

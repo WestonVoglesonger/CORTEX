@@ -117,52 +117,25 @@ class SSHDeployer:
                 f"   - Manual setup: cat ~/.ssh/id_rsa.pub | ssh {self.user}@{self.host} \"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\""
             )
 
-    def detect_capabilities(self) -> dict[str, any]:
+    def _check_build_tools(self) -> None:
         """
-        Detect device platform via SSH.
+        Verify build tools (gcc, make) are available on device.
 
-        Commands run:
-            uname -s          # OS (Linux/Darwin)
-            uname -m          # Architecture (arm64/x86_64)
-            which gcc make    # Build tools available
-
-        Returns:
-            {
-                "platform": "linux",
-                "arch": "arm64",
-                "ssh": True,
-                "build_tools": True,
-                "hostname": "jetson-nano",
-                "os_version": "Ubuntu 20.04"
-            }
+        Raises:
+            DeploymentError: If build tools not found or SSH connection fails
         """
         try:
-            # Detect OS and architecture
-            uname_s = self._run_ssh("uname -s").stdout.strip().lower()
-            uname_m = self._run_ssh("uname -m").stdout.strip()
-            hostname = self._run_ssh("hostname").stdout.strip()
-
-            # Check for build tools
-            build_tools_check = self._run_ssh("which gcc make", check=False)
-            build_tools = build_tools_check.returncode == 0
-
-            # Try to get OS version
-            os_version = "unknown"
-            lsb_result = self._run_ssh("lsb_release -d 2>/dev/null || cat /etc/os-release 2>/dev/null | head -1", check=False)
-            if lsb_result.returncode == 0:
-                os_version = lsb_result.stdout.strip()
-
-            return {
-                "platform": uname_s,
-                "arch": uname_m,
-                "ssh": True,
-                "build_tools": build_tools,
-                "hostname": hostname,
-                "os_version": os_version
-            }
+            result = self._run_ssh("command -v gcc >/dev/null && command -v make >/dev/null", check=False)
+            if result.returncode != 0:
+                raise DeploymentError(
+                    f"Build tools (gcc, make) not found on {self.host}\n"
+                    f"Install required packages:\n"
+                    f"  sudo apt install build-essential\n"
+                    f"  # or equivalent for your distro"
+                )
         except subprocess.CalledProcessError as e:
             raise DeploymentError(
-                f"Failed to detect capabilities on {self.user}@{self.host}:{self.ssh_port}\n"
+                f"Failed to check build tools on {self.user}@{self.host}:{self.ssh_port}\n"
                 f"Error: {e.stderr if e.stderr else str(e)}\n\n"
                 f"Troubleshooting:\n"
                 f"  1. Verify SSH access: ssh -p {self.ssh_port} {self.user}@{self.host}\n"
@@ -197,18 +170,10 @@ class SSHDeployer:
             print(f"[0/5] Checking SSH configuration...")
         self._check_passwordless_ssh()
 
-        # Step 1: Detect capabilities
+        # Step 1: Check build tools
         if verbose:
-            print(f"[1/5] Detecting capabilities on {self.host}...")
-        capabilities = self.detect_capabilities()
-
-        if not capabilities["build_tools"]:
-            raise DeploymentError(
-                f"Build tools not found on {self.host}\n"
-                f"Install required packages:\n"
-                f"  sudo apt install build-essential\n"
-                f"  # or equivalent for your distro"
-            )
+            print(f"[1/5] Checking build tools on {self.host}...")
+        self._check_build_tools()
 
         # Step 2: rsync code
         if verbose:
@@ -322,31 +287,19 @@ class SSHDeployer:
                 f"  ssh -p {self.ssh_port} {self.user}@{self.host} cat /tmp/cortex-adapter.log"
             )
 
-        # Step 6: Wait for adapter ready (dual checks: remote + host)
+        # Step 6: Wait for adapter ready
         if verbose:
             print(f"  Waiting for adapter (PID {self.adapter_pid}) to be ready...")
 
         ready = False
-        for attempt in range(30):  # 30 second timeout
+        for attempt in range(5):  # 5 second timeout
             time.sleep(1)
 
-            # Remote check: adapter bound to port
-            remote_check = self._run_ssh(f"lsof -i :{self.adapter_port}", check=False)
-            remote_ready = remote_check.returncode == 0
-
-            # Host check: host can connect to adapter
-            host_check = subprocess.run(
-                ["nc", "-z", self.host, str(self.adapter_port)],
-                check=False,
-                capture_output=True
-            )
-            host_ready = host_check.returncode == 0
-
-            if remote_ready and host_ready:
+            # Check if adapter bound to port
+            check = self._run_ssh(f"lsof -i :{self.adapter_port}", check=False)
+            if check.returncode == 0:
                 ready = True
                 break
-            elif verbose and attempt % 5 == 0:
-                print(f"  ... waiting (remote_ready={remote_ready}, host_ready={host_ready})")
 
         if not ready:
             # Fetch logs for debugging
@@ -354,7 +307,7 @@ class SSHDeployer:
             log_output = log_result.stdout if log_result.returncode == 0 else "(could not fetch log)"
 
             raise DeploymentError(
-                f"Adapter failed to start on {self.host} (timeout after 30s)\n\n"
+                f"Adapter failed to start on {self.host} (timeout after 5s)\n\n"
                 f"Remote adapter log (last 40 lines):\n{log_output}\n\n"
                 f"Troubleshooting:\n"
                 f"  # Check if port in use:\n"
@@ -373,7 +326,6 @@ class SSHDeployer:
             transport_uri=f"tcp://{self.host}:{self.adapter_port}",
             adapter_pid=self.adapter_pid,
             metadata={
-                **capabilities,
                 "validation": validation_status
             }
         )
@@ -605,50 +557,13 @@ Note: Logs >10MB are truncated to prevent disk space issues.
         except Exception as e:
             errors.append(f"Failed to killall adapter: {e}")
 
-        # Step 5: Verify processes are gone (with zombie detection)
+        # Step 5: Verify processes are gone
         try:
             # Check for any remaining adapter processes
             result = self._run_ssh("pgrep -f cortex_adapter_native || echo ''", check=False)
             if result.stdout.strip():
-                pids_str = result.stdout.strip().split()
-
-                # Check each PID's state to distinguish zombies from running processes
-                running_pids = []
-                zombie_pids = []
-
-                for pid in pids_str:
-                    # Get process state (R=running, S=sleeping, Z=zombie, etc.)
-                    state_cmd = f"ps -p {pid} -o state= 2>/dev/null || echo ''"
-                    state_result = self._run_ssh(state_cmd, check=False)
-                    state = state_result.stdout.strip()
-
-                    if not state:
-                        # Process already reaped between pgrep and ps
-                        continue
-                    elif state == 'Z':
-                        # Zombie process - will be reaped by kernel, not an error
-                        zombie_pids.append(pid)
-                    else:
-                        # Actually running - this is a problem
-                        running_pids.append((pid, state))
-
-                # If zombies exist, wait longer for kernel to reap them
-                if zombie_pids and not running_pids:
-                    time.sleep(7)  # Total 10 seconds for zombie reaping
-                    # Re-check zombies are gone
-                    still_zombies = []
-                    for pid in zombie_pids:
-                        check_result = self._run_ssh(f"ps -p {pid} -o state= 2>/dev/null || echo ''", check=False)
-                        if check_result.stdout.strip() == 'Z':
-                            still_zombies.append(pid)
-                    if still_zombies:
-                        errors.append(f"Zombie processes not reaped after 10s: {','.join(still_zombies)}")
-
-                # Report truly running processes as errors
-                if running_pids:
-                    running_info = ', '.join([f"{pid} (state={state})" for pid, state in running_pids])
-                    errors.append(f"Adapter processes still running: {running_info}")
-
+                pids = result.stdout.strip()
+                errors.append(f"Adapter processes still running after SIGKILL: {pids}")
         except Exception as e:
             errors.append(f"Failed to verify adapter stopped: {e}")
 

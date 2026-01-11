@@ -29,7 +29,6 @@ struct cortex_device_handle {
     pid_t adapter_pid;           /* Adapter process ID */
     cortex_transport_t *transport; /* Transport to adapter */
     uint32_t session_id;         /* Current session ID */
-    uint32_t adapter_boot_id;    /* Adapter boot ID (from HELLO) */
     char adapter_name[32];       /* Adapter name (from HELLO) */
     char device_hostname[32];    /* Device hostname (from HELLO) */
     char device_cpu[32];         /* Device CPU (from HELLO) */
@@ -169,7 +168,6 @@ static int parse_error_frame(
  */
 static int recv_hello(
     cortex_transport_t *transport,
-    uint32_t *out_boot_id,
     char *out_adapter_name,
     char *out_device_hostname,
     char *out_device_cpu,
@@ -216,7 +214,6 @@ static int recv_hello(
     }
 
     /* Parse HELLO payload (convert from little-endian) */
-    *out_boot_id = cortex_read_u32_le(frame_buf + 0);
     memcpy(out_adapter_name, frame_buf + 4, 32);
     out_adapter_name[31] = '\0';  /* Ensure null termination */
 
@@ -473,7 +470,7 @@ int device_comm_init(
     }
 
     /* Receive HELLO */
-    ret = recv_hello(handle->transport, &handle->adapter_boot_id, handle->adapter_name,
+    ret = recv_hello(handle->transport, handle->adapter_name,
                      handle->device_hostname, handle->device_cpu, handle->device_os);
     if (ret < 0) {
         device_comm_teardown(handle);

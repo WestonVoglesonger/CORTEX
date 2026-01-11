@@ -17,6 +17,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "cortex_transport.h"
+#include "tcp_common.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -38,98 +39,39 @@ typedef struct {
 } tcp_client_ctx_t;
 
 /*
- * tcp_client_recv - Receive data with timeout
- *
- * Uses poll() to implement timeout semantics on blocking socket.
+ * tcp_client_recv - Receive data with timeout (uses shared helper)
  */
 static ssize_t tcp_client_recv(void *ctx, void *buf, size_t len, uint32_t timeout_ms)
 {
     tcp_client_ctx_t *tcp = (tcp_client_ctx_t *)ctx;
-
-    struct pollfd pfd = {
-        .fd = tcp->sockfd,
-        .events = POLLIN,
-        .revents = 0
-    };
-
-    /* Wait for data with timeout */
-    int poll_ret = poll(&pfd, 1, (int)timeout_ms);
-
-    if (poll_ret < 0) {
-        return (errno == EINTR) ? CORTEX_ETIMEDOUT : -errno;
-    }
-
-    if (poll_ret == 0) {
-        return CORTEX_ETIMEDOUT;  /* Timeout expired */
-    }
-
-    /* Data available or connection closed */
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        return CORTEX_ECONNRESET;
-    }
-
-    /* Read data */
-    ssize_t n = recv(tcp->sockfd, buf, len, 0);
-
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return CORTEX_ETIMEDOUT;
-        }
-        return -errno;
-    }
-
-    if (n == 0) {
-        return CORTEX_ECONNRESET;  /* Connection closed */
-    }
-
-    return (ssize_t)n;
+    return cortex_tcp_recv(tcp->sockfd, buf, len, timeout_ms);
 }
 
 /*
- * tcp_client_send - Send data (blocking)
+ * tcp_client_send - Send data (blocking, uses shared helper)
  */
 static ssize_t tcp_client_send(void *ctx, const void *buf, size_t len)
 {
     tcp_client_ctx_t *tcp = (tcp_client_ctx_t *)ctx;
-
-    /* Use MSG_NOSIGNAL on Linux to prevent SIGPIPE (macOS uses SO_NOSIGPIPE socket option) */
-#ifdef __linux__
-    ssize_t n = send(tcp->sockfd, buf, len, MSG_NOSIGNAL);
-#else
-    ssize_t n = send(tcp->sockfd, buf, len, 0);
-#endif
-
-    if (n < 0) {
-        return (errno == EPIPE || errno == ECONNRESET) ? CORTEX_ECONNRESET : -errno;
-    }
-
-    return (ssize_t)n;
+    return cortex_tcp_send(tcp->sockfd, buf, len);
 }
 
 /*
- * tcp_client_close - Close connection and cleanup
+ * tcp_client_close - Close connection and cleanup (uses shared helper)
  */
 static void tcp_client_close(void *ctx)
 {
     tcp_client_ctx_t *tcp = (tcp_client_ctx_t *)ctx;
-
-    if (tcp->sockfd >= 0) {
-        shutdown(tcp->sockfd, SHUT_RDWR);
-        close(tcp->sockfd);
-        tcp->sockfd = -1;
-    }
-
+    cortex_tcp_close(tcp->sockfd);
     free(tcp);
 }
 
 /*
- * tcp_client_get_timestamp_ns - Platform timestamp
+ * tcp_client_get_timestamp_ns - Platform timestamp (uses shared helper)
  */
 static uint64_t tcp_client_get_timestamp_ns(void)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+    return cortex_tcp_get_timestamp_ns();
 }
 
 /*
