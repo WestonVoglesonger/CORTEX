@@ -212,13 +212,13 @@ typedef struct __attribute__((packed)) {
     uint32_t window_length_samples;   /* W (e.g., 160) */
     uint32_t hop_samples;             /* H (e.g., 80) */
     uint32_t channels;                /* C (e.g., 64) */
-    char     plugin_name[32];         /* "bandpass_fir@f32" */
+    char     plugin_name[64];         /* "primitives/kernels/v1/bandpass_fir@f32" */
     char     plugin_params[256];      /* "lowcut=8,highcut=30" */
     uint32_t calibration_state_size;  /* Bytes of state (0 if not trainable) */
-} cortex_wire_config_t;  /* 332 bytes */
+} cortex_wire_config_t;  /* 344 bytes */
 
 /* Followed by: calibration_state_size bytes of state data */
-/* Total payload: 332 + calibration_state_size bytes */
+/* Total payload: 344 + calibration_state_size bytes */
 ```
 
 **Example:**
@@ -237,7 +237,7 @@ Followed by:
   16KB of ICA unmixing matrix (64×32 float32 = 8192 bytes)
   + metadata
 
-Total payload: 332 + 16384 = 16716 bytes
+Total payload: 344 + 16384 = 16728 bytes
 ```
 
 **Validation:**
@@ -246,7 +246,7 @@ Total payload: 332 + 16384 = 16716 bytes
 - `window_length_samples` ≤ `max_window_samples` from HELLO
 - `channels` ≤ `max_channels` from HELLO
 - `plugin_name` must match one of the advertised kernels in HELLO
-- `calibration_state_size` ≤ `CORTEX_MAX_CALIBRATION_STATE` (64KB - 332 bytes)
+- `calibration_state_size` ≤ `CORTEX_MAX_CALIBRATION_STATE` (64KB - 344 bytes)
 
 ---
 

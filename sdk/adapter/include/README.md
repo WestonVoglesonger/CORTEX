@@ -204,7 +204,7 @@ typedef struct __attribute__((packed)) {
     uint32_t window_length_samples;
     uint32_t hop_samples;
     uint32_t channels;
-    char     plugin_name[32];
+    char     plugin_name[64];
     char     plugin_params[256];
     uint32_t calibration_state_size;
     /* Followed by: calibration_state_size bytes */

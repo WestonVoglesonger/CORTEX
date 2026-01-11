@@ -52,7 +52,7 @@ cortex run --kernel car
 
 **How it works:** The `--device` flag accepts multiple formats:
 - **Auto-deploy formats** (system handles setup): `user@host`, `stm32:port` (future)
-- **Manual formats** (adapter already running): `tcp://host:port`, `serial:///dev/device`, `shm://name`
+- **Manual formats** (adapter already running): `tcp://host:port`, `serial:///dev/device`
 - Format determines whether deployment happens or system just connects
 
 ### 1.3 What Changed from v2.0 → v3.0
@@ -95,7 +95,7 @@ cortex run --kernel car
 
 **1. Format Determines Behavior**
 - Auto-deploy formats: `user@host` (SSH), `stm32:port` (JTAG, future)
-- Manual formats: `tcp://host:port`, `serial:///dev/device`, `shm://name`
+- Manual formats: `tcp://host:port`, `serial:///dev/device`
 - User doesn't choose "mode"—format implies intent
 - Works with IPs: `nvidia@192.168.1.123`
 - Works with hostnames: `nvidia@jetson.local`
@@ -224,7 +224,6 @@ Format-based routing (DeployerFactory):
   stm32:serial       → JTAGDeployer (auto-deploy, future)
   tcp://host:port    → Manual connection (adapter already running)
   serial:///dev/tty  → Manual connection (adapter already running)
-  shm://name         → Manual connection (adapter already running)
   local://           → Local adapter (default)
 ```
 
@@ -246,9 +245,6 @@ Format-based routing (DeployerFactory):
    │  #   Skip deployment, go straight to step 4
 
 3. Deploy (ephemeral)
-   ├─ deployer.detect_capabilities()
-   │  └─ Returns: {platform: "linux", arch: "arm64", ssh: True}
-   │
    ├─ deployer.deploy(verbose=False)
    │  ├─ rsync code: ~/CORTEX/ → nvidia@192.168.1.123:~/cortex-temp/
    │  │  └─ Exclude: .git, results, *.o, *.dylib, *.so
@@ -335,7 +331,7 @@ cortex run --device stm32:/dev/ttyUSB0 --kernel car
 
 ### 4.2 Format Category B: Manual Connection
 
-**When format starts with** `tcp://`, `serial://`, `shm://`, or `local://`
+**When format starts with** `tcp://`, `serial://`, or `local://`
 
 **Behavior:** Connect to existing adapter (no deployment, no cleanup)
 
@@ -349,9 +345,6 @@ cortex run --device tcp://192.168.1.123:9000 --kernel car
 
 # Serial (firmware already running on STM32)
 cortex run --device serial:///dev/ttyUSB0?baud=115200 --kernel car
-
-# Shared memory (local high-performance IPC)
-cortex run --device shm://bench01 --kernel car
 
 # Local (default, socketpair)
 cortex run --device local:// --kernel car
@@ -480,7 +473,6 @@ def parse_device_string(device: str) -> Union[Deployer, str]:
     Manual formats (return transport URI string):
         tcp://host:port    → "tcp://host:port"
         serial:///dev/tty  → "serial:///dev/tty"
-        shm://name         → "shm://name"
         local://           → "local://"
 
     Default:
@@ -499,7 +491,7 @@ def parse_device_string(device: str) -> Union[Deployer, str]:
         # JTAG auto-deploy (future)
         return JTAGDeployer(device)
 
-    if device.startswith(('tcp://', 'serial://', 'shm://', 'local://')):
+    if device.startswith(('tcp://', 'serial://', 'local://')):
         # Manual connection (transport URI)
         return device  # Return URI string as-is
 
@@ -540,7 +532,6 @@ cortex run --kernel car                            # "local://"
 ```python
 # base.py
 class Deployer(Protocol):
-    def detect_capabilities(self) -> dict: ...
     def deploy(self, verbose: bool) -> DeploymentResult: ...
     def cleanup(self) -> CleanupResult: ...
 
@@ -720,25 +711,6 @@ class Deployer(Protocol):
         assert isinstance(deployer, Deployer)  # Works at runtime
     """
 
-    def detect_capabilities(self) -> dict[str, any]:
-        """
-        Detect device platform, architecture, and available tools.
-
-        Returns:
-            Dictionary with device metadata:
-            {
-                "platform": "linux" | "stm32" | "docker",
-                "arch": "arm64" | "x86_64" | "cortex-m4",
-                "ssh": bool,  # SSH available
-                "build_tools": bool,  # gcc/make available
-                ...
-            }
-
-        Raises:
-            DeploymentError: If device unreachable or detection fails
-        """
-        ...
-
     def deploy(self, verbose: bool = False) -> DeploymentResult:
         """
         Deploy code, build (if needed), start adapter.
@@ -805,14 +777,11 @@ class DeployerFactory:
         Auto-deploy formats (return Deployer):
             user@host              → SSHDeployer(user, host, port=22)
             user@host:2222         → SSHDeployer(user, host, port=2222)
-            user@[fe80::1]         → SSHDeployer(user, "fe80::1", port=22)
-            user@[fe80::1]:2222    → SSHDeployer(user, "fe80::1", port=2222)
             stm32:serial           → JTAGDeployer(device) [future]
 
         Manual formats (return transport URI string):
             tcp://host:port   → "tcp://host:port"
             serial:///dev/tty → "serial:///dev/tty?baud=115200"
-            shm://name        → "shm://name"
             local://          → "local://"
 
         Raises:
@@ -838,26 +807,15 @@ class DeployerFactory:
 
         if '@' in device:
             # Parse SSH format: user@host[:port]
-            # Also handle IPv6: user@[fe80::1][:port]
             user, host_part = device.split('@', 1)
 
-            # Check for IPv6 brackets
-            if host_part.startswith('['):
-                # IPv6: user@[fe80::1] or user@[fe80::1]:2222
-                bracket_end = host_part.find(']')
-                if bracket_end == -1:
-                    raise ValueError(f"Malformed IPv6 address: {device}")
-                host = host_part[1:bracket_end]  # Strip brackets
-                remainder = host_part[bracket_end+1:]
-                port = int(remainder[1:]) if remainder.startswith(':') else 22
+            # Parse host and optional port
+            if ':' in host_part:
+                host, port_str = host_part.rsplit(':', 1)
+                port = int(port_str)
             else:
-                # IPv4 or hostname: user@host or user@host:port
-                if ':' in host_part:
-                    host, port_str = host_part.rsplit(':', 1)
-                    port = int(port_str)
-                else:
-                    host = host_part
-                    port = 22
+                host = host_part
+                port = 22
 
             return SSHDeployer(user, host, port=port)
 
@@ -865,13 +823,13 @@ class DeployerFactory:
             raise NotImplementedError("JTAGDeployer not yet implemented (Spring 2026)")
 
         # Manual transport formats - return URI as-is
-        if device.startswith(('tcp://', 'serial://', 'shm://', 'local://')):
+        if device.startswith(('tcp://', 'serial://', 'local://')):
             return device
 
         raise ValueError(
             f"Unknown device format: {device}\n"
             f"Expected: user@host | tcp://host:port | serial:///dev/device | "
-            f"shm://name | local:// | stm32:device"
+            f"local:// | stm32:device"
         )
 ```
 
@@ -929,27 +887,6 @@ class SSHDeployer:
         self.host = host
         self.port = port
         self.adapter_port = adapter_port
-
-    def detect_capabilities(self) -> dict[str, any]:
-        """
-        Detect device platform via SSH.
-
-        Commands run:
-            uname -s          # OS (Linux/Darwin)
-            uname -m          # Architecture (arm64/x86_64)
-            which gcc make    # Build tools available
-
-        Returns:
-            {
-                "platform": "linux",
-                "arch": "arm64",
-                "ssh": True,
-                "build_tools": True,
-                "hostname": "jetson-nano",
-                "os_version": "Ubuntu 20.04"
-            }
-        """
-        ...
 
     def deploy(self, verbose: bool = False, skip_validation: bool = False) -> DeploymentResult:
         """
@@ -1215,7 +1152,7 @@ src/cortex/
 │   ├── base.py                 # Deployer protocol, result types (100 LOC)
 │   ├── factory.py              # DeployerFactory.from_device_string() (50 LOC)
 │   ├── ssh_deployer.py         # SSHDeployer class (175 LOC)
-│   └── exceptions.py           # DeploymentError, CleanupError (25 LOC)
+│   └── exceptions.py           # DeploymentError (20 LOC)
 ├── commands/
 │   ├── run.py                  # Update: add --device flag (50 LOC)
 │   └── pipeline.py             # Update: add --device flag (50 LOC)
@@ -1270,7 +1207,6 @@ Examples:
   # Manual connection formats (adapter already running):
   cortex run --device tcp://192.168.1.123:9000 --kernel car    # TCP connection
   cortex run --device serial:///dev/ttyUSB0 --kernel car       # Serial/UART
-  cortex run --device shm://bench01 --kernel car               # Shared memory
   cortex run --device local:// --kernel car                    # Explicit local
 
   # Future auto-deploy formats:
@@ -1280,7 +1216,7 @@ Examples:
 **Format determines behavior:**
 - `user@host` → Auto-deploy via SSH (rsync + build + start adapter)
 - `tcp://host:port` → Connect to existing adapter (no deployment)
-- `serial://`, `shm://`, `local://` → Direct transport connection
+- `serial://`, `local://` → Direct transport connection
 - `stm32:device` → Auto-deploy via JTAG/SWD (future)
 
 #### `cortex pipeline` (unified --device flag)
@@ -1498,7 +1434,7 @@ Error: Unknown device format: '192.168.1.123'
 
 Expected formats:
   Auto-deploy:  user@host | stm32:device
-  Manual:       tcp://host:port | serial:///dev/device | shm://name | local://
+  Manual:       tcp://host:port | serial:///dev/device | local://
 
 Examples (auto-deploy):
   cortex run --device nvidia@192.168.1.123 --kernel car
@@ -1573,7 +1509,6 @@ def test_ssh_deployer_implements_protocol():
 
     deployer = SSHDeployer("nvidia", "192.168.1.123")
     assert isinstance(deployer, Deployer)
-    assert hasattr(deployer, 'detect_capabilities')
     assert hasattr(deployer, 'deploy')
     assert hasattr(deployer, 'cleanup')
 
@@ -1676,7 +1611,7 @@ pytest tests/integration/test_jetson_deploy.py -v
 - Protocol layer (base.py: Deployer interface, result types)
 - Factory pattern (factory.py: device string parsing)
 - SSH implementation (ssh_deployer.py: rsync + build + start)
-- Exception types (exceptions.py: DeploymentError, CleanupError)
+- Exception types (exceptions.py: DeploymentError)
 
 **Breakdown:**
 - Day 1: Protocol + Factory (150 LOC)

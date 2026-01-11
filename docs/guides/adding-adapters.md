@@ -113,10 +113,9 @@ int main(void) {
 
     // Step 5: Send ACK
     cortex_wire_ack_t ack = {
-        .session_id = config.session_id,
-        .error_code = 0,
-        .output_width = config.window_length_samples,
-        .output_height = config.channels,
+        .ack_type = 0,  // 0 = CONFIG acknowledgment
+        .output_window_length_samples = 0,  // 0 = use config dimensions
+        .output_channels = 0,               // 0 = use config dimensions
     };
 
     if (cortex_protocol_send_ack(&protocol, &ack) != 0) {
@@ -204,7 +203,11 @@ Add the main execution loop:
 ```c
 // Allocate buffers
 size_t input_size = config.window_length_samples * config.channels * sizeof(float);
-size_t output_size = ack.output_width * ack.output_height * sizeof(float);
+
+// Output dimensions: use ACK values if non-zero, otherwise use config dimensions
+uint32_t output_w = ack.output_window_length_samples ? ack.output_window_length_samples : config.window_length_samples;
+uint32_t output_c = ack.output_channels ? ack.output_channels : config.channels;
+size_t output_size = output_w * output_c * sizeof(float);
 
 float *input_buffer = malloc(input_size);
 float *output_buffer = malloc(output_size);
@@ -256,14 +259,13 @@ for (;;) {
     cortex_wire_result_t wire_result = {
         .session_id = config.session_id,
         .sequence = sequence,
-        .error_code = 0,
-        .device_tin_ns = device_tin_ns,
-        .device_tstart_ns = device_tstart_ns,
-        .device_tend_ns = device_tend_ns,
-        .device_tfirst_tx_ns = get_time_ns(),
-        .output_size = output_size,
-        .output_width = ack.output_width,
-        .output_height = ack.output_height,
+        .tin = device_tin_ns,
+        .tstart = device_tstart_ns,
+        .tend = device_tend_ns,
+        .tfirst_tx = get_time_ns(),
+        .tlast_tx = 0,  // Set after send
+        .output_length_samples = output_w,
+        .output_channels = output_c,
     };
 
     if (cortex_protocol_send_result(&protocol, &wire_result, output_buffer) != 0) {
@@ -271,7 +273,7 @@ for (;;) {
         break;
     }
 
-    wire_result.device_tlast_tx_ns = get_time_ns();
+    wire_result.tlast_tx = get_time_ns();
 }
 
 // Cleanup
@@ -468,12 +470,12 @@ Some kernels change output dimensions (e.g., Welch PSD, Goertzel):
 
 ```c
 // After cortex_init(), query actual output dimensions
-uint32_t actual_output_width = init_result.output_width;
-uint32_t actual_output_height = init_result.output_height;
+uint32_t actual_output_width = init_result.output_window_length_samples;
+uint32_t actual_output_height = init_result.output_channels;
 
-// Report in ACK
-ack.output_width = actual_output_width;
-ack.output_height = actual_output_height;
+// Report in ACK (non-zero values override config dimensions)
+ack.output_window_length_samples = actual_output_width;
+ack.output_channels = actual_output_height;
 
 // Allocate correct output buffer size
 size_t output_size = actual_output_width * actual_output_height * sizeof(float);

@@ -24,8 +24,8 @@
 We **accelerated transport infrastructure** by building a universal system supporting ALL transports:
 
 **Completed (2025-12-31)**:
-- ✅ All 5 transport types: local, TCP client, TCP server, UART, SHM
-- ✅ URI-based configuration: `local://`, `tcp://host:port`, `tcp://:9000`, `serial:///dev/ttyUSB0?baud=115200`, `shm://bench01`
+- ✅ All 4 transport types: local, TCP client, TCP server, UART
+- ✅ URI-based configuration: `local://`, `tcp://host:port`, `tcp://:9000`, `serial:///dev/ttyUSB0?baud=115200`
 - ✅ Universal `native` adapter (runs on any transport via command-line URI)
 - ✅ Harness integration (device_comm supports all transport URIs)
 - ✅ **CLI integration (e728649)**: `cortex run --transport <URI>` flag
@@ -47,10 +47,6 @@ Terminal 2: cortex run --kernel noop --transport tcp://localhost:9000
 
 # Test UART mode (with USB-serial adapter) - NOW WORKING
 cortex run --kernel car --transport serial:///dev/ttyUSB0?baud=115200
-
-# Test SHM mode (high-performance benchmarking) - NOW WORKING
-Terminal 1: ./cortex_adapter_native shm://bench01
-Terminal 2: cortex run --kernel noop --transport shm://bench01
 
 # Test remote Jetson (when deployed) - NOW WORKING
 cortex run --kernel goertzel --transport tcp://192.168.1.100:9000
@@ -371,7 +367,7 @@ typedef struct __attribute__((packed)) {
     uint32_t window_length_samples;
     uint32_t hop_samples;
     uint32_t channels;
-    char     plugin_name[32];
+    char     plugin_name[64];
     char     plugin_params[256];
     uint32_t calibration_state_size;  // 0 if not trainable
     // Followed by: calibration_state_size bytes
@@ -1248,44 +1244,6 @@ src/engine/harness/device/
 
 ---
 
-## Bonus Work: Shared Memory Transport (Not in Original Plan)
-
-**Status**: ✅ COMPLETE (2025-12-31)
-**Purpose**: High-performance local IPC for benchmarking and overhead measurement
-
-### Components
-
-- ✅ **`sdk/adapter/lib/transport/local/shm.c`** (540 lines)
-  - `cortex_transport_shm_create_harness()` - Creates shared memory region
-  - `cortex_transport_shm_create_adapter()` - Connects to existing region
-  - POSIX `shm_open()` + `mmap()` for zero-copy communication
-  - Semaphore-based synchronization (sem_wait/sem_post)
-  - Ring buffer implementation for bidirectional communication
-  - Proper cleanup (shm_unlink, munmap, sem_close)
-
-- ✅ **URI integration**
-  - `shm://bench01` URI format
-  - Name-based region identification
-  - Harness creates, adapter connects (asymmetric setup)
-
-- ✅ **Use cases**
-  - Performance benchmarking (isolate kernel vs transport overhead)
-  - Latency baseline measurement (~5µs vs 50µs socketpair)
-  - Bandwidth testing (~2 GB/s vs 200 MB/s socketpair)
-
-### Performance Characteristics
-
-| Transport | Latency | Bandwidth | Use Case |
-|-----------|---------|-----------|----------|
-| SHM | ~5µs | ~2 GB/s | Local benchmarking |
-| Socketpair | ~50µs | ~200 MB/s | Local development |
-| TCP | ~1-10ms | ~100 MB/s | Remote hardware |
-| UART | ~10-100ms | ~88 KB/s | Embedded debug |
-
-**Note**: SHM is local-only (same machine). Not suitable for remote adapters.
-
----
-
 ## Change Log
 
 ### 2025-12-31 (Evening) - CLI Integration Complete
@@ -1316,9 +1274,6 @@ cortex run --kernel car --transport tcp://192.168.1.100:9000
 
 # Serial device
 cortex run --kernel noop --transport serial:///dev/ttyUSB0?baud=115200
-
-# Shared memory
-cortex run --kernel noop --transport shm://bench01
 ```
 
 **Testing**:
@@ -1360,8 +1315,8 @@ cortex run --kernel noop --transport shm://bench01
 **Native Adapter Enhanced**:
 - Renamed: `native@loopback` → `native` (simpler, architecture-agnostic)
 - HELLO message fixed: "x86@loopback" → "native"
-- README updated: Documents all 5 transport URIs with examples
-- Now supports: `local://`, `tcp://:port`, `tcp://host:port`, `serial://device`, `shm://name`
+- README updated: Documents all 4 transport URIs with examples
+- Now supports: `local://`, `tcp://:port`, `tcp://host:port`, `serial://device`
 
 **Testing**:
 - ✅ All existing tests pass (21+ tests across 7 suites)
