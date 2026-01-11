@@ -21,7 +21,6 @@ SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
 # Adapter protocol source files
 PROTOCOL_SRC = ../sdk/adapter/lib/protocol/protocol.c ../sdk/adapter/lib/protocol/crc32.c
 TRANSPORT_SRC = ../sdk/adapter/lib/transport/local/mock.c \
-                ../sdk/adapter/lib/transport/local/shm.c \
                 ../sdk/adapter/lib/transport/serial/uart_posix.c \
                 ../sdk/adapter/lib/transport/network/tcp_client.c \
                 ../sdk/adapter/lib/transport/network/tcp_server.c

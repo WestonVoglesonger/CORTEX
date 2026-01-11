@@ -317,16 +317,11 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
         }
 
         /* Receive chunked WINDOW */
-        uint32_t received_window_samples = 0;
-        uint32_t received_channels = 0;
-
         int ret = cortex_protocol_recv_window_chunked(
             tp,
             sequence,
             window_buf,
             window_samples * channels * sizeof(float),
-            &received_window_samples,
-            &received_channels,
             CORTEX_WINDOW_TIMEOUT_MS
         );
 
