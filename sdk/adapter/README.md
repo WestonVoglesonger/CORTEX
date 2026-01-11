@@ -26,7 +26,7 @@ The SDK has three layers:
 │  SDK Helper Layer (optional)            │
 │  - cortex_adapter_send_hello()          │
 │  - cortex_adapter_recv_config()         │
-│  - cortex_adapter_send_ack()            │
+│  - cortex_adapter_send_ack_with_dims()  │
 │  - cortex_adapter_send_result()         │
 └──────────────┬──────────────────────────┘
                │
@@ -93,12 +93,14 @@ int main(void) {
 
     uint32_t session_id, sr, window, hop, ch;
     char plugin[64], params[256];
+    void *calib_state = NULL;
+    uint32_t calib_size = 0;
     cortex_adapter_recv_config(transport, &session_id, &sr, &window, &hop, &ch,
-                                plugin, params);
+                                plugin, params, &calib_state, &calib_size);
 
     /* 3. Load kernel (platform-specific) */
-    void *kernel = my_load_kernel(plugin, sr, window, hop, ch, params);
-    cortex_adapter_send_ack(transport);
+    void *kernel = my_load_kernel(plugin, sr, window, hop, ch, params, calib_state, calib_size);
+    cortex_adapter_send_ack_with_dims(transport, 0, 0);  /* 0, 0 = use config dims */
 
     /* 4. Window loop */
     float *input = malloc(window * ch * sizeof(float));
@@ -107,10 +109,8 @@ int main(void) {
 
     while (1) {
         /* Receive window */
-        uint32_t recv_window, recv_ch;
         cortex_protocol_recv_window_chunked(transport, seq, input,
-                                             window * ch * sizeof(float),
-                                             &recv_window, &recv_ch, 5000);
+                                             window * ch * sizeof(float), 5000);
         uint64_t tin = my_get_timestamp_ns();
 
         /* Execute kernel */
@@ -209,13 +209,11 @@ int cortex_protocol_recv_window_chunked(
     uint32_t expected_sequence,
     float *out_samples,
     size_t samples_buf_size,
-    uint32_t *out_window_samples,
-    uint32_t *out_channels,
     uint32_t timeout_ms
 );
 ```
 
-Receives and reassembles WINDOW_CHUNK frames. Validates sequence, offsets, and completeness.
+Receives and reassembles WINDOW_CHUNK frames. Validates sequence, offsets, and completeness. Caller must know window dimensions from CONFIG handshake.
 
 ---
 
@@ -246,19 +244,25 @@ int cortex_adapter_recv_config(
     uint32_t *out_window_samples,
     uint32_t *out_hop_samples,
     uint32_t *out_channels,
-    char *out_plugin_name,      /* [32] buffer */
-    char *out_plugin_params     /* [256] buffer */
+    char *out_plugin_name,              /* [64] buffer */
+    char *out_plugin_params,            /* [256] buffer */
+    void **out_calibration_state,       /* Caller must free, NULL if no state */
+    uint32_t *out_calibration_state_size /* Size in bytes, 0 if no state */
 );
 ```
 
-Receives CONFIG frame and extracts parameters.
+Receives CONFIG frame and extracts parameters. For trainable kernels (ICA, CSP, LDA), calibration state is provided.
 
-#### cortex_adapter_send_ack()
+#### cortex_adapter_send_ack_with_dims()
 ```c
-int cortex_adapter_send_ack(cortex_transport_t *transport);
+int cortex_adapter_send_ack_with_dims(
+    cortex_transport_t *transport,
+    uint32_t output_window_length,  /* 0 = use config dimensions */
+    uint32_t output_channels        /* 0 = use config dimensions */
+);
 ```
 
-Sends ACK frame (kernel ready).
+Sends ACK frame (kernel ready). Set dimensions to 0 to use config dimensions, or override for kernels with dynamic output shapes.
 
 #### cortex_adapter_send_result()
 ```c
