@@ -60,10 +60,6 @@ typedef cortex_transport_api_t cortex_transport_t;  /* Convenience alias */
 /* Socketpair (stdin/stdout) - for loopback adapters */
 cortex_transport_t* cortex_transport_mock_create(int fd);
 cortex_transport_t* cortex_transport_mock_create_from_fds(int read_fd, int write_fd);
-
-/* Shared memory (POSIX shm_open) - for benchmarking */
-cortex_transport_t* cortex_transport_shm_create_harness(const char *name);
-cortex_transport_t* cortex_transport_shm_create_adapter(const char *name);
 ```
 
 **Network:**
@@ -332,13 +328,15 @@ int cortex_adapter_send_hello(
 /* Receive CONFIG frame (harness → adapter) */
 int cortex_adapter_recv_config(
     cortex_transport_t *transport,
-    uint32_t *out_session_id,       /* Random session ID */
+    uint32_t *out_session_id,           /* Random session ID */
     uint32_t *out_sample_rate_hz,
     uint32_t *out_window_samples,
     uint32_t *out_hop_samples,
     uint32_t *out_channels,
-    char *out_plugin_name,          /* Buffer size: 32 bytes */
-    char *out_plugin_params         /* Buffer size: 256 bytes */
+    char *out_plugin_name,              /* Buffer size: 64 bytes */
+    char *out_plugin_params,            /* Buffer size: 256 bytes */
+    void **out_calibration_state,       /* Caller must free, NULL if no state */
+    uint32_t *out_calibration_state_size /* Size in bytes, 0 if no state */
 );
 
 /* Send ACK frame with output dimensions (adapter → harness) */
