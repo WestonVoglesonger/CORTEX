@@ -32,12 +32,11 @@ Protocol provides frame-based communication with:
 
 ### 1.3 Transport Layer (sdk/adapter/include/cortex_transport.h)
 
-Five transport implementations:
+Four transport implementations:
 1. **Mock** (local://): POSIX socketpair, poll() timeout
 2. **TCP Client** (tcp://host:port): harness connects to remote adapter
 3. **TCP Server** (tcp://:port): adapter listens, harness connects
 4. **UART/Serial** (serial:///dev/ttyUSB0): hardware serial connection
-5. **Shared Memory** (shm://name): High-performance local IPC
 
 ### 1.4 Adapter Layer (primitives/adapters/v1/native/adapter.c)
 
@@ -335,23 +334,15 @@ typedef struct cortex_transport_api {
    - Files: sdk/adapter/lib/transport/serial/uart_posix.c
    - Bandwidth: ~11 KB/s @ 115200 (too slow for typical BCI data)
 
-5. **Shared Memory** - shm://name
-   - High-performance local IPC (~2 GB/s)
-   - POSIX shared memory + semaphores
-   - Latency: ~5µs (vs 50µs socketpair, 1ms TCP)
-   - Files: sdk/adapter/lib/transport/local/shm.c
-   - Use: Pure kernel performance measurement
-
 ### 4.3 URI Parsing (cortex_transport.h:98-112)
 
 ```c
 typedef struct {
-    char scheme[16];           /* "local", "tcp", "serial", "shm" */
+    char scheme[16];           /* "local", "tcp", "serial" */
     char host[256];            /* TCP host or empty for server mode */
     uint16_t port;             /* TCP port */
     char device_path[256];     /* "/dev/ttyUSB0" */
     uint32_t baud_rate;        /* 115200 */
-    char shm_name[64];         /* "bench01" */
 } cortex_uri_t;
 ```
 
@@ -370,9 +361,6 @@ else if (strcmp(scheme, "tcp") == 0) {
 }
 else if (strcmp(scheme, "serial") == 0) {
     transport = cortex_transport_uart_posix_create(device_path, baud_rate);
-}
-else if (strcmp(scheme, "shm") == 0) {
-    transport = cortex_transport_shm_create_harness(name);
 }
 ```
 
@@ -676,7 +664,6 @@ void cortex_get_device_os(...);
 | TCP Client | sdk/adapter/lib/transport/network/tcp_client.c |
 | TCP Server | sdk/adapter/lib/transport/network/tcp_server.c |
 | UART/Serial | sdk/adapter/lib/transport/serial/uart_posix.c |
-| SHM Transport | sdk/adapter/lib/transport/local/shm.c |
 | Deployer Base | src/cortex/deploy/base.py |
 | SSH Deployer | src/cortex/deploy/ssh_deployer.py |
 
@@ -696,7 +683,7 @@ void cortex_get_device_os(...);
    - All wire format: little-endian
 
 3. **Transport Layer** (Byte-Stream Abstraction)
-   - Five implementations (mock, TCP client/server, UART, SHM)
+   - Four implementations (mock, TCP client/server, UART)
    - Timeout handling (poll/select)
    - Platform-specific clocks (CLOCK_MONOTONIC or DWT)
 

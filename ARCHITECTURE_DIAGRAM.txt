@@ -19,8 +19,7 @@ LAYER STACK (High → Low Level):
 │ ├─ Mock (local://): POSIX socketpair, poll() timeout [PRODUCTION]           │
 │ ├─ TCP Client (tcp://host:port): Network connection [PRODUCTION]            │
 │ ├─ TCP Server (tcp://:port): Listen mode for adapter                        │
-│ ├─ UART/Serial (serial:///dev/ttyUSB0): Hardware serial, 11 KB/s            │
-│ └─ Shared Memory (shm://name): High-perf IPC, 2 GB/s, ~5µs latency          │
+│ └─ UART/Serial (serial:///dev/ttyUSB0): Hardware serial, 11 KB/s            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ================================================================================
@@ -306,20 +305,17 @@ All transports implement cortex_transport_api_t:
 │ ssize_t (*send)(ctx, buf, len)                                   │
 │   ├─ Mock (socketpair): write(fd, buf, len)                      │
 │   ├─ TCP Client: send(socket, buf, len, 0)                       │
-│   ├─ UART: write(fd, buf, len) [with RTS/CTS flow control]       │
-│   └─ SHM: ring_buffer_write(&ctx->ring, buf, len)                │
+│   └─ UART: write(fd, buf, len) [with RTS/CTS flow control]       │
 │                                                                   │
 │ ssize_t (*recv)(ctx, buf, len, timeout_ms)                       │
 │   ├─ Mock (socketpair): poll() + read()                          │
 │   ├─ TCP Client: select() + recv()                               │
-│   ├─ UART: poll() + read()                                       │
-│   └─ SHM: semwait(timeout) + ring_buffer_read()                  │
+│   └─ UART: poll() + read()                                       │
 │                                                                   │
 │ void (*close)(ctx)                                               │
 │   ├─ Mock: close(fd)                                             │
 │   ├─ TCP: shutdown() + close(socket)                             │
-│   ├─ UART: tcsetattr() + close(fd)                               │
-│   └─ SHM: shm_unlink(), sem_close()                              │
+│   └─ UART: tcsetattr() + close(fd)                               │
 │                                                                   │
 │ uint64_t (*get_timestamp_ns)(void)                               │
 │   ├─ POSIX: clock_gettime(CLOCK_MONOTONIC) [all except STM32]    │
@@ -332,21 +328,18 @@ Transport Selection via URI:
   tcp://host:port           → TCP Client (harness)       [PRODUCTION]
   tcp://:port               → TCP Server (adapter)       [IMPLEMENTED]
   serial:///dev/ttyUSB0     → UART/Serial (POSIX)        [SLOW: 11 KB/s]
-  shm://bench01             → Shared Memory (local)      [FAST: 2 GB/s]
 
 Bandwidth Characteristics:
 
   Socketpair (local://)     ~  50 µs round-trip
   TCP (tcp://host)          ~ 1-5 ms round-trip (network-dependent)
   Serial (serial://)        ~ 90 µs per byte @ 115200 baud = 11 KB/s total
-  Shared Memory (shm://)    ~  5 µs round-trip, 2 GB/s bandwidth
 
 Typical Window Transmission (160×64 float32 = 40,960 bytes):
 
   Socketpair:  ~2 ms (send 5×8KB chunks, poll() between)
   TCP:         ~5-50 ms (depends on network, MTU 1500 bytes)
   Serial:      ~3.7 seconds @ 115200 baud (too slow for BCI!)
-  SHM:         ~20 µs (ring buffer copy)
 
 ================================================================================
                            COMPONENT INTEGRATION MAP

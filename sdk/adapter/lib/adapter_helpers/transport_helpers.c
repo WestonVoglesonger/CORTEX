@@ -59,7 +59,6 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
         out->timeout_ms = 0;
         out->device_path[0] = '\0';
         out->baud_rate = 0;
-        out->shm_name[0] = '\0';
         return 0;
     }
 
@@ -101,7 +100,6 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
         out->host[0] = '\0';
         out->port = 0;
         out->timeout_ms = 0;
-        out->shm_name[0] = '\0';
         return 0;
     }
 
@@ -168,41 +166,12 @@ int cortex_parse_adapter_uri(const char *uri, cortex_uri_t *out) {
         /* Clear unused fields */
         out->device_path[0] = '\0';
         out->baud_rate = 0;
-        out->shm_name[0] = '\0';
-        return 0;
-    }
-
-    /* Handle shm:// */
-    if (strcmp(out->scheme, "shm") == 0) {
-        /* Extract SHM name (everything after "://") */
-        size_t name_len = strlen(rest);
-
-        if (name_len == 0) {
-            fprintf(stderr, "SHM URI missing name: %s\n", uri);
-            return -1;
-        }
-
-        if (name_len >= sizeof(out->shm_name)) {
-            fprintf(stderr, "SHM name too long: %s (max %zu chars)\n",
-                    rest, sizeof(out->shm_name) - 1);
-            return -1;
-        }
-
-        strncpy(out->shm_name, rest, sizeof(out->shm_name) - 1);
-        out->shm_name[sizeof(out->shm_name) - 1] = '\0';
-
-        /* Clear unused fields */
-        out->host[0] = '\0';
-        out->port = 0;
-        out->timeout_ms = 0;
-        out->device_path[0] = '\0';
-        out->baud_rate = 0;
         return 0;
     }
 
     /* Unknown scheme */
     fprintf(stderr, "Unsupported URI scheme: %s\n", out->scheme);
-    fprintf(stderr, "  Supported: local://, tcp://host:port, serial:///dev/device, shm://name\n");
+    fprintf(stderr, "  Supported: local://, tcp://host:port, serial:///dev/device\n");
     return -1;
 }
 
@@ -318,35 +287,9 @@ cortex_transport_t *cortex_adapter_transport_create(const char *config_uri) {
         fprintf(stderr, "Adapter: Serial connection established\n");
         return transport;
 
-    } else if (strcmp(uri.scheme, "shm") == 0) {
-        /*
-         * SHARED MEMORY: High-performance local IPC
-         *
-         * Use case: Performance benchmarking, overhead measurement, latency baseline.
-         * Provides ~10x speedup over socketpair, ~100x over TCP.
-         *
-         * Note: Local-only (same machine). For benchmarking pure kernel performance.
-         */
-        if (uri.shm_name[0] == '\0') {
-            fprintf(stderr, "Adapter: SHM URI missing name (e.g., shm://bench01)\n");
-            return NULL;
-        }
-
-        fprintf(stderr, "Adapter: Connecting to shared memory region '%s'...\n", uri.shm_name);
-
-        cortex_transport_t *transport = cortex_transport_shm_create_adapter(uri.shm_name);
-
-        if (!transport) {
-            fprintf(stderr, "Adapter: Failed to connect to SHM region '%s'\n", uri.shm_name);
-            return NULL;
-        }
-
-        fprintf(stderr, "Adapter: SHM connection established\n");
-        return transport;
-
     } else {
         fprintf(stderr, "Adapter: Unsupported transport scheme: %s\n", uri.scheme);
-        fprintf(stderr, "  Supported: local://, tcp://:port, serial:///dev/device, shm://name\n");
+        fprintf(stderr, "  Supported: local://, tcp://:port, serial:///dev/device\n");
         return NULL;
     }
 }

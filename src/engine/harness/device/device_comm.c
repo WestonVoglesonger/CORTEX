@@ -465,29 +465,9 @@ int device_comm_init(
         /* No adapter_pid for serial (external hardware) */
         handle->adapter_pid = 0;
     }
-    else if (strcmp(parsed_uri.scheme, "shm") == 0) {
-        /* Shared memory transport: high-performance local IPC */
-        if (!parsed_uri.shm_name[0]) {
-            fprintf(stderr, "[harness] SHM transport requires name: %s\n", uri);
-            free(handle);
-            return -EINVAL;
-        }
-
-        /* Create SHM transport (harness is creator, adapter connects) */
-        handle->transport = cortex_transport_shm_create_harness(parsed_uri.shm_name);
-
-        if (!handle->transport) {
-            fprintf(stderr, "[harness] Failed to create SHM region '%s'\n", parsed_uri.shm_name);
-            free(handle);
-            return -ENOMEM;
-        }
-
-        /* No adapter_pid for SHM (adapter connects independently) */
-        handle->adapter_pid = 0;
-    }
     else {
         fprintf(stderr, "[harness] Unsupported transport scheme: %s\n", parsed_uri.scheme);
-        fprintf(stderr, "[harness] Supported: local://, tcp://host:port, serial:///dev/device, shm://name\n");
+        fprintf(stderr, "[harness] Supported: local://, tcp://host:port, serial:///dev/device\n");
         free(handle);
         return -EINVAL;
     }

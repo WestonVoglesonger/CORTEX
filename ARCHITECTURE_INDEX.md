@@ -259,7 +259,6 @@ void cortex_teardown(void *handle);
 | TCP Client | tcp://host:port | ~50 MB/s | 1-5 ms | Remote (Jetson, RPi) | Production |
 | TCP Server | tcp://:port | ~50 MB/s | 1-5 ms | Adapter listening | Implemented |
 | Serial/UART | serial:///dev/ttyUSB0 | 11 KB/s @ 115200 | 90 µs/byte | Debug console | Slow for BCI |
-| Shared Memory | shm://name | 2 GB/s | ~5 µs | Pure performance baseline | Fast, local only |
 
 ---
 
