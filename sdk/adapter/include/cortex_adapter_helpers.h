@@ -83,21 +83,6 @@ int cortex_adapter_recv_config(
 );
 
 /*
- * cortex_adapter_send_ack - Send ACK frame to harness (backward compat)
- *
- * Acknowledges successful kernel initialization. This is the third message
- * in the handshake sequence. Sends zeros for output dimensions (use config dims).
- *
- * Args:
- *   transport: Transport to send on
- *
- * Returns:
- *    0: Success
- *   <0: Transport error
- */
-int cortex_adapter_send_ack(cortex_transport_t *transport);
-
-/*
  * cortex_adapter_send_ack_with_dims - Send ACK frame with output dimensions
  *
  * Acknowledges successful kernel initialization and provides actual output dims.

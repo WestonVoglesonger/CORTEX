@@ -138,12 +138,6 @@ int cortex_adapter_recv_config(
     return 0;
 }
 
-int cortex_adapter_send_ack(cortex_transport_t *transport)
-{
-    /* Backward compat: send zeros for output dimensions */
-    return cortex_adapter_send_ack_with_dims(transport, 0, 0);
-}
-
 int cortex_adapter_send_ack_with_dims(cortex_transport_t *transport,
                                       uint32_t output_window_length,
                                       uint32_t output_channels)

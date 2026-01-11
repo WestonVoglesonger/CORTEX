@@ -341,8 +341,10 @@ int cortex_adapter_recv_config(
     char *out_plugin_params         /* Buffer size: 256 bytes */
 );
 
-/* Send ACK frame (adapter → harness) */
-int cortex_adapter_send_ack(cortex_transport_t *transport);
+/* Send ACK frame with output dimensions (adapter → harness) */
+int cortex_adapter_send_ack_with_dims(cortex_transport_t *transport,
+                                      uint32_t output_window_length,
+                                      uint32_t output_channels);
 ```
 
 ### Result Helper
@@ -391,8 +393,8 @@ int main(void) {
     /* 4. Load kernel (platform-specific) */
     kernel_handle = load_kernel(plugin_name, sample_rate, window_samples, ...);
 
-    /* 5. Send ACK */
-    cortex_adapter_send_ack(transport);
+    /* 5. Send ACK (0, 0 = use config dimensions) */
+    cortex_adapter_send_ack_with_dims(transport, 0, 0);
 
     /* 6. Window loop */
     uint32_t sequence = 0;
