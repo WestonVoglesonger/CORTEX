@@ -157,14 +157,22 @@ def execute_generator(generator_path: str,
             suffix=".float32",
             delete=False
         )
-        result.tofile(temp_file)
-        temp_file.close()
 
-        temp_file_path = temp_file.name
-        file_size = os.path.getsize(temp_file_path)
-        total_samples = result.shape[0]
-
-        print(f"[cortex] Wrote to temp file: {temp_file_path}")
+        try:
+            result.tofile(temp_file)
+            temp_file.close()
+            temp_file_path = temp_file.name
+            file_size = os.path.getsize(temp_file_path)
+            total_samples = result.shape[0]
+            print(f"[cortex] Wrote to temp file: {temp_file_path}")
+        except Exception:
+            # Best-effort cleanup on write failure
+            try:
+                temp_file.close()
+                os.unlink(temp_file.name)
+            except OSError:
+                pass  # Ignore errors during cleanup
+            raise  # Re-raise original exception
 
     print(f"[cortex] File size: {file_size / 1e6:.1f} MB")
 
