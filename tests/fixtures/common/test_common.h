@@ -12,12 +12,26 @@
 #ifndef TEST_COMMON_H
 #define TEST_COMMON_H
 
+/* Define feature test macros if not already defined */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L  /* For clock_gettime, CLOCK_MONOTONIC */
+#endif
+
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE          /* For M_PI and other BSD/SVID features (Linux) */
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
+
+/* Define M_PI if not already defined (macOS compatibility) */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* ========================================================================
  * Basic Assertions
