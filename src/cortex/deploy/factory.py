@@ -35,7 +35,7 @@ class DeployerFactory:
         Manual formats (return transport URI string):
             tcp://host:port   → "tcp://host:port"
             serial:///dev/tty → "serial:///dev/tty?baud=115200"
-            shm://name        → "shm://name"
+            shm://name        → "shm://name" [reserved for Q2 2026]
             local://          → "local://"
 
         Raises:
@@ -69,7 +69,12 @@ class DeployerFactory:
             # Parse port if specified
             if ':' in host_part:
                 host, port_str = host_part.rsplit(':', 1)
-                port = int(port_str)
+                try:
+                    port = int(port_str)
+                    if not (1 <= port <= 65535):
+                        raise ValueError(f"Port must be 1-65535, got {port}")
+                except ValueError as e:
+                    raise ValueError(f"Invalid SSH port in device string '{device}': {e}")
             else:
                 host = host_part
                 port = 22
@@ -86,5 +91,6 @@ class DeployerFactory:
         raise ValueError(
             f"Unknown device format: {device}\n"
             f"Expected: user@host | tcp://host:port | serial:///dev/device | "
-            f"shm://name | local:// | stm32:device"
+            f"local:// | stm32:device\n"
+            f"Note: shm:// reserved for future (Q2 2026)"
         )

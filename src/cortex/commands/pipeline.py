@@ -257,44 +257,47 @@ def execute(args):
         step_num = 2 if not args.skip_build else 1
         print(f"STEP {step_num}: DEPLOY TO DEVICE")
         print("=" * 80)
-
-        try:
-            deploy_result = deployer.deploy(
-                verbose=args.verbose,
-                skip_validation=args.skip_validate
-            )
-            transport_uri = deploy_result.transport_uri
-            print(f"\n✓ Deployment complete: {transport_uri}")
-        except DeploymentError as e:
-            print(f"\n✗ Deployment failed: {e}")
-            return 1
     else:
         # Manual or local mode
         transport_uri = device_result if isinstance(device_result, str) else None
 
-    # Step 3: Run all benchmarks
-    print("\n" + "=" * 80)
-    if is_auto_deploy:
-        step_num += 1
-    else:
-        step_num = 3 if not args.skip_build and not args.skip_validate else (2 if not args.skip_build or not args.skip_validate else 1)
-    print(f"STEP {step_num}: RUN BENCHMARKS")
-    print("=" * 80)
-
-    # Create runner with production dependencies
-    filesystem = RealFileSystemService()
-    runner = HarnessRunner(
-        filesystem=filesystem,
-        process_executor=SubprocessExecutor(),
-        config_loader=YamlConfigLoader(filesystem),
-        time_provider=SystemTimeProvider(),
-        env_provider=SystemEnvironmentProvider(),
-        tool_locator=SystemToolLocator(),
-        logger=ConsoleLogger()
-    )
-
-    # Run all kernels with default config
+    # Wrap deployment and benchmark in try/finally to ensure cleanup
     try:
+        # Deploy if auto-deploy mode
+        if is_auto_deploy:
+            try:
+                deploy_result = deployer.deploy(
+                    verbose=args.verbose,
+                    skip_validation=args.skip_validate
+                )
+                transport_uri = deploy_result.transport_uri
+                print(f"\n✓ Deployment complete: {transport_uri}")
+            except DeploymentError as e:
+                print(f"\n✗ Deployment failed: {e}")
+                return 1
+
+        # Step 3: Run all benchmarks
+        print("\n" + "=" * 80)
+        if is_auto_deploy:
+            step_num += 1
+        else:
+            step_num = 3 if not args.skip_build and not args.skip_validate else (2 if not args.skip_build or not args.skip_validate else 1)
+        print(f"STEP {step_num}: RUN BENCHMARKS")
+        print("=" * 80)
+
+        # Create runner with production dependencies
+        filesystem = RealFileSystemService()
+        runner = HarnessRunner(
+            filesystem=filesystem,
+            process_executor=SubprocessExecutor(),
+            config_loader=YamlConfigLoader(filesystem),
+            time_provider=SystemTimeProvider(),
+            env_provider=SystemEnvironmentProvider(),
+            tool_locator=SystemToolLocator(),
+            logger=ConsoleLogger()
+        )
+
+        # Run all kernels with default config
         results_dir = runner.run_all_kernels(
             run_name=run_name,
             duration=args.duration,
@@ -326,7 +329,7 @@ def execute(args):
                 print(f"⚠️  Failed to fetch logs: {e}")
 
     finally:
-        # Cleanup deployment if auto-deploy mode
+        # Cleanup deployment if auto-deploy mode (always runs)
         if deployer:
             print("\n" + "=" * 80)
             print("CLEANUP: Removing deployment")

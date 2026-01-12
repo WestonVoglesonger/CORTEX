@@ -55,6 +55,12 @@ class SSHDeployer:
             Known limitation: May fail if 9000 already bound
             Workaround: Pass explicit adapter_port or kill conflicting process
         """
+        # Validate port ranges
+        if not (1 <= ssh_port <= 65535):
+            raise ValueError(f"SSH port must be 1-65535, got {ssh_port}")
+        if not (1 <= adapter_port <= 65535):
+            raise ValueError(f"Adapter port must be 1-65535, got {adapter_port}")
+
         self.user = user
         self.host = host
         self.ssh_port = ssh_port
@@ -356,7 +362,6 @@ class SSHDeployer:
             Missing files are logged as errors but don't fail the operation
             Large files (>10MB) are truncated with warning
         """
-        import os
         import json
         from datetime import datetime
 

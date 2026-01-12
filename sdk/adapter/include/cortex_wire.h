@@ -68,7 +68,7 @@ typedef enum {
  *   crc = crc32(crc, payload, payload_length);
  */
 typedef struct __attribute__((packed)) {
-    uint32_t magic;           /* Always 0x43525858 ("CRTX") */
+    uint32_t magic;           /* Always CORTEX_PROTOCOL_MAGIC (0x43525458, "CRTX") */
     uint8_t  version;         /* Protocol version (1) */
     uint8_t  frame_type;      /* cortex_frame_type_t */
     uint16_t flags;           /* Reserved (0 for Phase 1) */
