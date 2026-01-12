@@ -2,6 +2,8 @@
  * Unit tests for CORTEX config filtering and environment variable overrides
  */
 
+#define _POSIX_C_SOURCE 200809L  /* For setenv, unsetenv */
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
