@@ -9,10 +9,7 @@
  * - Mock object creation helpers
  */
 
-#ifndef TEST_COMMON_H
-#define TEST_COMMON_H
-
-/* Define feature test macros if not already defined */
+/* Define feature test macros BEFORE any includes */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 199309L  /* For clock_gettime, CLOCK_MONOTONIC */
 #endif
@@ -20,6 +17,9 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* For M_PI and other BSD/SVID features (Linux) */
 #endif
+
+#ifndef TEST_COMMON_H
+#define TEST_COMMON_H
 
 #include <stdio.h>
 #include <stdlib.h>
