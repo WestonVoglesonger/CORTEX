@@ -57,13 +57,15 @@ C tests for core engine components (scheduler, replayer, telemetry, harness).
 
 - **test_scheduler** - Window formation and plugin dispatch
   - ✅ Configuration validation
+  - ✅ Integer overflow protection
   - ✅ Window formation from hop-sized chunks
   - ✅ Overlapping windows (W-H sample retention)
   - ✅ Buffer management (various chunk sizes)
-  - ✅ Multiple plugin dispatch
+  - ✅ Multiple devices (sequential execution)
   - ✅ Warmup period handling
   - ✅ Flush functionality
-  - ⏸️ SKIP: Needs device_comm rewrite
+  - ✅ Sequential scheduler execution
+  - ✅ Data continuity through scheduler
 
 - **test_telemetry** - Timing and metrics collection
   - ✅ Buffer initialization and growth
@@ -137,11 +139,20 @@ C tests for adapter SDK (protocol, transport, device communication).
 
 ## Kernel SDK Pillar Tests
 
-C examples demonstrating the Kernel SDK (plugin interface).
+C tests and examples for the Kernel SDK (plugin interface and calibration state I/O).
 
 **Location:** `tests/kernel/`
 
 **Run:** `make test-kernel` or `cd kernel && make tests`
+
+### Unit Tests
+
+- **test_state_io** - Calibration state I/O (ABI v3)
+  - ✅ Basic save/load (100B, 16KB, 1MB)
+  - ✅ Corrupt file handling (bad magic, wrong ABI, truncated header/payload, empty, not found)
+  - ✅ Security (path traversal, max size enforcement)
+  - ✅ Endianness (little-endian write/read verification)
+  - ✅ State version evolution (v1/v2 compatibility)
 
 ### Examples
 
