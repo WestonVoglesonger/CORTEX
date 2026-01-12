@@ -37,14 +37,7 @@ test-kernel:
 
 # Run CLI pillar tests (Python)
 test-cli:
-	@echo "========================================="
-	@echo "Running CLI Tests"
-	@echo "========================================="
-	@echo "Running Python unit tests..."
-	@cd .. && python -m pytest tests/unit -v
-	@echo "Running Python integration tests..."
-	@cd .. && python -m pytest tests/integration -v
-	@echo "CLI tests: PASS"
+	@$(MAKE) -C cli tests
 
 # Clean all build artifacts
 clean:
