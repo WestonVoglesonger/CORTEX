@@ -145,6 +145,9 @@ test-core: $(CORE_TESTS)
 	@for test in $(CORE_TESTS); do \
 		if [ "$$test" = "test_scheduler" ]; then \
 			echo "SKIP: $$test (needs device_comm rewrite)"; \
+		elif [ "$$test" = "test_kernel_registry" ]; then \
+			echo "Running $$test..."; \
+			( cd .. && ./tests/$$test ) || exit 1; \
 		else \
 			echo "Running $$test..."; \
 			./$$test || exit 1; \
