@@ -151,45 +151,59 @@ class SyntheticGenerator:
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.float32')
         temp_file.close()  # Close file handle, keep path
 
-        data_mmap = np.memmap(
-            temp_file.name,
-            dtype='float32',
-            mode='w+',
-            shape=(n_samples, channels)
-        )
-
-        print(f"[generator] Generating {channels}ch × {n_samples} samples...")
-        print(f"[generator] Output: {temp_file.name}")
-        print(f"[generator] File size: {(n_samples * channels * 4) / 1e6:.1f} MB")
-
-        # Generate in batches
-        for batch_start in range(0, channels, BATCH_SIZE):
-            batch_end = min(batch_start + BATCH_SIZE, channels)
-            batch_channels = batch_end - batch_start
-
-            # Generate batch (vectorized)
-            batch_data = self._generate_batch_vectorized(
-                n_samples, batch_channels, sample_rate_hz, rng, amp_rms
+        data_mmap = None
+        try:
+            data_mmap = np.memmap(
+                temp_file.name,
+                dtype='float32',
+                mode='w+',
+                shape=(n_samples, channels)
             )
 
-            # Write to memmap (flushes to disk incrementally)
-            data_mmap[:, batch_start:batch_end] = batch_data.T.astype(np.float32)
+            print(f"[generator] Generating {channels}ch × {n_samples} samples...")
+            print(f"[generator] Output: {temp_file.name}")
+            print(f"[generator] File size: {(n_samples * channels * 4) / 1e6:.1f} MB")
 
-            # Explicit cleanup
-            del batch_data
+            # Generate in batches
+            for batch_start in range(0, channels, BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, channels)
+                batch_channels = batch_end - batch_start
 
-            # Progress logging
-            if batch_end % 256 == 0 or batch_end == channels:
-                progress = (batch_end / channels) * 100
-                print(f"[generator] {progress:.0f}% complete ({batch_end}/{channels} channels)")
+                # Generate batch (vectorized)
+                batch_data = self._generate_batch_vectorized(
+                    n_samples, batch_channels, sample_rate_hz, rng, amp_rms
+                )
 
-        # Flush and close memmap
-        data_mmap.flush()
-        del data_mmap
+                # Write to memmap (flushes to disk incrementally)
+                data_mmap[:, batch_start:batch_end] = batch_data.T.astype(np.float32)
 
-        print(f"[generator] Generation complete")
+                # Explicit cleanup
+                del batch_data
 
-        return temp_file.name  # Return file path, not data
+                # Progress logging
+                if batch_end % 256 == 0 or batch_end == channels:
+                    progress = (batch_end / channels) * 100
+                    print(f"[generator] {progress:.0f}% complete ({batch_end}/{channels} channels)")
+
+            print(f"[generator] Generation complete")
+            return temp_file.name  # Return file path, not data
+
+        except Exception:
+            # Best-effort cleanup of temporary file on failure
+            try:
+                os.unlink(temp_file.name)
+            except OSError:
+                pass  # Ignore errors during cleanup
+            raise  # Re-raise original exception
+
+        finally:
+            # Always flush and close memmap if it was created
+            if data_mmap is not None:
+                try:
+                    data_mmap.flush()
+                except Exception:
+                    pass  # Ignore flush errors during cleanup
+                del data_mmap
 
     def _generate_batch_vectorized(self, n_samples: int, batch_channels: int,
                                    sample_rate_hz: int,
@@ -243,8 +257,14 @@ class SyntheticGenerator:
             # True RMS
             rms_actual = np.sqrt(np.mean(signal**2))
 
-            # Scale to target RMS
-            batch_data[c] = signal / rms_actual * amp_rms
+            # Guard against zero RMS (prevents NaN from division by zero)
+            # Epsilon = 1e-12 is below float32 precision (~1e-7)
+            if rms_actual < 1e-12:
+                # Degenerate channel: keep as zeros rather than producing NaNs
+                batch_data[c] = signal * 0.0
+            else:
+                # Scale to target RMS
+                batch_data[c] = signal / rms_actual * amp_rms
 
         return batch_data  # Shape: (batch_channels, n_samples)
 

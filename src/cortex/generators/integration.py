@@ -41,7 +41,10 @@ def is_generator_dataset(dataset_path: str) -> bool:
             with open(spec_path) as f:
                 spec = yaml.safe_load(f)
 
-            dataset_type = spec.get('dataset', {}).get('type')
+            # Handle dataset: null or empty spec by using or {} to coalesce None
+            dataset_section = spec.get('dataset') if spec else None
+            dataset_type = dataset_section.get('type') if dataset_section else None
+
             if dataset_type == 'generator':
                 # Verify generator.py exists if type claims generator
                 gen_script = os.path.join(dataset_path, "generator.py")
@@ -53,8 +56,8 @@ def is_generator_dataset(dataset_path: str) -> bool:
             elif dataset_type is not None:
                 # Explicit type but not generator (e.g., type='static')
                 return False
-        except (FileNotFoundError, yaml.YAMLError, KeyError, TypeError) as e:
-            # Only catch file/parsing errors, not configuration errors (ValueError)
+        except (FileNotFoundError, yaml.YAMLError, KeyError, TypeError, AttributeError) as e:
+            # Catch file/parsing errors including AttributeError from malformed YAML
             print(f"[cortex] Warning: Failed to parse {spec_path}: {e}")
 
     # Fallback: Check for generator.py existence
@@ -83,6 +86,10 @@ def execute_generator(generator_path: str,
         FileNotFoundError: If generator.py not found
         Exception: If generation fails
     """
+    # Coalesce None params to empty dict (handles params: null in YAML)
+    if params is None:
+        params = {}
+
     # Validation: Ensure params doesn't override channels
     if 'channels' in params:
         raise ValueError(
@@ -214,7 +221,10 @@ def process_config_with_generators(config_path: str,
         config = yaml.safe_load(f)
 
     # Check if dataset is generator-based
-    dataset_path = config.get('dataset', {}).get('path')
+    # Handle config: null or dataset: null by coalescing to empty dict
+    dataset_section = config.get('dataset') if config else None
+    dataset_path = dataset_section.get('path') if dataset_section else None
+
     if not dataset_path:
         # No dataset path - return original config unchanged
         return config_path, None, temp_files
@@ -226,9 +236,10 @@ def process_config_with_generators(config_path: str,
     # Generator detected - execute it
     print(f"[cortex] Detected synthetic dataset generator: {dataset_path}")
 
-    channels = config['dataset'].get('channels')
-    sample_rate_hz = config['dataset'].get('sample_rate_hz')
-    params = config['dataset'].get('params', {})
+    channels = dataset_section.get('channels')
+    sample_rate_hz = dataset_section.get('sample_rate_hz')
+    # Coalesce params: null to empty dict
+    params = dataset_section.get('params') or {}
 
     if not channels:
         raise ValueError("Missing required field: dataset.channels")
