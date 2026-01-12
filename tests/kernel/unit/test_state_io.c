@@ -12,16 +12,16 @@
  *   5. State Version Evolution (2 tests)
  */
 
+#include "test_common.h"  /* MUST be first - defines feature test macros */
+#include "cortex_state_io.h"
+#include "cortex_plugin.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/stat.h>
-
-#include "cortex_state_io.h"
-#include "cortex_plugin.h"
-#include "test_common.h"
 
 /* Test data directory (created in /tmp to avoid polluting source tree) */
 #define TEST_DIR "/tmp/cortex_test_state_io"
