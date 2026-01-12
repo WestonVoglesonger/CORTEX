@@ -35,7 +35,6 @@ class DeployerFactory:
         Manual formats (return transport URI string):
             tcp://host:port   → "tcp://host:port"
             serial:///dev/tty → "serial:///dev/tty?baud=115200"
-            shm://name        → "shm://name" [reserved for Q2 2026]
             local://          → "local://"
 
         Raises:
@@ -85,12 +84,11 @@ class DeployerFactory:
             raise NotImplementedError("JTAGDeployer not yet implemented (Spring 2026)")
 
         # Manual transport formats - return URI as-is
-        if device.startswith(('tcp://', 'serial://', 'shm://', 'local://')):
+        if device.startswith(('tcp://', 'serial://', 'local://')):
             return device
 
         raise ValueError(
             f"Unknown device format: {device}\n"
             f"Expected: user@host | tcp://host:port | serial:///dev/device | "
-            f"local:// | stm32:device\n"
-            f"Note: shm:// reserved for future (Q2 2026)"
+            f"local:// | stm32:device"
         )
