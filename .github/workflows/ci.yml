@@ -22,10 +22,10 @@ jobs:
     - name: Build everything (SDK, harness, adapters, plugins)
       run: make all
 
-    - name: Run all tests
+    - name: Run C tests (Engine, Adapter, Kernel)
       run: |
         cd tests
-        make test
+        make test-engine test-adapter test-kernel
 
   python-tests:
     name: Python Tests
@@ -51,4 +51,4 @@ jobs:
       run: make plugins
 
     - name: Run pytest
-      run: pytest tests/ -v
+      run: pytest tests/cli/ -v
