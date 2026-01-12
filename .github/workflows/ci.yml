@@ -22,10 +22,10 @@ jobs:
     - name: Build everything (SDK, harness, adapters, plugins)
       run: make build-only
 
-    - name: Build test fixtures
+    - name: Build test fixtures and binaries
       run: |
         cd tests
-        make fixtures
+        make all
 
     - name: Run C tests (Engine, Adapter, Kernel)
       run: |
