@@ -5,6 +5,7 @@ Targets: Jetson, Raspberry Pi, Linux SBCs, cloud VMs
 Strategy: rsync → remote build → start adapter daemon
 """
 
+import shlex
 import subprocess
 import time
 import os
@@ -218,7 +219,7 @@ class SSHDeployer:
         if verbose:
             print(f"[3/5] Building on device...")
 
-        build_cmd = f"cd {self.remote_dir} && make clean && make build-only"
+        build_cmd = f"cd {shlex.quote(self.remote_dir)} && make clean && make build-only"
         try:
             result = self._run_ssh(build_cmd, capture_output=True)  # Always capture for log fetch
             self._build_output = result.stdout  # Store for fetch_logs()
@@ -247,7 +248,7 @@ class SSHDeployer:
             if python_check.returncode == 0:
                 # Python available, run validation
                 # Use PYTHONPATH to make cortex module importable from rsync'd source
-                validate_cmd = f"cd {self.remote_dir} && PYTHONPATH={self.remote_dir}/src python3 -m cortex.commands.validate"
+                validate_cmd = f"cd {shlex.quote(self.remote_dir)} && PYTHONPATH={shlex.quote(self.remote_dir)}/src python3 -m cortex.commands.validate"
                 try:
                     result = self._run_ssh(validate_cmd, capture_output=True)  # Always capture for log fetch
                     self._validation_output = result.stdout  # Store for fetch_logs()
@@ -276,8 +277,8 @@ class SSHDeployer:
         # Start adapter in background with all I/O streams redirected to prevent SSH hanging
         # Critical: Redirect stdin (<), stdout (>), and stderr (2>&1) to close SSH streams
         start_cmd = (
-            f"cd {self.remote_dir} && "
-            f"nohup ./primitives/adapters/v1/native/cortex_adapter_native tcp://:{self.adapter_port} "
+            f"cd {shlex.quote(self.remote_dir)} && "
+            f"nohup ./primitives/adapters/v1/native/cortex_adapter_native tcp://:{shlex.quote(str(self.adapter_port))} "
             f"</dev/null >/tmp/cortex-adapter.log 2>&1 & "
             f"echo $! | tee /tmp/cortex-adapter.pid"
         )
@@ -301,11 +302,23 @@ class SSHDeployer:
         for attempt in range(5):  # 5 second timeout
             time.sleep(1)
 
-            # Check if adapter bound to port
-            check = self._run_ssh(f"lsof -i :{self.adapter_port}", check=False)
-            if check.returncode == 0:
+            # Step 1: Check if adapter bound to port (remote-side)
+            check = self._run_ssh(f"lsof -i :{shlex.quote(str(self.adapter_port))}", check=False)
+            if check.returncode != 0:
+                continue  # Not bound yet, retry
+
+            # Step 2: Verify connectivity from host machine
+            import socket
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                sock.connect((self.host, self.adapter_port))
+                sock.close()
                 ready = True
                 break
+            except (socket.timeout, socket.error, OSError):
+                # Port not reachable yet (firewall, adapter not accepting, etc.)
+                continue
 
         if not ready:
             # Fetch logs for debugging
@@ -382,8 +395,8 @@ class SSHDeployer:
                 content = result.stdout
                 if len(content) > MAX_LOG_SIZE:
                     errors.append("adapter.log: truncated (>10MB)")
-                    content = content[-MAX_LOG_SIZE:]  # Keep last 10MB
-                    content = "[... truncated to last 10MB ...]\n" + content
+                    header = "[... truncated to last 10MB ...]\n"
+                    content = header + content[-(MAX_LOG_SIZE - len(header)):]
 
                 with open(adapter_log_path, 'w') as f:
                     f.write(content)
@@ -404,8 +417,8 @@ class SSHDeployer:
                 # Size limit check
                 if len(content) > MAX_LOG_SIZE:
                     errors.append("build.log: truncated (>10MB)")
-                    content = content[-MAX_LOG_SIZE:]
-                    content = "[... truncated to last 10MB ...]\n" + content
+                    header = "[... truncated to last 10MB ...]\n"
+                    content = header + content[-(MAX_LOG_SIZE - len(header)):]
 
                 with open(build_log_path, 'w') as f:
                     f.write(content)
@@ -424,8 +437,8 @@ class SSHDeployer:
                 # Size limit check
                 if len(content) > MAX_LOG_SIZE:
                     errors.append("validation.log: truncated (>10MB)")
-                    content = content[-MAX_LOG_SIZE:]
-                    content = "[... truncated to last 10MB ...]\n" + content
+                    header = "[... truncated to last 10MB ...]\n"
+                    content = header + content[-(MAX_LOG_SIZE - len(header)):]
 
                 with open(validation_log_path, 'w') as f:
                     f.write(content)
@@ -542,13 +555,13 @@ Note: Logs >10MB are truncated to prevent disk space issues.
         try:
             if pid:
                 # Kill parent + children (handles bash wrapper + actual adapter)
-                self._run_ssh(f"pkill -TERM -P {pid} 2>/dev/null || true", check=False)
-                self._run_ssh(f"kill -TERM {pid} 2>/dev/null || true", check=False)
+                self._run_ssh(f"pkill -TERM -P {shlex.quote(str(pid))} 2>/dev/null || true", check=False)
+                self._run_ssh(f"kill -TERM {shlex.quote(str(pid))} 2>/dev/null || true", check=False)
                 time.sleep(5)  # Wait for graceful shutdown
 
                 # Step 3: SIGKILL if still running
-                self._run_ssh(f"pkill -KILL -P {pid} 2>/dev/null || true", check=False)
-                self._run_ssh(f"kill -KILL {pid} 2>/dev/null || true", check=False)
+                self._run_ssh(f"pkill -KILL -P {shlex.quote(str(pid))} 2>/dev/null || true", check=False)
+                self._run_ssh(f"kill -KILL {shlex.quote(str(pid))} 2>/dev/null || true", check=False)
                 time.sleep(1)
 
         except Exception as e:
@@ -574,7 +587,7 @@ Note: Logs >10MB are truncated to prevent disk space issues.
 
         # Step 6: Cleanup files (only after killing processes)
         try:
-            self._run_ssh(f"rm -rf {self.remote_dir} /tmp/cortex-adapter.*", check=False)
+            self._run_ssh(f"rm -rf {shlex.quote(self.remote_dir)} /tmp/cortex-adapter.*", check=False)
         except Exception as e:
             errors.append(f"Failed to cleanup files: {e}")
 

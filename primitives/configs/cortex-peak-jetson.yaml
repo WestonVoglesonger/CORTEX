@@ -1,6 +1,6 @@
 cortex_version: 1
 
-device: "weston@192.168.1.150"  # Auto-deploy to Jetson via SSH
+device: "nvidia@192.168.1.100"  # Auto-deploy to Jetson via SSH (replace with your device)
 
 system:
   name: "cortex-peak-jetson"
