@@ -1,6 +1,8 @@
 #ifndef MOCK_BEHAVIORS_H
 #define MOCK_BEHAVIORS_H
 
+#include <string.h>  /* For strcmp() */
+
 /**
  * Mock Adapter Behaviors
  *

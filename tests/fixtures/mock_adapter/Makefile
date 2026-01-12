@@ -25,20 +25,17 @@ ADAPTER_HELPERS_OBJS = ../../../sdk/adapter/lib/adapter_helpers/protocol_helpers
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS)
+$(TARGET): $(OBJS) build-sdk-deps
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS) $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Ensure SDK objects are built
-$(PROTOCOL_OBJS):
+# Ensure SDK objects are built (always run make in SDK directories)
+.PHONY: build-sdk-deps
+build-sdk-deps:
 	$(MAKE) -C ../../../sdk/adapter/lib/protocol
-
-$(TRANSPORT_OBJS):
 	$(MAKE) -C ../../../sdk/adapter/lib/transport
-
-$(ADAPTER_HELPERS_OBJS):
 	$(MAKE) -C ../../../sdk/adapter/lib/adapter_helpers
 
 clean:
