@@ -150,6 +150,9 @@ class HarnessRunner:
             actual_config_path = modified_config_path
         except Exception as e:
             self.log.error(f"Generator execution failed: {e}")
+            # Clean up temp files before early return (prevents disk space leak)
+            if temp_files:
+                cleanup_temp_files(temp_files)
             return None
 
         # Build command

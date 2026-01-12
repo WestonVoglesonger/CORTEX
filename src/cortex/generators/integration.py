@@ -53,7 +53,8 @@ def is_generator_dataset(dataset_path: str) -> bool:
             elif dataset_type is not None:
                 # Explicit type but not generator (e.g., type='static')
                 return False
-        except Exception as e:
+        except (FileNotFoundError, yaml.YAMLError, KeyError, TypeError) as e:
+            # Only catch file/parsing errors, not configuration errors (ValueError)
             print(f"[cortex] Warning: Failed to parse {spec_path}: {e}")
 
     # Fallback: Check for generator.py existence

@@ -19,7 +19,8 @@ def plot_file_size_scaling(results, output_path):
 
     Shows both actual measurements and theoretical linear scaling.
     """
-    channels = [r['channels'] for r in results]
+    # Filter both lists to ensure matching lengths (skip results with missing file_size_mb)
+    channels = [r['channels'] for r in results if r['file_size_mb']]
     file_sizes = [r['file_size_mb'] for r in results if r['file_size_mb']]
 
     if len(file_sizes) < 2:

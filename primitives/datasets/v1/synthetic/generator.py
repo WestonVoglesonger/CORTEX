@@ -49,6 +49,14 @@ class SyntheticGenerator:
         Raises:
             ValueError: If signal_type unknown or parameters invalid
         """
+        # Validate numeric parameters
+        if channels <= 0:
+            raise ValueError(f"channels must be positive (got {channels})")
+        if sample_rate_hz <= 0:
+            raise ValueError(f"sample_rate_hz must be positive (got {sample_rate_hz})")
+        if duration_s <= 0:
+            raise ValueError(f"duration_s must be positive (got {duration_s})")
+
         n_samples = int(duration_s * sample_rate_hz)
 
         if signal_type == "sine_wave":
