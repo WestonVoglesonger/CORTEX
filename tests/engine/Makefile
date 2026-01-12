@@ -50,9 +50,7 @@ tests: $(ALL_TESTS)
 	@echo "Running Engine Tests"
 	@echo "========================================="
 	@for test in $(ALL_TESTS); do \
-		if [ "$$test" = "build/test_scheduler" ]; then \
-			echo "SKIP: $$test (needs device_comm rewrite)"; \
-		elif [ "$$test" = "build/test_kernel_registry" ]; then \
+		if [ "$$test" = "build/test_kernel_registry" ]; then \
 			echo "Running $$test..."; \
 			( cd ../.. && ./tests/engine/$$test ) || exit 1; \
 		else \

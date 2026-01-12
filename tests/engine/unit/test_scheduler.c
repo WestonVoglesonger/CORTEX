@@ -34,7 +34,7 @@
 #include <unistd.h>
 
 /* Test configuration */
-#define MOCK_ADAPTER_PATH "c/mock_adapter/mock_adapter"
+#define MOCK_ADAPTER_PATH "../fixtures/mock_adapter/mock_adapter"
 #define DEFAULT_SAMPLE_RATE 160
 #define DEFAULT_WINDOW_LENGTH 16
 #define DEFAULT_HOP 8
