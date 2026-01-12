@@ -48,7 +48,7 @@ adapters: sdk
 	done
 
 # Build and run tests
-tests:
+tests: sdk
 	@echo "Building and running tests..."
 	$(MAKE) -C tests
 	$(MAKE) -C tests tests

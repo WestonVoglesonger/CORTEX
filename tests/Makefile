@@ -26,7 +26,7 @@ all: fixtures
 	@echo "All test binaries built successfully!"
 
 # Run all test suites
-tests: fixtures test-engine test-adapter test-kernel test-cli
+tests: all test-engine test-adapter test-kernel test-cli
 
 # Run Engine pillar tests
 test-engine:
