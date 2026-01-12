@@ -113,10 +113,10 @@ The MAGIC constant serves as a frame boundary marker in byte streams. Receivers 
 | Type | Value | Direction | Payload Size | Purpose |
 |------|-------|-----------|--------------|---------|
 | **HELLO** | `0x01` | Adapter → Harness | 48 + (N×32) bytes | Advertise capabilities |
-| **CONFIG** | `0x02` | Harness → Adapter | 332 + state_size | Configure kernel |
-| **ACK** | `0x03` | Adapter → Harness | 32 bytes | Acknowledge CONFIG |
+| **CONFIG** | `0x02` | Harness → Adapter | 344 + state_size | Configure kernel |
+| **ACK** | `0x03` | Adapter → Harness | 12 bytes | Acknowledge CONFIG |
 | **WINDOW_CHUNK** | `0x04` | Harness → Adapter | 32 + sample_data | Send input chunk |
-| **RESULT** | `0x05` | Adapter → Harness | 112 + output_data | Return kernel output |
+| **RESULT** | `0x05` | Adapter → Harness | 56 + output_data | Return kernel output |
 | **ERROR** | `0x06` | Either direction | 32 bytes | Report error |
 
 ---
@@ -181,7 +181,7 @@ struct {
     // Followed by: calibration_state_size bytes of state data
 } __attribute__((packed));
 
-// Total payload: 340 + calibration_state_size bytes
+// Total payload: 344 + calibration_state_size bytes
 ```
 
 **Validation:**
@@ -202,22 +202,20 @@ struct {
 
 **Payload:**
 ```c
-struct {
-    uint32_t session_id;         // Echo from CONFIG
-    uint32_t error_code;         // 0 = success
-    uint32_t output_width;       // Kernel output W (may differ from input)
-    uint32_t output_height;      // Kernel output H (may differ from input)
-    uint32_t output_dtype;       // Data type bitmask
-    uint32_t reserved[3];        // Padding (0)
-} __attribute__((packed));
+typedef struct __attribute__((packed)) {
+    uint32_t ack_type;                     // What is being ACKed (0 = CONFIG)
+    uint32_t output_window_length_samples; // Output W (0 = use config dimensions)
+    uint32_t output_channels;              // Output C (0 = use config dimensions)
+} cortex_wire_ack_t;
 
-// Total payload: 32 bytes
+// Total payload: 12 bytes
 ```
 
 **Notes:**
-- Most kernels: `output_width == input W`, `output_height == input C`
-- Dimension-changing kernels (e.g., Welch PSD): advertise new dimensions here
+- Most kernels: Set output dimensions to 0 (harness uses CONFIG dimensions)
+- Dimension-changing kernels (e.g., Welch PSD): Set actual output dimensions here
 - Harness dynamically allocates output buffer based on these values
+- Backward compatibility: 0 values mean "use input dimensions from CONFIG"
 
 ---
 
@@ -258,28 +256,24 @@ struct {
 
 **Payload:**
 ```c
-struct {
-    uint32_t session_id;         // Must match CONFIG
-    uint32_t sequence;           // Must match WINDOW sequence
-    uint32_t error_code;         // 0 = success
-    uint32_t reserved1;          // Padding (0)
+typedef struct __attribute__((packed)) {
+    uint32_t session_id;              // Must match CONFIG session_id
+    uint32_t sequence;                // Must match WINDOW sequence
 
     // Device-side timing (nanoseconds since adapter boot)
-    uint64_t device_tin_ns;      // Time adapter received last chunk
-    uint64_t device_tstart_ns;   // Time kernel execution started
-    uint64_t device_tend_ns;     // Time kernel execution finished
-    uint64_t device_tfirst_tx_ns; // Time first RESULT byte sent
-    uint64_t device_tlast_tx_ns;  // Time last RESULT byte sent
+    uint64_t tin;                     // Input complete timestamp
+    uint64_t tstart;                  // Kernel process() invoked
+    uint64_t tend;                    // Kernel process() returned
+    uint64_t tfirst_tx;               // First result byte transmitted
+    uint64_t tlast_tx;                // Last result byte transmitted
 
-    uint32_t output_size;        // Bytes of output data
-    uint32_t output_width;       // Echo from ACK
-    uint32_t output_height;      // Echo from ACK
-    uint32_t reserved2[9];       // Padding (0)
+    uint32_t output_length_samples;   // Output W (from kernel)
+    uint32_t output_channels;         // Output C (from kernel)
 
-    // Followed by: output_size bytes of kernel output
-} __attribute__((packed));
+    // Followed by: (output_length_samples × output_channels × 4) bytes of float32 data
+} cortex_wire_result_t;
 
-// Total payload: 112 + output_size bytes
+// Total payload: 56 + (output_length_samples × output_channels × 4) bytes
 ```
 
 **Timing Fields:**

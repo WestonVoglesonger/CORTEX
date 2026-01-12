@@ -190,6 +190,7 @@ class HarnessRunner:
         # Pass transport URI if specified
         if transport_uri:
             base_env['CORTEX_TRANSPORT_URI'] = transport_uri
+            self.log.debug(f"Setting CORTEX_TRANSPORT_URI={transport_uri}")
 
         # Use base_env for all subsequent operations
         env = base_env

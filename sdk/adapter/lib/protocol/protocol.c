@@ -3,6 +3,7 @@
 #include "cortex_protocol.h"
 #include "crc32.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -167,6 +168,9 @@ int cortex_protocol_recv_frame(
 
     /* 4. Validate version */
     if (version != CORTEX_PROTOCOL_VERSION) {
+        fprintf(stderr, "[protocol] Version mismatch: received v%u, expected v%u\n",
+                version, CORTEX_PROTOCOL_VERSION);
+        fprintf(stderr, "[protocol] Protocol versions must match exactly. Rebuild adapter or harness.\n");
         return CORTEX_EPROTO_VERSION_MISMATCH;
     }
 
@@ -354,7 +358,7 @@ int cortex_protocol_send_window_chunked(
  *      - Validate offset + chunk_len <= total_bytes
  *      - Copy chunk data to window buffer at offset
  *      - Track bytes received
- *   4. Validate completeness (all bytes received, no gaps)
+ *   4. Validate completeness (all bytes received)
  *   5. Convert window from little-endian to host format
  *   6. Return window to caller
  */
@@ -363,22 +367,17 @@ int cortex_protocol_recv_window_chunked(
     uint32_t expected_sequence,
     float *out_samples,
     size_t samples_buf_size,
-    uint32_t *out_window_samples,
-    uint32_t *out_channels,
     uint32_t timeout_ms
 )
 {
     uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
     uint32_t total_bytes = 0;
-    uint32_t bytes_received = 0;
     int got_last_chunk = 0;
     int ret;
 
-    /* Track which bytes we've received (for gap detection) */
-    uint8_t *received_mask = NULL;
-
     /* Allocate temporary buffer for assembling window (little-endian format) */
     uint8_t *window_buf = NULL;
+    uint8_t *received_bitmap = NULL;  /* Track which bytes received (prevents duplicates/gaps) */
 
     while (!got_last_chunk) {
         /* Receive one WINDOW_CHUNK frame */
@@ -395,22 +394,22 @@ int cortex_protocol_recv_window_chunked(
         );
 
         if (ret < 0) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return ret;
         }
 
         /* Validate frame type */
         if (frame_type != CORTEX_FRAME_WINDOW_CHUNK) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
         /* Parse chunk header (convert from little-endian) */
         if (payload_len < sizeof(cortex_wire_window_chunk_t)) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
@@ -422,12 +421,12 @@ int cortex_protocol_recv_window_chunked(
 
         /* Validate sequence */
         if (sequence != expected_sequence) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_ECHUNK_SEQUENCE_MISMATCH;
         }
 
-        /* First chunk: allocate buffers */
+        /* First chunk: allocate buffer and set total_bytes */
         if (total_bytes == 0) {
             total_bytes = chunk_total_bytes;
 
@@ -442,41 +441,46 @@ int cortex_protocol_recv_window_chunked(
                 return -1;
             }
 
-            /* Allocate received mask (1 byte per byte) */
-            received_mask = (uint8_t *)calloc(total_bytes, 1);
-            if (!received_mask) {
+            /* Allocate bitmap to track received bytes (1 bit per byte) */
+            uint32_t bitmap_size = (total_bytes + 7) / 8;  /* Round up to bytes */
+            received_bitmap = (uint8_t *)calloc(bitmap_size, 1);  /* Zero-initialized */
+            if (!received_bitmap) {
                 free(window_buf);
                 return -1;
             }
         } else {
             /* Validate total_bytes matches across chunks */
             if (chunk_total_bytes != total_bytes) {
+                free(received_bitmap);
                 free(window_buf);
-                free(received_mask);
                 return CORTEX_EPROTO_INVALID_FRAME;
             }
         }
 
         /* Validate chunk bounds */
         if (offset + chunk_len > total_bytes) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
         /* Validate payload contains chunk header + data */
         if (payload_len != sizeof(cortex_wire_window_chunk_t) + chunk_len) {
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
         /* Copy chunk data to window buffer */
         memcpy(window_buf + offset, frame_buf + sizeof(cortex_wire_window_chunk_t), chunk_len);
 
-        /* Mark bytes as received */
-        memset(received_mask + offset, 1, chunk_len);
-        bytes_received += chunk_len;
+        /* Mark bytes as received in bitmap (prevents duplicate/missing chunk detection) */
+        for (uint32_t i = 0; i < chunk_len; i++) {
+            uint32_t byte_idx = offset + i;
+            uint32_t bit_idx = byte_idx / 8;
+            uint32_t bit_pos = byte_idx % 8;
+            received_bitmap[bit_idx] |= (1 << bit_pos);
+        }
 
         /* Check for LAST flag */
         if (flags & CORTEX_CHUNK_FLAG_LAST) {
@@ -484,18 +488,14 @@ int cortex_protocol_recv_window_chunked(
         }
     }
 
-    /* Validate completeness (all bytes received, no gaps) */
-    if (bytes_received != total_bytes) {
-        free(window_buf);
-        free(received_mask);
-        return CORTEX_ECHUNK_INCOMPLETE;
-    }
-
-    /* Check for gaps in received_mask */
-    for (uint32_t i = 0; i < total_bytes; i++) {
-        if (received_mask[i] == 0) {
+    /* Validate completeness - check bitmap for gaps (detects both missing and duplicate chunks) */
+    for (uint32_t byte_idx = 0; byte_idx < total_bytes; byte_idx++) {
+        uint32_t bit_idx = byte_idx / 8;
+        uint32_t bit_pos = byte_idx % 8;
+        if (!(received_bitmap[bit_idx] & (1 << bit_pos))) {
+            /* Gap detected: byte at offset byte_idx was never received */
+            free(received_bitmap);
             free(window_buf);
-            free(received_mask);
             return CORTEX_ECHUNK_INCOMPLETE;
         }
     }
@@ -506,17 +506,7 @@ int cortex_protocol_recv_window_chunked(
         out_samples[i] = cortex_read_f32_le(window_buf + (i * sizeof(float)));
     }
 
-    /* Derive window dimensions (assuming row-major: W×C floats) */
-    /* Note: This requires knowing either W or C. For now, return total samples. */
-    /* Caller must know dimensions from CONFIG handshake. */
-    if (out_window_samples && out_channels) {
-        /* This is a placeholder - actual dimensions come from CONFIG */
-        *out_window_samples = 0;  /* Caller must set based on CONFIG */
-        *out_channels = 0;
-    }
-
+    free(received_bitmap);
     free(window_buf);
-    free(received_mask);
-
     return 0;
 }

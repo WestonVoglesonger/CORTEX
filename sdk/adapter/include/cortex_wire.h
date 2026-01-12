@@ -68,7 +68,7 @@ typedef enum {
  *   crc = crc32(crc, payload, payload_length);
  */
 typedef struct __attribute__((packed)) {
-    uint32_t magic;           /* Always 0x43525858 ("CRTX") */
+    uint32_t magic;           /* Always CORTEX_PROTOCOL_MAGIC (0x43525458, "CRTX") */
     uint8_t  version;         /* Protocol version (1) */
     uint8_t  frame_type;      /* cortex_frame_type_t */
     uint16_t flags;           /* Reserved (0 for Phase 1) */
@@ -195,5 +195,7 @@ typedef struct __attribute__((packed)) {
 #define CORTEX_ERROR_KERNEL_INIT_FAILED 4
 #define CORTEX_ERROR_KERNEL_EXEC_FAILED 5
 #define CORTEX_ERROR_SESSION_MISMATCH   6
+#define CORTEX_ERROR_VERSION_MISMATCH   7
+#define CORTEX_ERROR_SHUTDOWN           8
 
 #endif /* CORTEX_WIRE_H */

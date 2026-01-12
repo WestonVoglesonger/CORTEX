@@ -9,6 +9,8 @@
 #include "device_comm.h"
 #include "../../../../sdk/adapter/include/cortex_transport.h"
 #include "../../../../sdk/adapter/include/cortex_protocol.h"
+#include "../../../../sdk/adapter/include/cortex_wire.h"
+#include "../../../../sdk/adapter/include/cortex_endian.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -27,7 +29,6 @@ struct cortex_device_handle {
     pid_t adapter_pid;           /* Adapter process ID */
     cortex_transport_t *transport; /* Transport to adapter */
     uint32_t session_id;         /* Current session ID */
-    uint32_t adapter_boot_id;    /* Adapter boot ID (from HELLO) */
     char adapter_name[32];       /* Adapter name (from HELLO) */
     char device_hostname[32];    /* Device hostname (from HELLO) */
     char device_cpu[32];         /* Device CPU (from HELLO) */
@@ -125,6 +126,40 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
 }
 
 /*
+ * parse_error_frame - Parse ERROR frame payload from adapter
+ *
+ * Extracts error code and message from ERROR frame for logging/debugging.
+ *
+ * Args:
+ *   payload:          ERROR frame payload buffer
+ *   payload_len:      Payload length in bytes
+ *   out_error_code:   Pointer to store error code
+ *   out_error_message: Buffer to store error message (must be [256] bytes)
+ *
+ * Returns:
+ *    0: Success (error info extracted)
+ *   <0: Invalid ERROR frame
+ */
+static int parse_error_frame(
+    const uint8_t *payload,
+    size_t payload_len,
+    uint32_t *out_error_code,
+    char *out_error_message
+)
+{
+    if (payload_len < sizeof(cortex_wire_error_t)) {
+        return CORTEX_EPROTO_INVALID_FRAME;
+    }
+
+    /* Parse ERROR payload (little-endian) */
+    *out_error_code = cortex_read_u32_le(payload + 0);
+    memcpy(out_error_message, payload + 4, CORTEX_MAX_ERROR_MESSAGE);
+    out_error_message[CORTEX_MAX_ERROR_MESSAGE - 1] = '\0';  /* Ensure null termination */
+
+    return 0;
+}
+
+/*
  * recv_hello - Receive HELLO frame from adapter
  *
  * Returns:
@@ -133,7 +168,6 @@ static int spawn_adapter(const char *adapter_path, int *harness_fd, pid_t *adapt
  */
 static int recv_hello(
     cortex_transport_t *transport,
-    uint32_t *out_boot_id,
     char *out_adapter_name,
     char *out_device_hostname,
     char *out_device_cpu,
@@ -157,6 +191,20 @@ static int recv_hello(
         return ret;
     }
 
+    /* Check for ERROR frame before expecting HELLO */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
+    }
+
     if (frame_type != CORTEX_FRAME_HELLO) {
         return CORTEX_EPROTO_INVALID_FRAME;
     }
@@ -166,7 +214,6 @@ static int recv_hello(
     }
 
     /* Parse HELLO payload (convert from little-endian) */
-    *out_boot_id = cortex_read_u32_le(frame_buf + 0);
     memcpy(out_adapter_name, frame_buf + 4, 32);
     out_adapter_name[31] = '\0';  /* Ensure null termination */
 
@@ -264,6 +311,20 @@ static int recv_ack(cortex_transport_t *transport,
 
     if (ret < 0) {
         return ret;
+    }
+
+    /* Check for ERROR frame before expecting ACK */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
     }
 
     if (frame_type != CORTEX_FRAME_ACK) {
@@ -401,35 +462,15 @@ int device_comm_init(
         /* No adapter_pid for serial (external hardware) */
         handle->adapter_pid = 0;
     }
-    else if (strcmp(parsed_uri.scheme, "shm") == 0) {
-        /* Shared memory transport: high-performance local IPC */
-        if (!parsed_uri.shm_name[0]) {
-            fprintf(stderr, "[harness] SHM transport requires name: %s\n", uri);
-            free(handle);
-            return -EINVAL;
-        }
-
-        /* Create SHM transport (harness is creator, adapter connects) */
-        handle->transport = cortex_transport_shm_create_harness(parsed_uri.shm_name);
-
-        if (!handle->transport) {
-            fprintf(stderr, "[harness] Failed to create SHM region '%s'\n", parsed_uri.shm_name);
-            free(handle);
-            return -ENOMEM;
-        }
-
-        /* No adapter_pid for SHM (adapter connects independently) */
-        handle->adapter_pid = 0;
-    }
     else {
         fprintf(stderr, "[harness] Unsupported transport scheme: %s\n", parsed_uri.scheme);
-        fprintf(stderr, "[harness] Supported: local://, tcp://host:port, serial:///dev/device, shm://name\n");
+        fprintf(stderr, "[harness] Supported: local://, tcp://host:port, serial:///dev/device\n");
         free(handle);
         return -EINVAL;
     }
 
     /* Receive HELLO */
-    ret = recv_hello(handle->transport, &handle->adapter_boot_id, handle->adapter_name,
+    ret = recv_hello(handle->transport, handle->adapter_name,
                      handle->device_hostname, handle->device_cpu, handle->device_os);
     if (ret < 0) {
         device_comm_teardown(handle);
@@ -526,6 +567,20 @@ int device_comm_execute_window(
 
     if (ret < 0) {
         return ret;
+    }
+
+    /* Check for ERROR frame before expecting RESULT */
+    if (frame_type == CORTEX_FRAME_ERROR) {
+        uint32_t error_code;
+        char error_message[256];
+
+        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
+            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
+            return CORTEX_EPROTO_INVALID_FRAME;
+        }
+
+        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
+        return -EIO;  /* Adapter reported error */
     }
 
     if (frame_type != CORTEX_FRAME_RESULT) {

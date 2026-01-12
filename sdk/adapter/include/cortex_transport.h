@@ -93,10 +93,9 @@ typedef cortex_transport_api_t cortex_transport_t;
  *   tcp://:port                                 → TCP server (listen on INADDR_ANY)
  *   tcp://:port?accept_timeout_ms=5000          → TCP server with custom timeout
  *   serial:///dev/ttyUSB0?baud=115200           → UART/serial port
- *   shm://bench01                               → Shared memory IPC
  */
 typedef struct {
-    char scheme[16];        /* "local", "tcp", "serial", "shm" */
+    char scheme[16];        /* "local", "tcp", "serial" */
 
     /* TCP fields */
     char host[256];         /* "10.0.1.42" or "" (empty = server/listen mode) */
@@ -106,9 +105,6 @@ typedef struct {
     /* UART/Serial fields */
     char device_path[256];  /* "/dev/ttyUSB0", "/dev/cu.usbserial-*" */
     uint32_t baud_rate;     /* 115200, 921600, etc. (0 = use default 115200) */
-
-    /* Shared Memory fields */
-    char shm_name[64];      /* "bench01", "test", etc. */
 } cortex_uri_t;
 
 /**
@@ -255,30 +251,5 @@ cortex_transport_t* cortex_transport_tcp_server_accept(
     cortex_transport_t *server,
     uint32_t timeout_ms
 );
-
-/*
- * Shared Memory Transport (POSIX)
- *
- * High-performance local IPC using POSIX shared memory and semaphores.
- * ~10x faster than socketpair, ~100x faster than TCP.
- *
- * URI: Not yet implemented (manual create only)
- * Status: ⚠️ Implemented but not wired to URI factory
- * Use: Performance benchmarking, overhead measurement, latency baseline
- * Bandwidth: ~2 GB/s
- * Latency: ~5µs (vs 50µs for socketpair, 1ms for TCP)
- * Note: Local-only (same machine), use for benchmarking pure kernel performance
- *
- * Two-phase setup:
- *   1. Harness creates shared memory region (calls create_harness)
- *   2. Adapter connects to existing region (calls create_adapter)
- *
- * Args:
- *   name: Unique name for this transport (e.g., "cortex_adapter_0")
- *
- * Returns: Transport or NULL on failure
- */
-cortex_transport_t* cortex_transport_shm_create_harness(const char *name);
-cortex_transport_t* cortex_transport_shm_create_adapter(const char *name);
 
 #endif /* CORTEX_TRANSPORT_H */

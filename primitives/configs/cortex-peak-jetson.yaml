@@ -1,10 +1,10 @@
 cortex_version: 1
 
-device: "local://"  # Run on local machine (default)
+device: "nvidia@192.168.1.100"  # Auto-deploy to Jetson via SSH (replace with your device)
 
 system:
-  name: "cortex-peak-macos"
-  description: "Peak performance benchmark for macOS (medium load to counter DVFS throttling)"
+  name: "cortex-peak-jetson"
+  description: "Peak performance benchmark for Jetson (performance governor + idle load)"
 
 dataset:
   path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
@@ -19,7 +19,7 @@ realtime:
   deadline_ms: 500           # hop(80)/Fs(160) = 0.5 s
 
 power:
-  governor: "performance"    # macOS ignores this, but document intent
+  governor: "performance"    # Lock CPU to max frequency
   turbo: false
 
 benchmark:
@@ -28,7 +28,7 @@ benchmark:
     duration_seconds: 120    # Long run for statistical significance
     repeats: 5              # Multiple runs for reproducibility
     warmup_seconds: 10      # Discard initial unstable samples
-  load_profile: "medium"    # N/2 CPUs @ 50% - keeps frequency elevated (DVFS workaround)
+  load_profile: "idle"      # No background load - governor maintains frequency
 
 output:
   directory: "results"

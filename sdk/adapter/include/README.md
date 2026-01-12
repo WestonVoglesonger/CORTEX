@@ -60,10 +60,6 @@ typedef cortex_transport_api_t cortex_transport_t;  /* Convenience alias */
 /* Socketpair (stdin/stdout) - for loopback adapters */
 cortex_transport_t* cortex_transport_mock_create(int fd);
 cortex_transport_t* cortex_transport_mock_create_from_fds(int read_fd, int write_fd);
-
-/* Shared memory (POSIX shm_open) - for benchmarking */
-cortex_transport_t* cortex_transport_shm_create_harness(const char *name);
-cortex_transport_t* cortex_transport_shm_create_adapter(const char *name);
 ```
 
 **Network:**
@@ -208,7 +204,7 @@ typedef struct __attribute__((packed)) {
     uint32_t window_length_samples;
     uint32_t hop_samples;
     uint32_t channels;
-    char     plugin_name[32];
+    char     plugin_name[64];
     char     plugin_params[256];
     uint32_t calibration_state_size;
     /* Followed by: calibration_state_size bytes */
@@ -332,17 +328,21 @@ int cortex_adapter_send_hello(
 /* Receive CONFIG frame (harness → adapter) */
 int cortex_adapter_recv_config(
     cortex_transport_t *transport,
-    uint32_t *out_session_id,       /* Random session ID */
+    uint32_t *out_session_id,           /* Random session ID */
     uint32_t *out_sample_rate_hz,
     uint32_t *out_window_samples,
     uint32_t *out_hop_samples,
     uint32_t *out_channels,
-    char *out_plugin_name,          /* Buffer size: 32 bytes */
-    char *out_plugin_params         /* Buffer size: 256 bytes */
+    char *out_plugin_name,              /* Buffer size: 64 bytes */
+    char *out_plugin_params,            /* Buffer size: 256 bytes */
+    void **out_calibration_state,       /* Caller must free, NULL if no state */
+    uint32_t *out_calibration_state_size /* Size in bytes, 0 if no state */
 );
 
-/* Send ACK frame (adapter → harness) */
-int cortex_adapter_send_ack(cortex_transport_t *transport);
+/* Send ACK frame with output dimensions (adapter → harness) */
+int cortex_adapter_send_ack_with_dims(cortex_transport_t *transport,
+                                      uint32_t output_window_length,
+                                      uint32_t output_channels);
 ```
 
 ### Result Helper
@@ -391,8 +391,8 @@ int main(void) {
     /* 4. Load kernel (platform-specific) */
     kernel_handle = load_kernel(plugin_name, sample_rate, window_samples, ...);
 
-    /* 5. Send ACK */
-    cortex_adapter_send_ack(transport);
+    /* 5. Send ACK (0, 0 = use config dimensions) */
+    cortex_adapter_send_ack_with_dims(transport, 0, 0);
 
     /* 6. Window loop */
     uint32_t sequence = 0;

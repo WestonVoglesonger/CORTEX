@@ -170,16 +170,11 @@ static void test_window_chunking(void)
     assert(ret == 0);
 
     /* Receive chunked window */
-    uint32_t recv_window_samples = 0;
-    uint32_t recv_channels = 0;
-
     ret = cortex_protocol_recv_window_chunked(
         receiver,
         sequence,
         recv_buf,
         total_samples * sizeof(float),
-        &recv_window_samples,
-        &recv_channels,
         5000  /* 5 second timeout */
     );
     assert(ret == 0);
@@ -222,14 +217,11 @@ static void test_sequence_validation(void)
     assert(cortex_protocol_send_window_chunked(sender, 10, send_buf, window_samples, channels) == 0);
 
     /* Try to receive with wrong sequence 20 */
-    uint32_t recv_window_samples, recv_channels;
     int ret = cortex_protocol_recv_window_chunked(
         receiver,
         20,  /* Wrong sequence! */
         recv_buf,
         total_samples * sizeof(float),
-        &recv_window_samples,
-        &recv_channels,
         1000
     );
 
@@ -318,14 +310,11 @@ static void test_large_window(void)
     assert(ret == 0);
 
     /* Receive chunked window */
-    uint32_t recv_window_samples, recv_channels;
     ret = cortex_protocol_recv_window_chunked(
         receiver,
         0,
         recv_buf,
         total_samples * sizeof(float),
-        &recv_window_samples,
-        &recv_channels,
         10000  /* 10 second timeout for large transfer */
     );
     assert(ret == 0);

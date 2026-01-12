@@ -173,6 +173,20 @@ def get_analysis_dir(run_name: str, base_dir: str = "results") -> Path:
     return get_run_directory(run_name, base_dir) / "analysis"
 
 
+def get_deployment_dir(run_name: str, base_dir: str = "results") -> Path:
+    """
+    Get the path to the deployment directory for a run.
+
+    Args:
+        run_name: Name of the run
+        base_dir: Base results directory (default: "results")
+
+    Returns:
+        Path to deployment/ directory
+    """
+    return get_run_directory(run_name, base_dir) / "deployment"
+
+
 def get_most_recent_run(base_dir: str = "results") -> Optional[str]:
     """
     Find the most recently modified run directory.

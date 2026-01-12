@@ -47,14 +47,43 @@ def validate_noop(input_data: np.ndarray, output_data: np.ndarray,
 
 
 if __name__ == "__main__":
-    # Test oracle with random data
-    W, C = 160, 64
-    test_input = np.random.randn(W, C).astype(np.float32)
+    import argparse
+    import sys
 
-    # Run oracle
-    test_output = noop_oracle(test_input)
+    parser = argparse.ArgumentParser(description='No-op kernel oracle')
+    parser.add_argument('--test', help='Input data file (binary float32)')
+    parser.add_argument('--output', help='Output data file (binary float32)')
+    parser.add_argument('--state', help='Calibration state file (unused for noop)')
+    args = parser.parse_args()
 
-    # Validate
-    is_valid, message = validate_noop(test_input, test_output)
-    print(f"Oracle test: {message}")
-    print(f"Validation: {'PASS' if is_valid else 'FAIL'}")
+    if args.test and args.output:
+        # Validation mode: Read input, process, write output
+        try:
+            # Read input data as flat float32 array
+            input_data = np.fromfile(args.test, dtype=np.float32)
+
+            if len(input_data) == 0:
+                print("Error: Empty input file", file=sys.stderr)
+                sys.exit(1)
+
+            # Run oracle (identity function - just copy)
+            output_data = noop_oracle(input_data.reshape(-1))  # Keep as 1D
+
+            # Write output
+            output_data.astype(np.float32).tofile(args.output)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Oracle execution failed: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Self-test mode: Test oracle with random data
+        W, C = 160, 64
+        test_input = np.random.randn(W, C).astype(np.float32)
+
+        # Run oracle
+        test_output = noop_oracle(test_input)
+
+        # Validate
+        is_valid, message = validate_noop(test_input, test_output)
+        print(f"Oracle test: {message}")
+        print(f"Validation: {'PASS' if is_valid else 'FAIL'}")

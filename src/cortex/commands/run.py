@@ -6,6 +6,7 @@ import sys
 import argparse
 from cortex.utils.runner import HarnessRunner
 from cortex.utils.paths import generate_run_name, create_run_structure
+from cortex.deploy import DeployerFactory, Deployer, DeploymentError
 from cortex.core import (
     ConsoleLogger,
     RealFileSystemService,
@@ -17,40 +18,40 @@ from cortex.core import (
 )
 
 
-def validate_transport_uri(uri):
-    """Validate transport URI format.
+def resolve_device_string(args, config) -> str:
+    """
+    Resolve device string with 3-level priority chain.
+
+    Priority:
+        1. CLI --device flag (highest)
+        2. Config device: field
+        3. Default "local://" (lowest)
 
     Args:
-        uri: Transport URI string (e.g., tcp://192.168.1.100:9000)
+        args: Parsed command-line arguments
+        config: Loaded config dict (or None)
 
     Returns:
-        Validated URI string
-
-    Raises:
-        argparse.ArgumentTypeError: If URI format is invalid
+        Device string for DeployerFactory.from_device_string()
     """
-    if not uri:
-        return uri
+    # Priority 1: CLI --device flag
+    if hasattr(args, 'device') and args.device:
+        return args.device
 
-    valid_schemes = ['local://', 'tcp://', 'serial://', 'shm://']
+    # Priority 2: Config device: field
+    if config and 'device' in config:
+        return config['device']
 
-    # Check if URI starts with a valid scheme
-    if not any(uri.startswith(scheme) for scheme in valid_schemes):
-        raise argparse.ArgumentTypeError(
-            f"Invalid transport URI: {uri}\n"
-            f"Must start with one of: {', '.join(valid_schemes)}\n"
-            f"Examples:\n"
-            f"  local://                           (default, spawn local adapter)\n"
-            f"  tcp://192.168.1.100:9000          (connect to remote adapter)\n"
-            f"  serial:///dev/ttyUSB0?baud=115200 (UART connection)\n"
-            f"  shm://bench01                      (shared memory)"
-        )
-
-    return uri
+    # Priority 3: Default local
+    return "local://"
 
 
 def setup_parser(parser):
-    """Setup argument parser for run command"""
+    """Setup argument parser for run command
+
+    cortex run executes benchmarks without validation (fast iteration).
+    For comprehensive verification, use 'cortex pipeline'.
+    """
     parser.add_argument(
         '--kernel',
         help='Run single kernel (e.g., goertzel, notch_iir)'
@@ -93,9 +94,10 @@ def setup_parser(parser):
         help='Show verbose harness output'
     )
     parser.add_argument(
-        '--transport',
-        type=validate_transport_uri,
-        help='Device adapter transport URI (e.g., tcp://192.168.1.100:9000, local://)'
+        '--device',
+        help='Device connection string (auto-deploy or manual). '
+             'Examples: nvidia@192.168.1.123 | tcp://192.168.1.123:9000 | local://. '
+             'Note: cortex run does NOT validate correctness - use cortex pipeline for verification.'
     )
 
 
@@ -143,10 +145,11 @@ def execute(args):
 
     # Create production runner with real dependencies
     filesystem = RealFileSystemService()
+    config_loader = YamlConfigLoader(filesystem)
     runner = HarnessRunner(
         filesystem=filesystem,
         process_executor=SubprocessExecutor(),
-        config_loader=YamlConfigLoader(filesystem),
+        config_loader=config_loader,
         time_provider=SystemTimeProvider(),
         env_provider=SystemEnvironmentProvider(),
         tool_locator=SystemToolLocator(),
@@ -157,48 +160,271 @@ def execute(args):
     if args.config:
         print(f"Using custom config: {args.config}")
 
-        # Create run directory structure (required by runner)
-        create_run_structure(run_name)
-
-        results_dir = runner.run(
-            args.config,
-            run_name=run_name,
-            verbose=args.verbose,
-            transport_uri=args.transport
-        )
-        if results_dir:
-            print(f"\n✓ Benchmark complete")
-            print(f"Results: {results_dir}")
-            return 0
-        else:
+        # Load config to check for device field
+        try:
+            config = config_loader.load_yaml(args.config)
+        except Exception as e:
+            print(f"Error loading config: {e}")
             return 1
+
+        # Resolve device string (CLI > config > default)
+        device_string = resolve_device_string(args, config)
+
+        # Parse device string (returns Deployer or transport URI)
+        try:
+            result = DeployerFactory.from_device_string(device_string)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+
+        # Check if auto-deploy mode
+        if isinstance(result, Deployer):
+            deployer = result
+            print(f"Auto-deploy mode: deploying to {device_string}")
+
+            try:
+                # Deploy
+                deploy_result = deployer.deploy(
+                    verbose=args.verbose,
+                    skip_validation=True
+                )
+
+                # Create run directory structure (required by runner)
+                create_run_structure(run_name)
+
+                # Run benchmark using deployed adapter
+                results_dir = runner.run(
+                    args.config,
+                    run_name=run_name,
+                    verbose=args.verbose,
+                    transport_uri=deploy_result.transport_uri
+                )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
+
+                if results_dir:
+                    print(f"\n✓ Benchmark complete")
+                    print(f"Results: {results_dir}")
+                    return 0
+                else:
+                    return 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                return 1
+
+            finally:
+                # Cleanup always runs (even on exception)
+                print("\nCleaning up deployment...")
+                cleanup_result = deployer.cleanup()
+                if not cleanup_result.success:
+                    print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
+
+
+        else:
+            # Manual mode: result is transport URI string
+            transport_uri = result
+            if transport_uri != "local://":
+                print(f"Manual mode: connecting to {transport_uri}")
+
+            # Create run directory structure (required by runner)
+            create_run_structure(run_name)
+
+            results_dir = runner.run(
+                args.config,
+                run_name=run_name,
+                verbose=args.verbose,
+                transport_uri=transport_uri
+            )
+            if results_dir:
+                print(f"\n✓ Benchmark complete")
+                print(f"Results: {results_dir}")
+                return 0
+            else:
+                return 1
 
     # Single kernel mode
     if args.kernel:
-        results_dir = runner.run_single_kernel(
-            args.kernel,
-            run_name=run_name,
-            duration=args.duration,
-            repeats=args.repeats,
-            warmup=args.warmup,
-            calibration_state=args.state,
-            verbose=args.verbose,
-            transport_uri=args.transport
-        )
-        return 0 if results_dir else 1
+        # Resolve device (no config in single kernel mode, so CLI or default)
+        device_string = resolve_device_string(args, None)
+
+        # Parse device string
+        try:
+            result = DeployerFactory.from_device_string(device_string)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+
+        # Check if auto-deploy mode
+        if isinstance(result, Deployer):
+            deployer = result
+            print(f"Auto-deploy mode: deploying to {device_string}")
+
+            try:
+                # Deploy
+                deploy_result = deployer.deploy(
+                    verbose=args.verbose,
+                    skip_validation=True
+                )
+
+                # Create run directory structure (required by runner)
+                create_run_structure(run_name)
+
+                # Run benchmark using deployed adapter
+                results_dir = runner.run_single_kernel(
+                    args.kernel,
+                    run_name=run_name,
+                    duration=args.duration,
+                    repeats=args.repeats,
+                    warmup=args.warmup,
+                    calibration_state=args.state,
+                    verbose=args.verbose,
+                    transport_uri=deploy_result.transport_uri
+                )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
+
+                return 0 if results_dir else 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                return 1
+
+            finally:
+                # Cleanup always runs (even on exception)
+                print("\nCleaning up deployment...")
+                cleanup_result = deployer.cleanup()
+                if not cleanup_result.success:
+                    print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
+
+
+        else:
+            # Manual mode: result is transport URI string
+            transport_uri = result
+            if transport_uri != "local://":
+                print(f"Manual mode: connecting to {transport_uri}")
+
+            results_dir = runner.run_single_kernel(
+                args.kernel,
+                run_name=run_name,
+                duration=args.duration,
+                repeats=args.repeats,
+                warmup=args.warmup,
+                calibration_state=args.state,
+                verbose=args.verbose,
+                transport_uri=transport_uri
+            )
+            return 0 if results_dir else 1
 
     # Batch mode
     if args.all:
-        results_dir = runner.run_all_kernels(
-            run_name=run_name,
-            duration=args.duration,
-            repeats=args.repeats,
-            warmup=args.warmup,
-            calibration_state=args.state,
-            verbose=args.verbose,
-            transport_uri=args.transport
-        )
-        return 0 if results_dir else 1
+        # Resolve device (no config in batch mode, so CLI or default)
+        device_string = resolve_device_string(args, None)
+
+        # Parse device string
+        try:
+            result = DeployerFactory.from_device_string(device_string)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+
+        # Check if auto-deploy mode
+        if isinstance(result, Deployer):
+            deployer = result
+            print(f"Auto-deploy mode: deploying to {device_string}")
+
+            try:
+                # Deploy
+                deploy_result = deployer.deploy(
+                    verbose=args.verbose,
+                    skip_validation=True
+                )
+
+                # Create run directory structure (required by runner)
+                create_run_structure(run_name)
+
+                # Run benchmark using deployed adapter
+                results_dir = runner.run_all_kernels(
+                    run_name=run_name,
+                    duration=args.duration,
+                    repeats=args.repeats,
+                    warmup=args.warmup,
+                    calibration_state=args.state,
+                    verbose=args.verbose,
+                    transport_uri=deploy_result.transport_uri
+                )
+
+                # Fetch logs BEFORE cleanup
+                if results_dir and hasattr(deployer, 'fetch_logs'):
+                    from cortex.utils.paths import get_deployment_dir
+                    deployment_dir = get_deployment_dir(run_name)
+
+                    try:
+                        print("\nFetching deployment logs...")
+                        fetch_result = deployer.fetch_logs(str(deployment_dir))
+                        if not fetch_result["success"]:
+                            print(f"⚠️  Log fetch issues: {fetch_result['errors']}")
+                        else:
+                            print(f"✓ Deployment logs saved: {deployment_dir}/")
+                    except Exception as e:
+                        print(f"⚠️  Failed to fetch logs: {e}")
+
+                return 0 if results_dir else 1
+
+            except DeploymentError as e:
+                print(f"\nDeployment failed: {e}")
+                return 1
+
+            finally:
+                # Cleanup always runs (even on exception)
+                print("\nCleaning up deployment...")
+                cleanup_result = deployer.cleanup()
+                if not cleanup_result.success:
+                    print(f"⚠️  Cleanup issues: {cleanup_result.errors}")
+
+
+        else:
+            # Manual mode: result is transport URI string
+            transport_uri = result
+            if transport_uri != "local://":
+                print(f"Manual mode: connecting to {transport_uri}")
+
+            results_dir = runner.run_all_kernels(
+                run_name=run_name,
+                duration=args.duration,
+                repeats=args.repeats,
+                warmup=args.warmup,
+                calibration_state=args.state,
+                verbose=args.verbose,
+                transport_uri=transport_uri
+            )
+            return 0 if results_dir else 1
 
     # No mode specified
     print("Error: Must specify --kernel, --all, or --config")

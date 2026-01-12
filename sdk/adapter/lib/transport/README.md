@@ -13,7 +13,6 @@ The transport layer decouples the adapter protocol from the physical communicati
 | Transport | Latency | Throughput | Setup | Use When... |
 |-----------|---------|------------|-------|-------------|
 | **[Mock](local/)** (socketpair) | ~50µs | 500 MB/s | Trivial | Testing locally, development |
-| **[Shared Memory](local/)** | ~5µs | 2 GB/s | Easy | Benchmarking overhead, performance testing |
 | **[TCP](network/)** | ~500µs | 100 MB/s | Easy | Jetson, Pi, remote x86 hosts |
 | **[UART](serial/)** | ~10ms | 11 KB/s @ 115200 | Moderate | Embedded dev, STM32, ESP32 |
 | **Custom** | Varies | Varies | Advanced | Special hardware, proprietary protocols |
@@ -189,49 +188,6 @@ cortex_transport_t *transport = cortex_transport_mock_create(sv[0]);
 
 ---
 
-#### Shared Memory (SHM)
-
-**File:** `local/shm.c`
-**Constructors:**
-- `cortex_transport_shm_create_harness(const char *name)` (harness side)
-- `cortex_transport_shm_create_adapter(const char *name)` (adapter side)
-
-**Use Case:** Performance testing, measuring pure adapter overhead
-
-**How it works:**
-- POSIX `shm_open()` + `mmap()` for shared memory region
-- Two lock-free ring buffers (256KB each direction)
-- POSIX named semaphores for producer/consumer signaling
-- macOS compatibility layer for `sem_timedwait()`
-
-**Performance:**
-- Latency: ~5µs (memory copy + semaphore)
-- Throughput: ~2 GB/s
-- **Fastest transport** - ideal for overhead measurement
-
-**Example:**
-```c
-/* Harness side */
-cortex_transport_t *transport = cortex_transport_shm_create_harness("bench01");
-
-/* Adapter side (separate process) */
-cortex_transport_t *transport = cortex_transport_shm_create_adapter("bench01");
-```
-
-**Platform Notes:**
-- macOS: Uses sem_trywait() + polling (no sem_timedwait support)
-- Linux: Native sem_timedwait()
-- Both sides must use **same name** to connect
-
-**Limitations:**
-- Single machine only
-- Requires POSIX shared memory support
-- Fixed buffer size (256KB per direction)
-
-**See:** [local/README.md](local/README.md)
-
----
-
 ### Network Transports (`network/`)
 
 #### TCP Client
@@ -328,46 +284,26 @@ if (!transport) {
 
 ---
 
-### Embedded Transports (`embedded/`)
-
-**Status:** Planned for Phase 2+
-
-**Future implementations:**
-- STM32 UART (HAL-based, DMA)
-- STM32 SPI (high-speed, full-duplex)
-- ESP32 UART (ESP-IDF)
-- CAN bus (automotive/industrial)
-
-**See:** [embedded/README.md](embedded/README.md)
-
----
-
 ## Choosing a Transport
 
 ### Development Workflow
 
 ```
 1. Start with Mock        → Verify protocol implementation locally
-2. Test with SHM          → Measure adapter overhead (baseline)
-3. Deploy with TCP/UART   → Validate on target platform
+2. Deploy with TCP/UART   → Validate on target platform
 ```
 
 ### Decision Matrix
 
 **Question 1: Is your adapter on the same machine as the harness?**
-- **Yes** → Use **Mock** (easy) or **SHM** (fast)
+- **Yes** → Use **Mock**
 - **No** → Go to Question 2
 
 **Question 2: Does the target device have a network stack?**
 - **Yes** (Jetson, Pi, x86) → Use **TCP**
 - **No** (bare-metal embedded) → Use **UART** or custom transport
 
-**Question 3: Are you benchmarking transport overhead?**
-- **Yes** → Use **SHM** (minimizes transport latency)
-- **No** → Use most convenient transport
-
-**Question 4: Is latency critical?**
-- **Very critical** (<100µs) → **SHM** only
+**Question 3: Is latency critical?**
 - **Somewhat critical** (<5ms) → **Mock** or **TCP** (localhost)
 - **Not critical** (>10ms) → **TCP** or **UART**
 
@@ -379,7 +315,6 @@ Measured on **MacBook Pro M1 (arm64)**, loopback configuration:
 
 | Transport | Latency (P50) | Latency (P99) | Throughput | Jitter |
 |-----------|---------------|---------------|------------|--------|
-| SHM       | 5µs           | 15µs          | 2 GB/s     | Low    |
 | Mock      | 45µs          | 120µs         | 500 MB/s   | Low    |
 | TCP (localhost) | 180µs   | 450µs         | 800 MB/s   | Medium |
 | TCP (LAN) | 1.2ms         | 3.5ms         | 100 MB/s   | Medium |

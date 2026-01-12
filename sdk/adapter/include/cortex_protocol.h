@@ -137,8 +137,6 @@ int cortex_protocol_send_window_chunked(
  *   expected_sequence: Expected window sequence number
  *   out_samples:       Output buffer for float32 samples (host format)
  *   samples_buf_size:  Size of out_samples buffer in bytes
- *   out_window_samples: Pointer to store window length (W)
- *   out_channels:      Pointer to store channel count (C)
  *   timeout_ms:        Total timeout for receiving ALL chunks
  *
  * Returns:
@@ -149,22 +147,20 @@ int cortex_protocol_send_window_chunked(
  *   CORTEX_ETIMEDOUT:               Timeout waiting for chunks
  *   CORTEX_EPROTO_*:                Protocol errors (CRC, MAGIC, etc.)
  *   CORTEX_ECHUNK_SEQUENCE_MISMATCH: Chunk has wrong sequence number
- *   CORTEX_ECHUNK_INCOMPLETE:        Missing chunks (gaps in offsets)
+ *   CORTEX_ECHUNK_INCOMPLETE:        Missing chunks (incomplete transfer)
  *   CORTEX_ECHUNK_BUFFER_TOO_SMALL:  out_samples buffer too small
  *
  * IMPORTANT:
  *   - Blocks until ALL chunks received or timeout
  *   - Converts samples from little-endian wire format to host format
  *   - Sets tin timestamp AFTER final chunk (CORTEX_CHUNK_FLAG_LAST) received
- *   - Validates no gaps, no duplicates, correct total_bytes
+ *   - Caller must know window dimensions (W×C) from CONFIG handshake
  */
 int cortex_protocol_recv_window_chunked(
     cortex_transport_t *transport,
     uint32_t expected_sequence,
     float *out_samples,
     size_t samples_buf_size,
-    uint32_t *out_window_samples,
-    uint32_t *out_channels,
     uint32_t timeout_ms
 );
 

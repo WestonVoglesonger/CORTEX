@@ -1,10 +1,13 @@
 # Top-level Makefile for CORTEX benchmarking pipeline
 # Orchestrates building SDK, harness, plugins, and tests
 
-.PHONY: all sdk harness plugins adapters tests clean help
+.PHONY: all build-only sdk harness plugins adapters tests clean help
 
-# Default target: build everything
+# Default target: build everything (includes tests)
 all: sdk harness plugins adapters tests
+
+# Fast build: exclude tests (for cortex run)
+build-only: sdk harness plugins adapters
 
 # Build SDK (kernel library and tools)
 sdk:

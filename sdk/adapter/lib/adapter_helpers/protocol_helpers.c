@@ -138,12 +138,6 @@ int cortex_adapter_recv_config(
     return 0;
 }
 
-int cortex_adapter_send_ack(cortex_transport_t *transport)
-{
-    /* Backward compat: send zeros for output dimensions */
-    return cortex_adapter_send_ack_with_dims(transport, 0, 0);
-}
-
 int cortex_adapter_send_ack_with_dims(cortex_transport_t *transport,
                                       uint32_t output_window_length,
                                       uint32_t output_channels)
@@ -199,4 +193,22 @@ int cortex_adapter_send_result(
 
     free(payload);
     return ret;
+}
+
+int cortex_adapter_send_error(
+    cortex_transport_t *transport,
+    uint32_t error_code,
+    const char *error_message
+)
+{
+    uint8_t payload[sizeof(cortex_wire_error_t)];  /* error_code (4) + error_message[256] = 260 bytes */
+
+    /* Build ERROR payload (little-endian) */
+    cortex_write_u32_le(payload + 0, error_code);
+    memset(payload + 4, 0, CORTEX_MAX_ERROR_MESSAGE);
+    if (error_message) {
+        snprintf((char *)(payload + 4), CORTEX_MAX_ERROR_MESSAGE, "%s", error_message);
+    }
+
+    return cortex_protocol_send_frame(transport, CORTEX_FRAME_ERROR, payload, sizeof(cortex_wire_error_t));
 }

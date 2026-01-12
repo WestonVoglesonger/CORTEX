@@ -39,7 +39,6 @@ The native adapter accepts transport configuration via **command-line URI** (fir
 | **Local** | `local://` (default) | Harness-spawned adapter (socketpair) | ✅ Production |
 | **TCP Server** | `tcp://:9000` | Listen for remote harness connection | ✅ Production |
 | **UART** | `serial:///dev/ttyUSB0?baud=115200` | Hardware debug console | ⚠️ Implemented |
-| **Shared Memory** | `shm://bench01` | High-speed local benchmarking | ⚠️ Implemented |
 
 **Default behavior:** If no URI provided, defaults to `local://` (stdin/stdout).
 
@@ -85,17 +84,7 @@ cortex run --kernel noop --duration 1
 # cortex run --kernel noop --transport tcp://localhost:9000
 ```
 
-#### 3. Shared Memory (Benchmarking)
-
-```bash
-# Terminal 1: Start adapter with SHM transport
-./primitives/adapters/v1/native/cortex_adapter_native shm://bench01
-
-# Terminal 2: Run harness with matching SHM config (future feature)
-# cortex run --kernel noop --transport shm://bench01
-```
-
-#### 4. Serial/UART (Hardware Debug)
+#### 3. Serial/UART (Hardware Debug)
 
 ```bash
 # Requires UART adapter connected to /dev/ttyUSB0
@@ -131,16 +120,15 @@ const char *config_uri = (argc > 1) ? argv[1] : "local://";
 
 // Create transport from URI configuration
 cortex_transport_t *tp = cortex_adapter_transport_create(config_uri);
-// Supports: local://, tcp://:port, serial://device, shm://name
+// Supports: local://, tcp://:port, serial://device
 ```
 
 **Transport Factory (`cortex_adapter_transport_create`):**
-- Parses URI scheme (local, tcp, serial, shm)
+- Parses URI scheme (local, tcp, serial)
 - Creates appropriate transport implementation
 - For `local://`: returns stdin/stdout transport (socketpair from harness)
 - For `tcp://:port`: creates TCP server, accepts ONE connection, returns client socket
 - For `serial://device`: opens UART with specified baud rate
-- For `shm://name`: connects to shared memory region
 
 **Boot ID Generation:**
 - Uses `CLOCK_MONOTONIC` timestamp XOR'd with nanoseconds
