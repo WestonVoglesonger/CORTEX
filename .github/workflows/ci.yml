@@ -20,7 +20,12 @@ jobs:
         sudo apt-get install -y gcc make
 
     - name: Build everything (SDK, harness, adapters, plugins)
-      run: make all
+      run: make build-only
+
+    - name: Build test fixtures
+      run: |
+        cd tests
+        make fixtures
 
     - name: Run C tests (Engine, Adapter, Kernel)
       run: |
