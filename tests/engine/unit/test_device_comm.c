@@ -10,14 +10,14 @@
  * Uses mock_adapter with controllable behaviors for deterministic testing.
  */
 
+#include "test_common.h"  /* MUST be first - defines feature test macros */
+#include "device_comm.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
-#include "test_common.h"
-#include "device_comm.h"
 
 /* Mock adapter path (relative to tests/engine directory) */
 #define MOCK_ADAPTER_PATH "../fixtures/mock_adapter/mock_adapter"

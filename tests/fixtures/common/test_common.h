@@ -11,7 +11,7 @@
 
 /* Define feature test macros BEFORE any includes */
 #ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 199309L  /* For clock_gettime, CLOCK_MONOTONIC */
+#define _POSIX_C_SOURCE 200809L  /* For clock_gettime, CLOCK_MONOTONIC, usleep */
 #endif
 
 #ifndef _DEFAULT_SOURCE
