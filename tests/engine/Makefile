@@ -17,8 +17,8 @@ else
     LDFLAGS = -L../../sdk/kernel/lib -lcortex -ldl -lpthread -lm
 endif
 
-UNIT_TESTS := $(patsubst unit/%.c,%,$(wildcard unit/test_*.c))
-INTEGRATION_TESTS := $(patsubst integration/%.c,%,$(wildcard integration/test_*.c))
+UNIT_TESTS := $(patsubst unit/%.c,build/%,$(wildcard unit/test_*.c))
+INTEGRATION_TESTS := $(patsubst integration/%.c,build/%,$(wildcard integration/test_*.c))
 ALL_TESTS := $(UNIT_TESTS) $(INTEGRATION_TESTS)
 
 REPLAYER_SRC = ../../src/engine/replayer/replayer.c
@@ -40,16 +40,19 @@ ADAPTER_HELPERS_SRC = ../../sdk/adapter/lib/adapter_helpers/transport_helpers.c 
 
 .PHONY: all tests clean
 
-all: $(ALL_TESTS)
+all: build $(ALL_TESTS)
+
+build:
+	mkdir -p build
 
 tests: $(ALL_TESTS)
 	@echo "========================================="
 	@echo "Running Engine Tests"
 	@echo "========================================="
 	@for test in $(ALL_TESTS); do \
-		if [ "$$test" = "test_scheduler" ]; then \
+		if [ "$$test" = "build/test_scheduler" ]; then \
 			echo "SKIP: $$test (needs device_comm rewrite)"; \
-		elif [ "$$test" = "test_kernel_registry" ]; then \
+		elif [ "$$test" = "build/test_kernel_registry" ]; then \
 			echo "Running $$test..."; \
 			( cd ../.. && ./tests/engine/$$test ) || exit 1; \
 		else \
@@ -59,26 +62,26 @@ tests: $(ALL_TESTS)
 	done
 	@echo "Engine tests: PASS"
 
-test_replayer: unit/test_replayer.c $(REPLAYER_SRC)
+build/test_replayer: unit/test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_scheduler: unit/test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC) $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
+build/test_scheduler: unit/test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC) $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_telemetry: unit/test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
+build/test_telemetry: unit/test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_signal_handler: unit/test_signal_handler.c $(SIGNAL_HANDLER_SRC)
+build/test_signal_handler: unit/test_signal_handler.c $(SIGNAL_HANDLER_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_clock_resolution: unit/test_clock_resolution.c
+build/test_clock_resolution: unit/test_clock_resolution.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_kernel_registry: unit/test_kernel_registry.c
+build/test_kernel_registry: unit/test_kernel_registry.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test_config_overrides: integration/test_config_overrides.c $(CONFIG_SRC) $(UTIL_SRC)
+build/test_config_overrides: integration/test_config_overrides.c $(CONFIG_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f $(ALL_TESTS)
+	rm -rf build/
