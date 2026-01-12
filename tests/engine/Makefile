@@ -84,5 +84,8 @@ build/test_param_accessor: unit/test_param_accessor.c
 build/test_config_overrides: integration/test_config_overrides.c $(CONFIG_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
+build/test_device_comm: unit/test_device_comm.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC) $(UTIL_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+
 clean:
 	rm -rf build/
