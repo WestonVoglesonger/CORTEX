@@ -1,7 +1,15 @@
-# Makefile for CORTEX C tests
+# CORTEX Testing System - Auto-Discovery Makefile
+#
+# Directory Structure:
+#   c/unit/core/      - Core engine tests (scheduler, telemetry, replayer)
+#   c/unit/protocol/  - Protocol and transport tests
+#   c/integration/    - Integration tests (adapter, end-to-end)
+#   c/mock_adapter/   - Controllable test adapter
+#   c/common/         - Shared test utilities (test_common.h)
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I../sdk/kernel/include -I../sdk/adapter/include
+CFLAGS = -Wall -Wextra -g -O0 -std=c11
+INCLUDES = -I../sdk/kernel/include -I../sdk/adapter/include -I../src/engine/scheduler -I../src/engine/harness/device -I../src/engine/harness/util -I../src/engine/telemetry -Ic/common
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)
@@ -11,123 +19,209 @@ else
     LDFLAGS = -L../sdk/kernel/lib -lcortex -ldl -lpthread -lm
 endif
 
-# Source files
+# ========================================================================
+# Source Files
+# ========================================================================
+
+# Engine source files
 REPLAYER_SRC = ../src/engine/replayer/replayer.c
 SCHEDULER_SRC = ../src/engine/scheduler/scheduler.c
 TELEMETRY_SRC = ../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
 SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
+DEVICE_COMM_SRC = ../src/engine/harness/device/device_comm.c
 
-# Adapter protocol source files
-PROTOCOL_SRC = ../sdk/adapter/lib/protocol/protocol.c ../sdk/adapter/lib/protocol/crc32.c
+# Adapter SDK source files
+PROTOCOL_SRC = ../sdk/adapter/lib/protocol/protocol.c \
+               ../sdk/adapter/lib/protocol/crc32.c
 TRANSPORT_SRC = ../sdk/adapter/lib/transport/local/mock.c \
                 ../sdk/adapter/lib/transport/serial/uart_posix.c \
                 ../sdk/adapter/lib/transport/network/tcp_common.c \
                 ../sdk/adapter/lib/transport/network/tcp_client.c \
                 ../sdk/adapter/lib/transport/network/tcp_server.c
-TRANSPORT_HELPERS_SRC = ../sdk/adapter/lib/adapter_helpers/transport_helpers.c
+ADAPTER_HELPERS_SRC = ../sdk/adapter/lib/adapter_helpers/transport_helpers.c \
+                      ../sdk/adapter/lib/adapter_helpers/protocol_helpers.c \
+                      ../sdk/adapter/lib/adapter_helpers/system_info.c
 
-# Test binaries
-TEST_REPLAYER = test_replayer
-TEST_SCHEDULER = test_scheduler
-TEST_TELEMETRY = test_telemetry
-TEST_KERNEL_REGISTRY = test_kernel_registry
-TEST_CLOCK_RESOLUTION = test_clock_resolution
-TEST_SIGNAL_HANDLER = test_signal_handler
-TEST_PARAM_ACCESSOR = test_param_accessor
-TEST_PROTOCOL = test_protocol
-TEST_ADAPTER_SMOKE = test_adapter_smoke
+# ========================================================================
+# Test Discovery
+# ========================================================================
 
-.PHONY: all clean test test-replayer test-scheduler test-telemetry test-kernel-registry test-clock-resolution test-signal-handler test-param-accessor test-protocol test-adapter-smoke
+# Auto-discover test files in each directory
+CORE_TESTS_SRC := $(wildcard c/unit/core/test_*.c)
+PROTOCOL_TESTS_SRC := $(wildcard c/unit/protocol/test_*.c)
+INTEGRATION_TESTS_SRC := $(wildcard c/integration/test_*.c)
 
-# NOTE: test_scheduler temporarily disabled - needs refactoring for universal adapter model
-#   - Current tests use cortex_plugin_api_t and cortex_scheduler_register_plugin() (removed in v0.4.0)
-#   - Needs rewrite to use cortex_scheduler_register_device() with mock device handles
-#   - Will be fixed in follow-up PR (tracked in Phase 5 documentation updates)
-all: $(TEST_REPLAYER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR) $(TEST_PROTOCOL) $(TEST_ADAPTER_SMOKE)
+# Generate binary names (strip .c extension and directory prefix)
+CORE_TESTS := $(patsubst c/unit/core/%.c,%,$(CORE_TESTS_SRC))
+PROTOCOL_TESTS := $(patsubst c/unit/protocol/%.c,%,$(PROTOCOL_TESTS_SRC))
+INTEGRATION_TESTS := $(patsubst c/integration/%.c,%,$(INTEGRATION_TESTS_SRC))
 
-$(TEST_REPLAYER): test_replayer.c $(REPLAYER_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# All test binaries
+ALL_TESTS := $(CORE_TESTS) $(PROTOCOL_TESTS) $(INTEGRATION_TESTS)
 
-$(TEST_SCHEDULER): test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# ========================================================================
+# Build Rules
+# ========================================================================
 
-$(TEST_TELEMETRY): test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+.PHONY: all tests clean help mock-adapter
+.PHONY: test-core test-protocol test-integration
+.PHONY: $(patsubst %,run-%,$(ALL_TESTS))
 
-$(TEST_KERNEL_REGISTRY): test_kernel_registry.c
-	$(CC) $(CFLAGS) -o $@ $^
+# Default: build all tests and mock adapter
+all: $(ALL_TESTS) mock-adapter
 
-$(TEST_CLOCK_RESOLUTION): test_clock_resolution.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Run all tests
+tests: test-core test-protocol test-integration
 
-$(TEST_SIGNAL_HANDLER): test_signal_handler.c $(SIGNAL_HANDLER_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# ========================================================================
+# Core Unit Tests
+# ========================================================================
 
-$(TEST_PARAM_ACCESSOR): test_param_accessor.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+test_replayer: c/unit/core/test_replayer.c $(REPLAYER_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-TRANSPORT_MOCK_SRC = ../sdk/adapter/lib/transport/local/mock.c
-$(TEST_PROTOCOL): test_protocol.c $(PROTOCOL_SRC) $(TRANSPORT_MOCK_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ -lpthread
+test_scheduler: c/unit/core/test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC) $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-DEVICE_COMM_SRC = ../src/engine/harness/device/device_comm.c
-$(TEST_ADAPTER_SMOKE): test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(TRANSPORT_HELPERS_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ -lpthread
+test_telemetry: c/unit/core/test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test: test-replayer test-telemetry test-kernel-registry test-signal-handler test-param-accessor test-adapter-smoke test-protocol
+test_kernel_registry: c/unit/core/test_kernel_registry.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test-clock-resolution: $(TEST_CLOCK_RESOLUTION)
-	@echo "Running clock resolution tests..."
-	@./$(TEST_CLOCK_RESOLUTION)
+test_clock_resolution: c/unit/core/test_clock_resolution.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test-replayer: $(TEST_REPLAYER)
-	@echo "Running replayer tests..."
-	@./$(TEST_REPLAYER)
+test_signal_handler: c/unit/core/test_signal_handler.c $(SIGNAL_HANDLER_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test-scheduler: $(TEST_SCHEDULER)
-	@echo "Running scheduler tests..."
-	@./$(TEST_SCHEDULER)
+test_param_accessor: c/unit/core/test_param_accessor.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test-telemetry: $(TEST_TELEMETRY)
-	@echo "Running telemetry tests..."
-	@./$(TEST_TELEMETRY)
+# ========================================================================
+# Protocol Unit Tests
+# ========================================================================
 
-test-kernel-registry: $(TEST_KERNEL_REGISTRY)
-	@echo "Running kernel registry tests..."
-	@cd .. && ./tests/$(TEST_KERNEL_REGISTRY)
+test_protocol: c/unit/protocol/test_protocol.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test-signal-handler: $(TEST_SIGNAL_HANDLER)
-	@echo "Running signal handler tests..."
-	@./$(TEST_SIGNAL_HANDLER)
+test_protocol_loopback: c/unit/protocol/test_protocol_loopback.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c $(ADAPTER_HELPERS_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test-param-accessor: $(TEST_PARAM_ACCESSOR)
-	@echo "Running parameter accessor tests..."
-	@./$(TEST_PARAM_ACCESSOR)
+# ========================================================================
+# Integration Tests
+# ========================================================================
 
-test-protocol: $(TEST_PROTOCOL)
-	@echo "Running protocol tests..."
-	@./$(TEST_PROTOCOL)
+test_adapter_smoke: c/integration/test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test-adapter-smoke: $(TEST_ADAPTER_SMOKE)
-	@echo "Running adapter smoke test..."
-	@cd .. && ./tests/$(TEST_ADAPTER_SMOKE)
+test_adapter_all_kernels: c/integration/test_adapter_all_kernels.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
+
+test_socketpair_hello: c/integration/test_socketpair_hello.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c $(ADAPTER_HELPERS_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
+
+test_config_overrides: c/integration/test_config_overrides.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+
+# ========================================================================
+# Mock Adapter
+# ========================================================================
+
+mock-adapter:
+	@echo "Building mock adapter..."
+	@$(MAKE) -C c/mock_adapter
+
+# ========================================================================
+# Test Runners
+# ========================================================================
+
+test-core: $(CORE_TESTS)
+	@echo "========================================="
+	@echo "Running Core Unit Tests"
+	@echo "========================================="
+	@for test in $(CORE_TESTS); do \
+		if [ "$$test" = "test_scheduler" ]; then \
+			echo "SKIP: $$test (needs device_comm rewrite)"; \
+		else \
+			echo "Running $$test..."; \
+			./$$test || exit 1; \
+		fi; \
+	done
+	@echo "Core tests: PASS"
+
+test-protocol: $(PROTOCOL_TESTS)
+	@echo "========================================="
+	@echo "Running Protocol Unit Tests"
+	@echo "========================================="
+	@for test in $(PROTOCOL_TESTS); do \
+		echo "Running $$test..."; \
+		./$$test || exit 1; \
+	done
+	@echo "Protocol tests: PASS"
+
+test-integration: $(INTEGRATION_TESTS)
+	@echo "========================================="
+	@echo "Running Integration Tests"
+	@echo "========================================="
+	@for test in $(INTEGRATION_TESTS); do \
+		echo "Running $$test..."; \
+		cd .. && ./tests/$$test || exit 1; \
+	done
+	@echo "Integration tests: PASS"
+
+# Individual test runners (run-test_name)
+$(patsubst %,run-%,$(CORE_TESTS)): run-%: %
+	@echo "Running $<..."
+	@./$<
+
+$(patsubst %,run-%,$(PROTOCOL_TESTS)): run-%: %
+	@echo "Running $<..."
+	@./$<
+
+$(patsubst %,run-%,$(INTEGRATION_TESTS)): run-%: %
+	@echo "Running $<..."
+	@cd .. && ./tests/$<
+
+# ========================================================================
+# Utilities
+# ========================================================================
 
 clean:
-	rm -f $(TEST_REPLAYER) $(TEST_SCHEDULER) $(TEST_TELEMETRY) $(TEST_KERNEL_REGISTRY) $(TEST_CLOCK_RESOLUTION) $(TEST_SIGNAL_HANDLER) $(TEST_PARAM_ACCESSOR) $(TEST_PROTOCOL) $(TEST_ADAPTER_SMOKE)
+	rm -f $(ALL_TESTS)
 	rm -f /tmp/cortex_test_*.dat /tmp/test_output.bin /tmp/test_input_* /tmp/cortex_test_telemetry.*
+	$(MAKE) -C c/mock_adapter clean
 
 help:
-	@echo "Available targets:"
-	@echo "  all                   - Build all tests (default)"
-	@echo "  test                  - Run all tests"
-	@echo "  test-replayer         - Run replayer tests only"
-	@echo "  test-scheduler        - Run scheduler tests only"
-	@echo "  test-telemetry        - Run telemetry tests only"
-	@echo "  test-kernel-registry  - Run kernel registry tests only"
-	@echo "  test-clock-resolution - Run clock resolution and timing accuracy tests"
-	@echo "  test-signal-handler   - Run signal handler tests only"
-	@echo "  test-param-accessor   - Run parameter accessor tests only"
-	@echo "  test-protocol         - Run adapter protocol tests only"
-	@echo "  clean                 - Remove test binaries and temp files"
-	@echo "  help                  - Show this help message"
+	@echo "CORTEX Testing System"
+	@echo ""
+	@echo "Build Targets:"
+	@echo "  all                - Build all tests and mock adapter"
+	@echo "  mock-adapter       - Build controllable test adapter"
+	@echo ""
+	@echo "Test Suites:"
+	@echo "  tests              - Run all test suites"
+	@echo "  test-core          - Run core unit tests (scheduler, telemetry, replayer)"
+	@echo "  test-protocol      - Run protocol unit tests"
+	@echo "  test-integration   - Run integration tests"
+	@echo ""
+	@echo "Individual Tests:"
+	@for test in $(CORE_TESTS); do \
+		echo "  run-$$test"; \
+	done
+	@for test in $(PROTOCOL_TESTS); do \
+		echo "  run-$$test"; \
+	done
+	@for test in $(INTEGRATION_TESTS); do \
+		echo "  run-$$test"; \
+	done
+	@echo ""
+	@echo "Utilities:"
+	@echo "  clean              - Remove test binaries and temp files"
+	@echo "  help               - Show this message"
+	@echo ""
+	@echo "Directory Structure:"
+	@echo "  c/unit/core/       - $(words $(CORE_TESTS)) tests"
+	@echo "  c/unit/protocol/   - $(words $(PROTOCOL_TESTS)) tests"
+	@echo "  c/integration/     - $(words $(INTEGRATION_TESTS)) tests"

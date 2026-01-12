@@ -5,6 +5,112 @@ All notable changes to CORTEX will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Transport URI System** - Universal transport abstraction for remote kernel execution
+  - Five transport types: `local://`, `tcp://host:port`, `tcp://:port`, `serial:///dev/ttyUSB0?baud=115200`, `shm://name`
+  - CLI integration: `cortex run --transport tcp://jetson:9000 --kernel car`
+  - Environment variable support: `CORTEX_TRANSPORT_URI` with precedence chain (CLI > env > default)
+  - URI parsing with validation: `cortex_parse_adapter_uri()` in C, Python CLI pre-validation
+  - Transport factory pattern: `cortex_adapter_transport_create()` for adapter-side creation
+  - Platform-specific socket options: macOS `SO_NOSIGPIPE`, Linux `MSG_NOSIGNAL`
+  - Security hardening: `SOCK_CLOEXEC` to prevent FD leaks, `strtoul()` for safe baud parsing
+  - New transport implementations:
+    - TCP client: Non-blocking connect with timeout, TCP keepalive
+    - TCP server: Poll-based accept with timeout for daemon mode
+    - UART/Serial: POSIX serial with configurable baud rate
+    - Shared memory: Lock-free ring buffer for high-performance local IPC
+
+- **TCP Daemon Mode** - Multi-session support for remote adapters
+  - Remote adapters can serve multiple kernel benchmarks without restarting
+  - Accept loop with 5-second timeout: `tcp://:port` enables daemon mode
+  - Signal handling: `SIGINT`/`SIGTERM` for graceful shutdown
+  - Session isolation: Errors in one benchmark don't kill daemon
+  - Clean state between sessions: All variables scoped to `run_session()`
+  - Local transport remains single-session for measurement isolation
+
+- **Auto-Deploy System** (579 LOC) - SSH-based automatic deployment to remote devices
+  - **One-command deployment**: `cortex run --device nvidia@jetson --kernel car`
+  - **Protocol-based architecture**:
+    - `Deployer` protocol interface (base.py)
+    - `DeployerFactory` for device string routing (factory.py)
+    - `SSHDeployer` implementation with rsync → build → start → cleanup (ssh_deployer.py)
+    - Custom exceptions: `DeploymentError`, `CleanupError`, `DeviceValidationError` (exceptions.py)
+  - **Device string formats**:
+    - Hostname: `nvidia@jetson`
+    - IP address: `nvidia@192.168.1.123`
+    - Custom port: `nvidia@jetson:2222`
+    - IPv6: `nvidia@[fe80::1]:2222`
+    - Manual TCP: `tcp://192.168.1.123:9000` (skips auto-deploy)
+  - **Robust deployment workflow**:
+    - File transfer via rsync (preserves symlinks, permissions)
+    - Remote build validation (checks for `cortex_adapter_native` binary)
+    - Adapter startup with device-side validation (lsof check, optional with graceful fallback)
+    - Dual readiness checks: Remote lsof + host socket connectivity test
+    - Background adapter process with output logging
+  - **Comprehensive cleanup**:
+    - Graceful shutdown: `SIGTERM` → 5s wait → `SIGKILL`
+    - Fallback: `killall cortex_adapter_native` if PID tracking fails
+    - SSH connection cleanup
+  - **CLI integration**:
+    - New `--device` flag replaces `--transport` for unified interface
+    - Device resolution priority: CLI `--device` > config `device:` > default `local://`
+    - Pipeline mode: Skips host build/validate when deploying to remote device
+    - Deploy → run → cleanup lifecycle management
+
+- **Device Specification Telemetry** - Enhanced metadata in telemetry records
+  - Device spec (CPU, RAM, OS) now properly passed from adapter to harness
+  - Telemetry system info includes remote device specifications for cross-platform analysis
+
+### Changed
+
+- **Adapter Naming** - Renamed `native@loopback` → `native` for architecture clarity
+  - Adapter works on x86_64, arm64, and other POSIX platforms
+  - No architecture suffix needed (cross-platform by design)
+  - Updated paths: `primitives/adapters/v1/native/`
+
+- **CLI Interface Unification**
+  - Deprecated `--transport` flag in favor of `--device`
+  - Backward compatible: `--transport tcp://host:port` still works
+  - Cleaner user experience: Device abstraction over transport protocol details
+
+### Removed
+
+- **Adapter Bloat Cleanup** (-321 LOC)
+  - Removed redundant adapter code across multiple commits
+  - Consolidated transport logic into SDK helper library
+  - Cleaner separation: Protocol layer vs transport layer vs adapter logic
+
+### Fixed
+
+- **TCP Listener Socket Lifecycle** (transport_helpers.c:103)
+  - TCP server mode (`tcp://:port`) now returns listening socket instead of destroying after first accept
+  - Enables daemon accept loop for multi-session support
+  - Local transport (`local://`) lifecycle unchanged (single-session)
+
+- **Documentation Issues** (23 fixes across commits)
+  - Updated adapter documentation for transport URI system
+  - Fixed inconsistencies in adapter protocol specification
+  - Added user guide for remote device deployment
+  - Clarified TCP daemon mode vs local transport behavior
+
+### Testing
+
+- **Transport URI validation**: All 5 transport types tested
+- **TCP daemon mode**: Multi-kernel benchmark workflows validated
+- **Auto-deploy**: Tested with SSH deployment to remote Linux devices
+- **Device specs**: Telemetry correctly captures remote device metadata
+
+### Known Issues
+
+- Auto-deploy currently supports SSH only (JTAG, Docker deployers planned for future)
+- Shared memory transport (`shm://`) implemented but not yet tested in production
+- Serial transport (`serial://`) requires hardware testing on embedded devices
+
+---
+
 ## [0.4.0] - 2025-12-29
 
 Major architectural refactor introducing the **Universal Adapter Model** - ALL kernel execution now routes through device adapters, enabling Hardware-In-the-Loop (HIL) testing across multiple platforms (x86, Jetson Nano, STM32, etc.). This is a **breaking change** that eliminates direct plugin execution.
