@@ -49,15 +49,23 @@ class SyntheticGenerator:
         Raises:
             ValueError: If signal_type unknown or parameters invalid
         """
-        # Validate numeric parameters
-        if channels <= 0:
-            raise ValueError(f"channels must be positive (got {channels})")
-        if sample_rate_hz <= 0:
-            raise ValueError(f"sample_rate_hz must be positive (got {sample_rate_hz})")
-        if duration_s <= 0:
-            raise ValueError(f"duration_s must be positive (got {duration_s})")
+        # Validate numeric parameters (lower and upper bounds)
+        if not (1 <= channels <= 4096):
+            raise ValueError(f"channels must be 1-4096 (got {channels})")
+        if not (1 <= sample_rate_hz <= 50000):
+            raise ValueError(f"sample_rate_hz must be 1-50000 Hz (got {sample_rate_hz})")
+        if not (0.01 <= duration_s <= 3600):
+            raise ValueError(f"duration_s must be 0.01-3600s (got {duration_s})")
 
         n_samples = int(duration_s * sample_rate_hz)
+
+        # Validate minimum samples for FFT-based generation (prevents division by zero)
+        if signal_type == "pink_noise" and n_samples < 16:
+            raise ValueError(
+                f"Pink noise requires at least 16 samples for FFT generation. "
+                f"Got {n_samples} samples (duration_s={duration_s}, sample_rate_hz={sample_rate_hz}). "
+                f"Increase duration_s to at least {16.0 / sample_rate_hz:.3f}s"
+            )
 
         if signal_type == "sine_wave":
             # Sine is cheap - always return ndarray
@@ -285,7 +293,8 @@ if __name__ == '__main__':
 
     # Parse kwargs
     kwargs = {}
-    for arg in sys.argv[5 if output_path else 5:]:
+    # Start after output_path if present (index 6), otherwise after duration_s (index 5)
+    for arg in sys.argv[6 if output_path else 5:]:
         if arg.startswith('--'):
             key, value = arg[2:].split('=')
             # Try to parse as number, fall back to string
