@@ -80,6 +80,9 @@ build/test_clock_resolution: unit/test_clock_resolution.c
 build/test_kernel_registry: unit/test_kernel_registry.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
+build/test_param_accessor: unit/test_param_accessor.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+
 build/test_config_overrides: integration/test_config_overrides.c $(CONFIG_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
