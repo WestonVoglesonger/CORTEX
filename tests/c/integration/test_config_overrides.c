@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../src/engine/harness/config/config.h"
+#include "config.h"
 
 /* Test: Filter to single kernel */
 void test_kernel_filter_single() {

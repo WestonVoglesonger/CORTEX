@@ -7,7 +7,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "../src/engine/harness/device/device_comm.h"
+#include "device_comm.h"
 
 #include <assert.h>
 #include <stdio.h>

@@ -20,8 +20,8 @@
 #include <errno.h>
 #include <unistd.h>
 
-#include "../src/engine/telemetry/telemetry.h"
-#include "../src/engine/harness/util/util.h"
+#include "telemetry.h"
+#include "util.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \

@@ -9,7 +9,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -g -O0 -std=c11
-INCLUDES = -I../sdk/kernel/include -I../sdk/adapter/include -I../src/engine/scheduler -I../src/engine/harness/device -I../src/engine/harness/util -I../src/engine/telemetry -Ic/common
+INCLUDES = -I../sdk/kernel/include -I../sdk/adapter/include -I../src/engine/scheduler -I../src/engine/replayer -I../src/engine/harness/device -I../src/engine/harness/util -I../src/engine/harness/config -I../src/engine/telemetry -Ic/common
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)
@@ -30,6 +30,7 @@ TELEMETRY_SRC = ../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../src/engine/harness/util/util.c
 SIGNAL_HANDLER_SRC = ../src/engine/harness/util/signal_handler.c
 DEVICE_COMM_SRC = ../src/engine/harness/device/device_comm.c
+CONFIG_SRC = ../src/engine/harness/config/config.c
 
 # Adapter SDK source files
 PROTOCOL_SRC = ../sdk/adapter/lib/protocol/protocol.c \
@@ -106,7 +107,7 @@ test_param_accessor: c/unit/core/test_param_accessor.c
 test_protocol: c/unit/protocol/test_protocol.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test_protocol_loopback: c/unit/protocol/test_protocol_loopback.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c $(ADAPTER_HELPERS_SRC)
+test_protocol_loopback: c/unit/protocol/test_protocol_loopback.c $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
 # ========================================================================
@@ -119,10 +120,10 @@ test_adapter_smoke: c/integration/test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROT
 test_adapter_all_kernels: c/integration/test_adapter_all_kernels.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test_socketpair_hello: c/integration/test_socketpair_hello.c $(PROTOCOL_SRC) ../sdk/adapter/lib/transport/local/mock.c $(ADAPTER_HELPERS_SRC)
+test_socketpair_hello: c/integration/test_socketpair_hello.c $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ -lpthread
 
-test_config_overrides: c/integration/test_config_overrides.c
+test_config_overrides: c/integration/test_config_overrides.c $(CONFIG_SRC) $(UTIL_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 # ========================================================================
@@ -167,7 +168,7 @@ test-integration: $(INTEGRATION_TESTS)
 	@echo "========================================="
 	@for test in $(INTEGRATION_TESTS); do \
 		echo "Running $$test..."; \
-		cd .. && ./tests/$$test || exit 1; \
+		( cd .. && ./tests/$$test ) || exit 1; \
 	done
 	@echo "Integration tests: PASS"
 
