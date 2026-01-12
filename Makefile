@@ -51,7 +51,7 @@ adapters: sdk
 tests:
 	@echo "Building and running tests..."
 	$(MAKE) -C tests
-	$(MAKE) -C tests test
+	$(MAKE) -C tests tests
 
 # Clean everything
 clean:
