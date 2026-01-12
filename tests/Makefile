@@ -9,11 +9,16 @@
 #
 # Each pillar has its own Makefile with auto-discovery and build/ subdirectory.
 
-.PHONY: all tests clean help
+.PHONY: all tests clean help fixtures
 .PHONY: test-engine test-adapter test-kernel test-cli
 
+# Build test fixtures (mock_adapter, etc.)
+fixtures:
+	@echo "Building test fixtures..."
+	@$(MAKE) -C fixtures/mock_adapter all
+
 # Build all C test binaries
-all:
+all: fixtures
 	@echo "Building all test binaries..."
 	@$(MAKE) -C engine all
 	@$(MAKE) -C adapter all
@@ -21,7 +26,7 @@ all:
 	@echo "All test binaries built successfully!"
 
 # Run all test suites
-tests: test-engine test-adapter test-kernel test-cli
+tests: fixtures test-engine test-adapter test-kernel test-cli
 
 # Run Engine pillar tests
 test-engine:
@@ -41,6 +46,7 @@ test-cli:
 
 # Clean all build artifacts
 clean:
+	@$(MAKE) -C fixtures/mock_adapter clean
 	@$(MAKE) -C engine clean
 	@$(MAKE) -C adapter clean
 	@$(MAKE) -C kernel clean
