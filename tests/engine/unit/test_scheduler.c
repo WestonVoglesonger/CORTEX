@@ -17,7 +17,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "../../common/test_common.h"
+#include "test_common.h"
 #include "scheduler.h"
 #include "device_comm.h"
 #include "util.h"
