@@ -10,11 +10,15 @@
  * Uses mock_adapter with controllable behaviors for deterministic testing.
  */
 
+#define _POSIX_C_SOURCE 199309L  /* For clock_gettime, CLOCK_MONOTONIC */
+#define _GNU_SOURCE              /* For M_PI */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include "test_common.h"
 #include "device_comm.h"
