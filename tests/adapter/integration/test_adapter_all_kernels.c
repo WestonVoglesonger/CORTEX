@@ -5,8 +5,7 @@
  * Validates that adapter execution produces reasonable output.
  */
 
-#define _POSIX_C_SOURCE 200809L
-
+#include "test_common.h"  /* MUST be first - defines feature test macros and M_PI */
 #include "device_comm.h"
 
 #include <assert.h>
