@@ -134,8 +134,26 @@ class HarnessRunner:
             self.log.error(f"{config_path} exists but is not a file")
             return None
 
+        # Determine output directory for this run
+        run_dir = get_run_directory(run_name)
+
+        # Check for generator-based datasets and execute if needed
+        from cortex.generators import process_config_with_generators, save_generation_manifest, cleanup_temp_files
+
+        manifest = None
+        temp_files = []
+        try:
+            modified_config_path, manifest, temp_files = process_config_with_generators(
+                config_path, str(run_dir)
+            )
+            # Use modified config if generator was executed
+            actual_config_path = modified_config_path
+        except Exception as e:
+            self.log.error(f"Generator execution failed: {e}")
+            return None
+
         # Build command
-        cmd = [HARNESS_BINARY_PATH, 'run', config_path]
+        cmd = [HARNESS_BINARY_PATH, 'run', actual_config_path]
 
         # Add platform-specific sleep prevention wrapper
         # Can be disabled with CORTEX_NO_INHIBIT=1 (useful when running under sudo)
@@ -184,7 +202,6 @@ class HarnessRunner:
 
         # Pass run-specific output directory to harness
         # This overrides config's output.directory so kernel-data goes to the right place
-        run_dir = get_run_directory(run_name)
         base_env['CORTEX_OUTPUT_DIR'] = str(run_dir)
 
         # Pass transport URI if specified
@@ -268,6 +285,13 @@ class HarnessRunner:
                     self.log.info("Check output above for error details")
                 return None
 
+            # Save generation manifest if dataset was generated
+            if manifest is not None:
+                try:
+                    save_generation_manifest(manifest, str(run_dir))
+                except Exception as e:
+                    self.log.warning(f"Failed to save generation manifest: {e}")
+
             # Return the run directory path
             if self.fs.exists(run_dir):
                 return str(run_dir)
@@ -277,6 +301,10 @@ class HarnessRunner:
         except Exception as e:
             self.log.error(f"Error running harness: {e}")
             return None
+        finally:
+            # Clean up temporary files (generated dataset + modified config)
+            if temp_files:
+                cleanup_temp_files(temp_files)
 
     def run_single_kernel(
         self,

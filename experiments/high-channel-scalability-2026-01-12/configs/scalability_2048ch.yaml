@@ -1,0 +1,27 @@
+# High-channel scalability test: 2048 channels
+
+dataset:
+  path: "primitives/datasets/v1/synthetic"
+  params:
+    signal_type: "pink_noise"
+    amplitude_uv_rms: 100.0
+    duration_s: 10.0
+    seed: 42
+  channels: 2048
+  sample_rate_hz: 160
+  format: "float32"
+
+execution:
+  window_samples: 160     # W = 160 samples (1.0s @ 160Hz)
+  hop_samples: 80         # H = 80 samples (50% overlap)
+  deadline_ms: 500000
+  warmup_iterations: 0
+  total_iterations: 3
+
+load_profile:
+  type: "constant"
+  cpu_percent: 0
+
+kernels:
+  - name: "noop"
+    path: "primitives/kernels/v1/noop@f32"

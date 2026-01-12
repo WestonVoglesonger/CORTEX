@@ -121,8 +121,12 @@ class TestHarnessRunnerRun:
         self.logger.error.assert_called()
         assert "Config file not found" in self.logger.error.call_args[0][0]
 
-    def test_run_successful_execution_darwin_with_caffeinate(self):
+    @patch('cortex.generators.process_config_with_generators')
+    def test_run_successful_execution_darwin_with_caffeinate(self, mock_gen):
         """Test successful run on macOS with caffeinate available."""
+        # Mock generator integration (no generator used)
+        mock_gen.return_value = ("test.yaml", None, [])
+
         # Arrange
         # Mock to check specific paths
         def exists_side_effect(path):
@@ -171,9 +175,13 @@ class TestHarnessRunnerRun:
         assert 'caffeinate' in cmd_arg
         assert '-dims' in cmd_arg
 
+    @patch('cortex.generators.process_config_with_generators')
     @patch('sys.stdin.isatty')
-    def test_run_successful_execution_linux_with_systemd_inhibit(self, mock_isatty):
+    def test_run_successful_execution_linux_with_systemd_inhibit(self, mock_isatty, mock_gen):
         """Test successful run on Linux with systemd-inhibit available."""
+        # Mock generator integration (no generator used)
+        mock_gen.return_value = ("test.yaml", None, [])
+
         # Arrange
         def exists_side_effect(path):
             path_str = str(path)
@@ -207,8 +215,12 @@ class TestHarnessRunnerRun:
         assert 'systemd-inhibit' in cmd_arg
         assert '--what=sleep:idle' in cmd_arg
 
-    def test_run_subprocess_fails_nonzero_exit(self):
+    @patch('cortex.generators.process_config_with_generators')
+    def test_run_subprocess_fails_nonzero_exit(self, mock_gen):
         """Test that run() handles subprocess failure with non-zero exit code."""
+        # Mock generator integration (no generator used)
+        mock_gen.return_value = ("test.yaml", None, [])
+
         # Arrange
         self.fs.exists.return_value = True
         self.fs.is_file.return_value = True
@@ -234,8 +246,12 @@ class TestHarnessRunnerRun:
         self.logger.error.assert_called()
         assert "failed (exit code 1)" in self.logger.error.call_args[0][0]
 
-    def test_run_with_spinner_in_clean_mode(self):
+    @patch('cortex.generators.process_config_with_generators')
+    def test_run_with_spinner_in_clean_mode(self, mock_gen):
         """Test that spinner is shown in non-verbose mode."""
+        # Mock generator integration (no generator used)
+        mock_gen.return_value = ("test.yaml", None, [])
+
         # Arrange
         self.fs.exists.side_effect = lambda p: True
         self.fs.is_file.return_value = True
@@ -371,8 +387,12 @@ class TestHarnessRunnerCleanup:
 class TestHarnessRunnerIntegration:
     """Integration-style tests that verify multiple components work together."""
 
-    def test_run_end_to_end_darwin(self):
+    @patch('cortex.generators.process_config_with_generators')
+    def test_run_end_to_end_darwin(self, mock_gen):
         """Test complete run flow on macOS."""
+        # Mock generator integration (no generator used)
+        mock_gen.return_value = ("config.yaml", None, [])
+
         # Arrange
         fs = Mock(spec=FileSystemService)
 
