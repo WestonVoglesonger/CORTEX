@@ -20,12 +20,17 @@ jobs:
         sudo apt-get install -y gcc make
 
     - name: Build everything (SDK, harness, adapters, plugins)
-      run: make all
+      run: make build-only
 
-    - name: Run all tests
+    - name: Build test fixtures and binaries
       run: |
         cd tests
-        make test
+        make all
+
+    - name: Run C tests (Engine, Adapter, Kernel)
+      run: |
+        cd tests
+        make test-engine test-adapter test-kernel
 
   python-tests:
     name: Python Tests
@@ -51,4 +56,4 @@ jobs:
       run: make plugins
 
     - name: Run pytest
-      run: pytest tests/ -v
+      run: pytest tests/cli/ -v

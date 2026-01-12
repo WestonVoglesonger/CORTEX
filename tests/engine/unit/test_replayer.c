@@ -21,7 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "../src/engine/replayer/replayer.h"
+#include "replayer.h"
 
 /* Test utilities */
 #define TEST_ASSERT(condition, message) \

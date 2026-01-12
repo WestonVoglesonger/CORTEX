@@ -7,8 +7,9 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "../sdk/adapter/include/cortex_protocol.h"
-#include "../sdk/adapter/include/cortex_transport.h"
+#include "cortex_protocol.h"
+#include "cortex_transport.h"
+#include "cortex_wire.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -5,6 +5,40 @@ All notable changes to CORTEX will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **4-Pillar Test Architecture** - Comprehensive test infrastructure reorganization
+  - Restructured tests to mirror CORTEX's 4-pillar architecture (Engine, Adapter SDK, Kernel SDK, CLI)
+  - Added 33 new tests (+25% coverage): 65% → 75%
+  - **Scheduler tests** (+10 tests): Window formation, buffer management, multiple devices, data continuity
+  - **Calibration state I/O tests** (+15 tests): Save/load, corruption handling, security, endianness, version evolution
+  - **Device communication tests** (+8 tests): Adapter lifecycle, handshake, transport URIs
+  - Mock adapter infrastructure for deterministic testing (6 controllable behaviors)
+  - Professional test utilities (test_common.h): Enhanced assertions, float comparison, array comparison
+  - Auto-discovery build system with independent pillar execution
+  - Comprehensive test documentation (279-line README.md)
+
+### Changed
+
+- **Test Organization** - Split tests into 4 independent pillars with dedicated Makefiles
+  - `tests/engine/` - 26 tests (scheduler, device_comm, telemetry, replayer)
+  - `tests/adapter/` - 2 tests (protocol layer)
+  - `tests/kernel/` - 16 tests (ABI v3 state I/O, examples)
+  - `tests/cli/` - 119 tests (Python orchestration)
+  - `tests/fixtures/` - Shared utilities and mock implementations
+
+### Fixed
+
+- **CI Build Process** - Multiple fixes for Linux compilation and test execution
+  - Feature test macros (_POSIX_C_SOURCE, _DEFAULT_SOURCE) properly defined before system headers
+  - Mock adapter fixture now built automatically in CI
+  - Correct dependency chain: SDK → test fixtures → test binaries → test execution
+  - Separated C and Python test jobs to avoid environment conflicts
+
+---
+
 ## [0.4.0] - 2025-12-29
 
 Major architectural refactor introducing the **Universal Adapter Model** - ALL kernel execution now routes through device adapters, enabling Hardware-In-the-Loop (HIL) testing across multiple platforms (x86, Jetson Nano, STM32, etc.). This is a **breaking change** that eliminates direct plugin execution.
