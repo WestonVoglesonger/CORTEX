@@ -97,6 +97,12 @@ C tests for core engine components (scheduler, replayer, telemetry, harness).
   - ✅ Scientific notation
   - ✅ Error handling
 
+- **test_device_comm** - Adapter lifecycle and communication
+  - ✅ Adapter spawn (local transport, cleanup, spawn failure)
+  - ✅ Handshake sequence (HELLO→CONFIG→ACK, output dimensions)
+  - ✅ Transport URI parsing (local://, NULL default, empty string)
+  - ⏸️ SKIP: Window execution tests (4 tests require integration debugging)
+
 #### Integration Tests
 - **test_config_overrides** - Runtime configuration overrides
   - ✅ Kernel filter (single, multiple, whitespace)
