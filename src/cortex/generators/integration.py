@@ -6,7 +6,6 @@ generator-based datasets into the CLI execution pipeline.
 """
 
 import os
-import sys
 import yaml
 import tempfile
 import hashlib
@@ -14,7 +13,6 @@ import importlib.util
 from datetime import datetime
 from typing import Optional, Tuple, Dict, List, Any
 from pathlib import Path
-import numpy as np
 
 
 def is_generator_dataset(dataset_path: str) -> bool:

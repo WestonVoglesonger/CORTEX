@@ -59,6 +59,14 @@ class SyntheticGenerator:
 
         n_samples = int(duration_s * sample_rate_hz)
 
+        # Universal validation: ensure at least 1 sample (prevents empty arrays)
+        if n_samples < 1:
+            raise ValueError(
+                f"Insufficient samples: {n_samples}. "
+                f"Increase duration_s (currently {duration_s}s) or "
+                f"sample_rate_hz (currently {sample_rate_hz}Hz)"
+            )
+
         # Validate minimum samples for FFT-based generation (prevents division by zero)
         if signal_type == "pink_noise" and n_samples < 16:
             raise ValueError(
@@ -324,6 +332,7 @@ if __name__ == '__main__':
                 try:
                     value = float(value)
                 except ValueError:
+                    # If value cannot be parsed as int or float, keep it as string
                     pass
             kwargs[key] = value
 
