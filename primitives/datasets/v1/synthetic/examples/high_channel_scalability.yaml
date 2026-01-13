@@ -1,0 +1,58 @@
+# High-Channel Scalability Testing Example
+#
+# Purpose: Benchmark kernel performance at 1024 channels (Neuralink scale)
+# Use case: Validate CORTEX works at modern BCI hardware scales
+#
+# Expected: All kernels should complete without deadline misses
+# Latency will vary by algorithm:
+#   - O(C) kernels: Linear scaling (car, notch_iir, bandpass_fir)
+#   - O(C²) kernels: Quadratic scaling (ica, welch_psd)
+
+dataset:
+  path: "primitives/datasets/v1/synthetic"
+  params:
+    signal_type: "pink_noise"
+    duration_s: 120  # 2 minutes of data
+    amplitude_uv_rms: 100.0  # Typical EEG amplitude
+    seed: 42  # Reproducible
+  channels: 1024  # Neuralink production scale
+  sample_rate_hz: 160  # Standard EEG sampling rate
+
+# Test all kernels for scalability
+kernels:
+  - name: "noop"
+    deadline_us: 500000  # 0.5s per window (H=80 @ 160Hz)
+
+  - name: "car"
+    deadline_us: 500000
+
+  - name: "notch_iir"
+    deadline_us: 500000
+
+  - name: "bandpass_fir"
+    deadline_us: 500000
+
+  - name: "goertzel"
+    deadline_us: 500000
+
+  - name: "welch_psd"
+    deadline_us: 500000
+
+  - name: "ica"
+    deadline_us: 500000
+
+# Execution parameters
+execution:
+  warmup_windows: 10  # Warm up caches
+  duration_seconds: 60  # Measure for 60 seconds
+  repeat_count: 3  # Run 3 times for stability
+
+output:
+  directory: "results"
+  format: "ndjson"
+  include_raw_data: false
+
+# Notes:
+# - Generation time: ~5 seconds for 1024ch × 120s
+# - File size: ~39 MB
+# - Expected results: P50 latencies range from 2µs (noop) to ~1ms (ica)

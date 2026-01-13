@@ -1,0 +1,50 @@
+dataset:
+  name: "synthetic"
+  version: 1
+  type: "generator"
+  description: "Universal synthetic signal generator for scalability and validation testing"
+
+format:
+  type: "float32"
+  layout: "interleaved"
+  endian: "little"
+
+parameters:
+  signal_type:
+    type: string
+    required: true
+    options: ["sine_wave", "pink_noise"]
+    description: "Type of signal to generate"
+
+  duration_s:
+    type: float
+    required: true
+    description: "Total duration in seconds"
+
+  # Sine wave parameters
+  frequency_hz:
+    type: float
+    default: 10.0
+    description: "Sine wave frequency in Hz (for sine_wave type)"
+
+  amplitude_uv_peak:
+    type: float
+    default: 100.0
+    description: "Peak amplitude in microvolts (for sine_wave). Signal ranges from -amplitude to +amplitude."
+
+  # Noise parameters
+  amplitude_uv_rms:
+    type: float
+    default: 100.0
+    description: "RMS (root mean square) amplitude in microvolts (for pink_noise). Standard deviation of zero-mean signal."
+
+  # Reproducibility
+  seed:
+    type: integer
+    default: 42
+    description: "Random seed for deterministic generation"
+
+notes:
+  - "For high-channel datasets (>512 channels), generator uses chunked generation with memory-mapped output"
+  - "Output is always float32, but intermediate computations use float64 for numerical accuracy"
+  - "Deterministic generation: same seed produces statistically identical output (cross-platform FFT variations <1e-6)"
