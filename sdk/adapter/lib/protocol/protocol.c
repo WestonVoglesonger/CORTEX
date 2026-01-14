@@ -175,9 +175,9 @@ int cortex_protocol_recv_frame(
     }
 
     /* 5. Validate payload length */
-    if (payload_length > CORTEX_MAX_SINGLE_FRAME) {
-        return CORTEX_EPROTO_FRAME_TOO_LARGE;
-    }
+    /* REMOVED: No hardcoded frame size limits - protocol supports unlimited data (constrained only by RAM)
+     * Chunking (WINDOW_CHUNK, RESULT_CHUNK) handles large payloads automatically.
+     */
 
     if (payload_length > payload_buf_size) {
         return CORTEX_EPROTO_BUFFER_TOO_SMALL;
@@ -348,6 +348,108 @@ int cortex_protocol_send_window_chunked(
 }
 
 /*
+ * cortex_protocol_send_result_chunked - Send RESULT in chunks (mirrors send_window_chunked pattern)
+ *
+ * Sends result data as RESULT_CHUNK frames (same chunking pattern as WINDOW).
+ * First chunk includes all metadata; subsequent chunks reuse header structure.
+ *
+ * @param transport     Transport handle
+ * @param session_id    Session ID from CONFIG
+ * @param sequence      Window sequence number
+ * @param tin           Input complete timestamp (ns)
+ * @param tstart        Kernel start timestamp (ns)
+ * @param tend          Kernel end timestamp (ns)
+ * @param tfirst_tx     First result byte tx timestamp (ns)
+ * @param tlast_tx      Last result byte tx timestamp (ns)
+ * @param samples       Result data (float32 array)
+ * @param output_length_samples  Output window length
+ * @param output_channels        Output channels
+ * @return 0 on success, negative error code on failure
+ */
+int cortex_protocol_send_result_chunked(
+    cortex_transport_t *transport,
+    uint32_t session_id,
+    uint32_t sequence,
+    uint64_t tin,
+    uint64_t tstart,
+    uint64_t tend,
+    uint64_t tfirst_tx,
+    uint64_t tlast_tx,
+    const float *samples,
+    uint32_t output_length_samples,
+    uint32_t output_channels
+)
+{
+    uint32_t total_bytes = output_length_samples * output_channels * sizeof(float);
+    uint32_t offset = 0;
+
+    /* Allocate buffer for chunk payload (header + data) */
+    uint8_t *chunk_buf = (uint8_t *)malloc(sizeof(cortex_wire_result_chunk_t) + CORTEX_CHUNK_SIZE);
+    if (!chunk_buf) {
+        return -1;
+    }
+
+    int ret = 0;
+
+    while (offset < total_bytes) {
+        /* Calculate chunk length (last chunk may be smaller) */
+        uint32_t remaining = total_bytes - offset;
+        uint32_t chunk_len = (remaining > CORTEX_CHUNK_SIZE) ? CORTEX_CHUNK_SIZE : remaining;
+
+        /* Determine flags */
+        uint32_t flags = 0;
+        if (offset + chunk_len >= total_bytes) {
+            flags |= CORTEX_CHUNK_FLAG_LAST;
+        }
+
+        /* Build chunk header (in little-endian wire format) */
+        /* RESULT metadata (same in all chunks) */
+        cortex_write_u32_le(chunk_buf + 0, session_id);
+        cortex_write_u32_le(chunk_buf + 4, sequence);
+        cortex_write_u64_le(chunk_buf + 8, tin);
+        cortex_write_u64_le(chunk_buf + 16, tstart);
+        cortex_write_u64_le(chunk_buf + 24, tend);
+        cortex_write_u64_le(chunk_buf + 32, tfirst_tx);
+        cortex_write_u64_le(chunk_buf + 40, tlast_tx);
+        cortex_write_u32_le(chunk_buf + 48, output_length_samples);
+        cortex_write_u32_le(chunk_buf + 52, output_channels);
+
+        /* WINDOW_CHUNK pattern (chunking control) */
+        cortex_write_u32_le(chunk_buf + 56, total_bytes);
+        cortex_write_u32_le(chunk_buf + 60, offset);
+        cortex_write_u32_le(chunk_buf + 64, chunk_len);
+        cortex_write_u32_le(chunk_buf + 68, flags);
+
+        /* Convert float samples to little-endian and copy to chunk buffer */
+        uint8_t *chunk_data = chunk_buf + sizeof(cortex_wire_result_chunk_t);
+        const uint8_t *sample_bytes = (const uint8_t *)samples + offset;
+
+        for (uint32_t i = 0; i < chunk_len; i += sizeof(float)) {
+            float sample;
+            memcpy(&sample, sample_bytes + i, sizeof(sample));
+            cortex_write_f32_le(chunk_data + i, sample);
+        }
+
+        /* Send RESULT_CHUNK frame */
+        ret = cortex_protocol_send_frame(
+            transport,
+            CORTEX_FRAME_RESULT_CHUNK,
+            chunk_buf,
+            sizeof(cortex_wire_result_chunk_t) + chunk_len
+        );
+
+        if (ret < 0) {
+            break;
+        }
+
+        offset += chunk_len;
+    }
+
+    free(chunk_buf);
+    return ret;
+}
+
+/*
  * cortex_protocol_recv_window_chunked - Receive and reassemble WINDOW_CHUNK frames
  *
  * Implementation:
@@ -370,7 +472,7 @@ int cortex_protocol_recv_window_chunked(
     uint32_t timeout_ms
 )
 {
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
+    uint8_t frame_buf[sizeof(cortex_wire_window_chunk_t) + CORTEX_CHUNK_SIZE];
     uint32_t total_bytes = 0;
     int got_last_chunk = 0;
     int ret;
@@ -508,5 +610,179 @@ int cortex_protocol_recv_window_chunked(
 
     free(received_bitmap);
     free(window_buf);
+    return 0;
+}
+
+/*
+ * cortex_protocol_recv_result_chunked - Receive and reassemble RESULT_CHUNK frames
+ *
+ * Mirrors recv_window_chunked pattern. Extracts metadata from first chunk (offset==0).
+ *
+ * @param transport             Transport handle
+ * @param expected_sequence     Expected sequence number
+ * @param out_samples           Output buffer for result data
+ * @param samples_buf_size      Size of output buffer (bytes)
+ * @param timeout_ms            Timeout for each chunk receive
+ * @param out_session_id        [OUT] Session ID from result
+ * @param out_tin               [OUT] Input complete timestamp
+ * @param out_tstart            [OUT] Kernel start timestamp
+ * @param out_tend              [OUT] Kernel end timestamp
+ * @param out_tfirst_tx         [OUT] First tx timestamp
+ * @param out_tlast_tx          [OUT] Last tx timestamp
+ * @param out_length            [OUT] Output length samples
+ * @param out_channels          [OUT] Output channels
+ * @return 0 on success, negative error code on failure
+ */
+int cortex_protocol_recv_result_chunked(
+    cortex_transport_t *transport,
+    uint32_t expected_sequence,
+    float *out_samples,
+    size_t samples_buf_size,
+    uint32_t timeout_ms,
+    uint32_t *out_session_id,
+    uint64_t *out_tin,
+    uint64_t *out_tstart,
+    uint64_t *out_tend,
+    uint64_t *out_tfirst_tx,
+    uint64_t *out_tlast_tx,
+    uint32_t *out_length,
+    uint32_t *out_channels
+)
+{
+    uint8_t frame_buf[sizeof(cortex_wire_result_chunk_t) + CORTEX_CHUNK_SIZE];
+    uint32_t total_bytes = 0;
+    int got_last_chunk = 0;
+    int ret;
+
+    /* Allocate temporary buffer for assembling result (little-endian format) */
+    uint8_t *result_buf = NULL;
+    uint8_t *received_bitmap = NULL;  /* Track which bytes received (prevents duplicates/gaps) */
+
+    while (!got_last_chunk) {
+        /* Receive one RESULT_CHUNK frame */
+        cortex_frame_type_t frame_type;
+        size_t payload_len;
+
+        ret = cortex_protocol_recv_frame(
+            transport,
+            &frame_type,
+            frame_buf,
+            sizeof(frame_buf),
+            &payload_len,
+            timeout_ms
+        );
+
+        if (ret < 0) {
+            free(received_bitmap);
+            free(result_buf);
+            return ret;
+        }
+
+        if (frame_type != CORTEX_FRAME_RESULT_CHUNK) {
+            free(received_bitmap);
+            free(result_buf);
+            return CORTEX_ECHUNK_INVALID_FRAME_TYPE;
+        }
+
+        /* Parse chunk header (convert from little-endian) */
+        uint32_t session_id = cortex_read_u32_le(frame_buf + 0);
+        uint32_t sequence = cortex_read_u32_le(frame_buf + 4);
+        uint64_t tin = cortex_read_u64_le(frame_buf + 8);
+        uint64_t tstart = cortex_read_u64_le(frame_buf + 16);
+        uint64_t tend = cortex_read_u64_le(frame_buf + 24);
+        uint64_t tfirst_tx = cortex_read_u64_le(frame_buf + 32);
+        uint64_t tlast_tx = cortex_read_u64_le(frame_buf + 40);
+        uint32_t output_length = cortex_read_u32_le(frame_buf + 48);
+        uint32_t output_channels = cortex_read_u32_le(frame_buf + 52);
+        uint32_t chunk_total_bytes = cortex_read_u32_le(frame_buf + 56);
+        uint32_t offset = cortex_read_u32_le(frame_buf + 60);
+        uint32_t chunk_len = cortex_read_u32_le(frame_buf + 64);
+        uint32_t flags = cortex_read_u32_le(frame_buf + 68);
+
+        /* Validate sequence */
+        if (sequence != expected_sequence) {
+            free(received_bitmap);
+            free(result_buf);
+            return CORTEX_ECHUNK_SEQUENCE_MISMATCH;
+        }
+
+        /* First chunk: allocate buffer, extract metadata, set total_bytes */
+        if (total_bytes == 0) {
+            total_bytes = chunk_total_bytes;
+
+            /* Validate buffer size */
+            if (total_bytes > samples_buf_size) {
+                return CORTEX_ECHUNK_BUFFER_TOO_SMALL;
+            }
+
+            /* Allocate result buffer */
+            result_buf = (uint8_t *)malloc(total_bytes);
+            if (!result_buf) {
+                return -1;
+            }
+
+            /* Allocate bitmap to track received bytes (1 bit per byte) */
+            uint32_t bitmap_size = (total_bytes + 7) / 8;
+            received_bitmap = (uint8_t *)calloc(bitmap_size, 1);
+            if (!received_bitmap) {
+                free(result_buf);
+                return -1;
+            }
+
+            /* Extract metadata (only from first chunk) */
+            if (out_session_id) *out_session_id = session_id;
+            if (out_tin) *out_tin = tin;
+            if (out_tstart) *out_tstart = tstart;
+            if (out_tend) *out_tend = tend;
+            if (out_tfirst_tx) *out_tfirst_tx = tfirst_tx;
+            if (out_tlast_tx) *out_tlast_tx = tlast_tx;
+            if (out_length) *out_length = output_length;
+            if (out_channels) *out_channels = output_channels;
+        }
+
+        /* Validate chunk parameters */
+        if (offset + chunk_len > total_bytes) {
+            free(received_bitmap);
+            free(result_buf);
+            return CORTEX_ECHUNK_INVALID_OFFSET;
+        }
+
+        /* Copy chunk data to result buffer */
+        memcpy(result_buf + offset, frame_buf + sizeof(cortex_wire_result_chunk_t), chunk_len);
+
+        /* Mark bytes as received in bitmap (prevents duplicate/missing chunk detection) */
+        for (uint32_t i = 0; i < chunk_len; i++) {
+            uint32_t byte_idx = offset + i;
+            uint32_t bit_idx = byte_idx / 8;
+            uint32_t bit_pos = byte_idx % 8;
+            received_bitmap[bit_idx] |= (1 << bit_pos);
+        }
+
+        /* Check for LAST flag */
+        if (flags & CORTEX_CHUNK_FLAG_LAST) {
+            got_last_chunk = 1;
+        }
+    }
+
+    /* Validate completeness - check bitmap for gaps */
+    for (uint32_t byte_idx = 0; byte_idx < total_bytes; byte_idx++) {
+        uint32_t bit_idx = byte_idx / 8;
+        uint32_t bit_pos = byte_idx % 8;
+        if (!(received_bitmap[bit_idx] & (1 << bit_pos))) {
+            /* Gap detected */
+            free(received_bitmap);
+            free(result_buf);
+            return CORTEX_ECHUNK_INCOMPLETE;
+        }
+    }
+
+    /* Convert result from little-endian to host format */
+    uint32_t num_samples = total_bytes / sizeof(float);
+    for (uint32_t i = 0; i < num_samples; i++) {
+        out_samples[i] = cortex_read_f32_le(result_buf + (i * sizeof(float)));
+    }
+
+    free(received_bitmap);
+    free(result_buf);
     return 0;
 }

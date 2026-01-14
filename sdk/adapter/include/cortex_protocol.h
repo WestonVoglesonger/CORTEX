@@ -164,9 +164,89 @@ int cortex_protocol_recv_window_chunked(
     uint32_t timeout_ms
 );
 
+/*
+ * cortex_protocol_send_result_chunked - Send result as multiple RESULT_CHUNK frames
+ *
+ * Identical pattern to send_window_chunked. Breaks large result into 8KB chunks.
+ * All chunks include metadata fields; receiver extracts from first chunk (offset==0).
+ *
+ * Args:
+ *   transport:              Transport to send on
+ *   session_id:             Session ID from CONFIG
+ *   sequence:               Window sequence number
+ *   tin:                    Input complete timestamp (ns)
+ *   tstart:                 Kernel start timestamp (ns)
+ *   tend:                   Kernel end timestamp (ns)
+ *   tfirst_tx:              First result byte tx timestamp (ns)
+ *   tlast_tx:               Last result byte tx timestamp (ns)
+ *   samples:                Float32 result buffer (host format)
+ *   output_length_samples:  Number of output samples per channel
+ *   output_channels:        Number of output channels
+ *
+ * Returns:
+ *    0: Success (all chunks sent)
+ *   <0: Error (transport send failure)
+ */
+int cortex_protocol_send_result_chunked(
+    cortex_transport_t *transport,
+    uint32_t session_id,
+    uint32_t sequence,
+    uint64_t tin,
+    uint64_t tstart,
+    uint64_t tend,
+    uint64_t tfirst_tx,
+    uint64_t tlast_tx,
+    const float *samples,
+    uint32_t output_length_samples,
+    uint32_t output_channels
+);
+
+/*
+ * cortex_protocol_recv_result_chunked - Receive result from multiple RESULT_CHUNK frames
+ *
+ * Identical pattern to recv_window_chunked. Reassembles chunks, extracts metadata.
+ * Metadata (session_id, timestamps, dimensions) extracted from first chunk.
+ *
+ * Args:
+ *   transport:          Transport to receive from
+ *   expected_sequence:  Expected window sequence number
+ *   out_samples:        Output buffer for float32 samples (host format)
+ *   samples_buf_size:   Size of out_samples buffer in bytes
+ *   timeout_ms:         Total timeout for receiving ALL chunks
+ *   out_session_id:     [OUT] Session ID from result
+ *   out_tin:            [OUT] Input complete timestamp
+ *   out_tstart:         [OUT] Kernel start timestamp
+ *   out_tend:           [OUT] Kernel end timestamp
+ *   out_tfirst_tx:      [OUT] First tx timestamp
+ *   out_tlast_tx:       [OUT] Last tx timestamp
+ *   out_length:         [OUT] Output length samples
+ *   out_channels:       [OUT] Output channels
+ *
+ * Returns:
+ *    0: Success (result complete and validated)
+ *   <0: Error (same error codes as recv_window_chunked)
+ */
+int cortex_protocol_recv_result_chunked(
+    cortex_transport_t *transport,
+    uint32_t expected_sequence,
+    float *out_samples,
+    size_t samples_buf_size,
+    uint32_t timeout_ms,
+    uint32_t *out_session_id,
+    uint64_t *out_tin,
+    uint64_t *out_tstart,
+    uint64_t *out_tend,
+    uint64_t *out_tfirst_tx,
+    uint64_t *out_tlast_tx,
+    uint32_t *out_length,
+    uint32_t *out_channels
+);
+
 /* Chunking error codes */
 #define CORTEX_ECHUNK_SEQUENCE_MISMATCH -2100  /* Chunk sequence != expected */
 #define CORTEX_ECHUNK_INCOMPLETE        -2101  /* Missing chunks (gaps) */
 #define CORTEX_ECHUNK_BUFFER_TOO_SMALL  -2102  /* Buffer too small for window */
+#define CORTEX_ECHUNK_INVALID_FRAME_TYPE -2103 /* Expected RESULT_CHUNK, got other type */
+#define CORTEX_ECHUNK_INVALID_OFFSET    -2104  /* Chunk offset+length > total_bytes */
 
 #endif /* CORTEX_PROTOCOL_H */

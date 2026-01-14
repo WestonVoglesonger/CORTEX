@@ -45,6 +45,9 @@ cd CORTEX
 # Install Python CLI and dependencies
 pip install -e .
 
+# Optional: Install oracle dependencies for kernel validation
+pip install -e ".[oracle]"  # scipy, scikit-learn for reference implementations
+
 # Build C engine, device adapters, and kernel plugins
 make all
 
@@ -76,6 +79,43 @@ cortex pipeline  # Full verification before trusting results
 ```
 
 **See [Quick Start Guide](docs/getting-started/quickstart.md) for detailed setup and configuration instructions.**
+
+### Calibrating Trainable Kernels
+
+For trainable kernels (ICA, CSP) that require offline calibration:
+
+```bash
+# 1. Generate synthetic calibration dataset (creates dataset primitive instance)
+cortex generate --signal pink_noise --channels 64 --duration 60 --output-dir calib_64ch
+
+# 2. Calibrate kernel (reads geometry from spec.yaml automatically)
+cortex calibrate --kernel csp \
+    --dataset calib_64ch \
+    --windows 200 \
+    --labels "100x0,100x1" \
+    --output csp_64ch.cortex_state
+
+# 3. Run benchmark with trained state
+cortex run --kernel csp --state csp_64ch.cortex_state
+```
+
+**Scalability Testing (64 → 2048 channels):**
+
+```bash
+# Generate and calibrate across channel counts
+for ch in 64 128 256 512 1024 2048; do
+  cortex generate --channels $ch --duration 60 --output-dir calib_${ch}ch
+  cortex calibrate --kernel csp \
+      --dataset calib_${ch}ch \
+      --labels "100x0,100x1" \
+      --output csp_${ch}ch.cortex_state
+done
+```
+
+**Labels Pattern Syntax** (for CSP):
+- `"100x0,100x1"` = 100 class-0 windows, then 100 class-1 windows
+- `"50x0,50x1,50x0,50x1"` = Alternating batches
+- Pattern must sum to `--windows` value
 
 ## Features
 
@@ -138,8 +178,11 @@ pip install -e .[dev]
 # Install with dataset conversion tools (pyedflib for EDF processing)
 pip install -e .[datasets]
 
+# Install with oracle dependencies (scipy, scikit-learn for kernel validation)
+pip install -e .[oracle]
+
 # Install with all optional dependencies
-pip install -e .[dev,datasets]
+pip install -e .[dev,datasets,oracle]
 ```
 
 ### Build Options

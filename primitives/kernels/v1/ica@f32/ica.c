@@ -32,8 +32,11 @@
 
 #define MAX_FASTICA_ITER 200
 #define FASTICA_TOL 1e-4f
-#define JACOBI_MAX_ITER 100
-#define JACOBI_TOL 1e-6f
+
+/* Improved Jacobi parameters (cyclic sweeps) */
+#define JACOBI_MAX_SWEEPS 50      /* Maximum full sweeps through all (p,q) pairs */
+#define JACOBI_TOL 1e-6           /* Convergence tolerance for Frobenius norm */
+#define JACOBI_ORTHO_FREQ 10      /* Apply Gram-Schmidt every N sweeps */
 
 /* Runtime state (post-calibration) */
 typedef struct {
@@ -97,17 +100,91 @@ static void compute_covariance(const float *X, int rows, int cols, float *C) {
     }
 }
 
-/* Jacobi eigendecomposition for symmetric matrix A[n×n]
- * Returns eigenvalues in D[n] and eigenvectors in V[n×n] (columns)
- * Platform-agnostic, numerically stable, no external deps */
+/* ============================================================================
+ * Improved Jacobi Eigendecomposition
+ *
+ * Implementation based on:
+ * - Cyclic Jacobi method (Golub & Van Loan Algorithm 8.4.3)
+ * - GSL's symschur2 for numerically stable Givens rotations
+ * - Double precision intermediate calculations
+ * - Gram-Schmidt orthogonalization for eigenvector correction
+ * ============================================================================ */
+
+/* Helper 1: Compute Frobenius norm of off-diagonal elements */
+static double off_diagonal_norm(const float *B, int n) {
+    double norm = 0.0;
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            double val = B[i * n + j];
+            norm += val * val;
+        }
+    }
+    return sqrt(norm);
+}
+
+/* Helper 2: GSL-style Givens rotation parameters (double precision for stability) */
+static void symschur2(double a_pp, double a_qq, double a_pq,
+                      double *c_out, double *s_out) {
+    if (fabs(a_pq) < 1e-15) {
+        *c_out = 1.0;
+        *s_out = 0.0;
+        return;
+    }
+
+    double tau = (a_qq - a_pp) / (2.0 * a_pq);
+    double t;
+
+    if (tau >= 0.0) {
+        t = 1.0 / (tau + hypot(1.0, tau));
+    } else {
+        t = -1.0 / (-tau + hypot(1.0, tau));
+    }
+
+    double c = 1.0 / sqrt(1.0 + t * t);
+    double s = t * c;
+
+    *c_out = c;
+    *s_out = s;
+}
+
+/* Helper 3: Modified Gram-Schmidt orthogonalization for eigenvector matrix V */
+static void gram_schmidt(float *V, int n) {
+    for (int j = 0; j < n; j++) {
+        for (int k = 0; k < j; k++) {
+            double dot = 0.0;
+            for (int i = 0; i < n; i++) {
+                dot += (double)V[i * n + j] * (double)V[i * n + k];
+            }
+            for (int i = 0; i < n; i++) {
+                V[i * n + j] -= (float)(dot * V[i * n + k]);
+            }
+        }
+
+        double norm = 0.0;
+        for (int i = 0; i < n; i++) {
+            double val = V[i * n + j];
+            norm += val * val;
+        }
+        norm = sqrt(norm);
+
+        if (norm > 1e-15) {
+            for (int i = 0; i < n; i++) {
+                V[i * n + j] /= (float)norm;
+            }
+        }
+    }
+}
+
+/* Improved Cyclic Jacobi eigendecomposition for symmetric matrix A[n×n]
+ * Returns eigenvalues in D[n] and eigenvectors in V[n×n] (columns) */
 static int jacobi_eigen(const float *A, int n, float *D, float *V) {
-    /* Check for overflow: n * n * sizeof(float) */
+    /* Check overflow */
     if (n > 0 && (size_t)n > SIZE_MAX / n / sizeof(float)) {
-        fprintf(stderr, "[ica] ERROR: Integer overflow in jacobi_eigen allocation (n=%d)\n", n);
+        fprintf(stderr, "[jacobi] ERROR: Overflow in jacobi_eigen (n=%d)\n", n);
         return -1;
     }
 
-    /* Copy A to working matrix (will be diagonalized in-place) */
+    /* Copy A to working matrix */
     float *B = malloc((size_t)n * n * sizeof(float));
     if (!B) return -1;
     memcpy(B, A, n * n * sizeof(float));
@@ -116,63 +193,84 @@ static int jacobi_eigen(const float *A, int n, float *D, float *V) {
     memset(V, 0, n * n * sizeof(float));
     for (int i = 0; i < n; i++) V[i * n + i] = 1.0f;
 
-    /* Jacobi iterations */
-    for (int iter = 0; iter < JACOBI_MAX_ITER; iter++) {
-        /* Find largest off-diagonal element */
-        float max_val = 0.0f;
-        int p = 0, q = 1;
-        for (int i = 0; i < n; i++) {
-            for (int j = i + 1; j < n; j++) {
-                float val = fabsf(B[i * n + j]);
-                if (val > max_val) {
-                    max_val = val;
-                    p = i;
-                    q = j;
+    fprintf(stderr, "[jacobi] Starting cyclic Jacobi: n=%d, max_sweeps=%d\n", n, JACOBI_MAX_SWEEPS);
+
+    int final_sweep = 0;
+    for (int sweep = 0; sweep < JACOBI_MAX_SWEEPS; sweep++) {
+        /* Cyclic Jacobi: Process all (p,q) pairs in predetermined order */
+        for (int p = 0; p < n - 1; p++) {
+            for (int q = p + 1; q < n; q++) {
+                /* Compute Givens rotation using symschur2 (double precision) */
+                double c, s;
+                symschur2((double)B[p * n + p], (double)B[q * n + q],
+                         (double)B[p * n + q], &c, &s);
+
+                /* Convert to float for matrix updates */
+                float cf = (float)c;
+                float sf = (float)s;
+
+                /* Apply rotation to B: B' = J^T * B * J */
+                for (int i = 0; i < n; i++) {
+                    float b_ip = B[i * n + p];
+                    float b_iq = B[i * n + q];
+                    B[i * n + p] = cf * b_ip - sf * b_iq;
+                    B[i * n + q] = sf * b_ip + cf * b_iq;
+                }
+
+                for (int i = 0; i < n; i++) {
+                    float b_pi = B[p * n + i];
+                    float b_qi = B[q * n + i];
+                    B[p * n + i] = cf * b_pi - sf * b_qi;
+                    B[q * n + i] = sf * b_pi + cf * b_qi;
+                }
+
+                /* Accumulate eigenvectors: V' = V * J */
+                for (int i = 0; i < n; i++) {
+                    float v_ip = V[i * n + p];
+                    float v_iq = V[i * n + q];
+                    V[i * n + p] = cf * v_ip - sf * v_iq;
+                    V[i * n + q] = sf * v_ip + cf * v_iq;
                 }
             }
         }
 
         /* Check convergence */
-        if (max_val < JACOBI_TOL) break;
-
-        /* Compute rotation angle */
-        float b_pp = B[p * n + p];
-        float b_qq = B[q * n + q];
-        float b_pq = B[p * n + q];
-
-        float theta = 0.5f * atan2f(2.0f * b_pq, b_qq - b_pp);
-        float c = cosf(theta);
-        float s = sinf(theta);
-
-        /* Apply Givens rotation to B and V */
-        for (int i = 0; i < n; i++) {
-            float b_ip = B[i * n + p];
-            float b_iq = B[i * n + q];
-            B[i * n + p] = c * b_ip - s * b_iq;
-            B[i * n + q] = s * b_ip + c * b_iq;
-
-            float b_pi = B[p * n + i];
-            float b_qi = B[q * n + i];
-            B[p * n + i] = c * b_pi - s * b_qi;
-            B[q * n + i] = s * b_pi + c * b_qi;
-
-            float v_ip = V[i * n + p];
-            float v_iq = V[i * n + q];
-            V[i * n + p] = c * v_ip - s * v_iq;
-            V[i * n + q] = s * v_ip + c * v_iq;
+        double off_norm = off_diagonal_norm(B, n);
+        if (off_norm < JACOBI_TOL) {
+            final_sweep = sweep;
+            fprintf(stderr, "[jacobi] Converged at sweep %d (off_norm=%.2e)\n", sweep, off_norm);
+            break;
         }
+        final_sweep = sweep;
 
-        /* Update diagonal elements */
-        B[p * n + p] = c * c * b_pp + s * s * b_qq - 2.0f * s * c * b_pq;
-        B[q * n + q] = s * s * b_pp + c * c * b_qq + 2.0f * s * c * b_pq;
-        B[p * n + q] = 0.0f;
-        B[q * n + p] = 0.0f;
+        /* Apply Gram-Schmidt periodically */
+        if ((sweep + 1) % JACOBI_ORTHO_FREQ == 0) {
+            gram_schmidt(V, n);
+        }
     }
 
-    /* Extract diagonal (eigenvalues) */
+    /* Final Gram-Schmidt pass */
+    gram_schmidt(V, n);
+
+    /* Extract eigenvalues */
     for (int i = 0; i < n; i++) {
         D[i] = B[i * n + i];
     }
+
+    /* Check for NaN/Inf */
+    int nan_count = 0;
+    for (int i = 0; i < n; i++) {
+        if (isnan(D[i]) || isinf(D[i])) nan_count++;
+    }
+    if (nan_count > 0) {
+        fprintf(stderr, "[jacobi] ERROR: %d/%d eigenvalues are NaN/Inf after %d sweeps\n",
+                nan_count, n, final_sweep);
+        free(B);
+        return -1;
+    }
+
+    fprintf(stderr, "[jacobi] Eigenvalue range: [%.6f, %.6f] (converged in %d sweeps)\n",
+            D[0], D[n-1], final_sweep);
 
     free(B);
     return 0;

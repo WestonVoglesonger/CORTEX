@@ -36,6 +36,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --channels N         Number of channels (default: 64)\n");
     fprintf(stderr, "  --window-length N    Window length in samples (default: 160)\n");
     fprintf(stderr, "  --sample-rate N      Sample rate in Hz (default: 160)\n");
+    fprintf(stderr, "  --labels LABELS      Labels for CSP (comma-separated: '0,0,1,1')\n");
     fprintf(stderr, "  --verbose            Show verbose output\n");
     fprintf(stderr, "  --help               Show this help\n");
 }
@@ -48,6 +49,7 @@ int main(int argc, char **argv) {
     uint32_t channels = DEFAULT_CHANNELS;
     uint32_t window_length = DEFAULT_WINDOW_LENGTH;
     uint32_t sample_rate = DEFAULT_SAMPLE_RATE;
+    const char *labels = NULL;
     int verbose = 0;
 
     /* Parse arguments */
@@ -59,13 +61,14 @@ int main(int argc, char **argv) {
         {"channels", required_argument, 0, 'c'},
         {"window-length", required_argument, 0, 'l'},
         {"sample-rate", required_argument, 0, 'r'},
+        {"labels", required_argument, 0, 'L'},
         {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "p:d:w:o:c:l:r:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "p:d:w:o:c:l:r:L:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'p': plugin_spec = optarg; break;
             case 'd': dataset_path = optarg; break;
@@ -74,6 +77,7 @@ int main(int argc, char **argv) {
             case 'c': channels = atoi(optarg); break;
             case 'l': window_length = atoi(optarg); break;
             case 'r': sample_rate = atoi(optarg); break;
+            case 'L': labels = optarg; break;
             case 'v': verbose = 1; break;
             case 'h':
                 print_usage(argv[0]);
@@ -177,6 +181,21 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "[calibrate] Loaded %u windows (%zu bytes)\n", num_windows, total_bytes);
 
+    /* Prepare kernel_params if labels provided */
+    char kernel_params_buf[4096] = {0};
+    const char *kernel_params_ptr = NULL;
+    uint32_t kernel_params_size = 0;
+
+    if (labels) {
+        snprintf(kernel_params_buf, sizeof(kernel_params_buf), "labels=%s", labels);
+        kernel_params_ptr = kernel_params_buf;
+        kernel_params_size = strlen(kernel_params_buf) + 1;
+
+        if (verbose) {
+            fprintf(stderr, "[calibrate] Kernel params: %s\n", kernel_params_buf);
+        }
+    }
+
     /* Prepare plugin config */
     cortex_plugin_config_t config = {0};
     config.abi_version = CORTEX_ABI_VERSION;
@@ -187,8 +206,8 @@ int main(int argc, char **argv) {
     config.channels = channels;
     config.dtype = CORTEX_DTYPE_FLOAT32;
     config.allow_in_place = 0;
-    config.kernel_params = NULL;
-    config.kernel_params_size = 0;
+    config.kernel_params = kernel_params_ptr;
+    config.kernel_params_size = kernel_params_size;
     config.calibration_state = NULL;
     config.calibration_state_size = 0;
 

@@ -24,18 +24,19 @@
 #define CORTEX_PROTOCOL_VERSION 1
 
 /* Frame size limits */
-#define CORTEX_MAX_SINGLE_FRAME (64 * 1024)   /* 64KB for CONFIG/RESULT */
-#define CORTEX_CHUNK_SIZE       (8 * 1024)    /* 8KB chunks for WINDOW */
-#define CORTEX_MAX_WINDOW_SIZE  (256 * 1024)  /* 256KB max window */
+/* REMOVED: No hardcoded limits - protocol supports unlimited data sizes (constrained only by available RAM)
+ * #define CORTEX_MAX_SINGLE_FRAME (2 * 1024 * 1024)
+ * #define CORTEX_MAX_WINDOW_SIZE  (2 * 1024 * 1024)
+ */
+#define CORTEX_CHUNK_SIZE       (8 * 1024)          /* 8KB chunks for WINDOW/RESULT (optimal size, not a limit) */
 
 /* Calibration state validation */
 #define CORTEX_MAX_PLUGIN_NAME   64  /* Increased to 64 for full spec_uri paths */
 #define CORTEX_MAX_PLUGIN_PARAMS 256
 #define CORTEX_MAX_ERROR_MESSAGE 256
 
-/* CONFIG calibration state limit */
-#define CORTEX_MAX_CALIBRATION_STATE \
-    (CORTEX_MAX_SINGLE_FRAME - sizeof(cortex_wire_config_t))
+/* CONFIG calibration state limit (generous limit for large models like 2048ch ICA) */
+#define CORTEX_MAX_CALIBRATION_STATE (16 * 1024 * 1024)  /* 16MB - supports very large trainable kernels */
 
 /* Timeouts (milliseconds) */
 #define CORTEX_HANDSHAKE_TIMEOUT_MS 5000
@@ -54,8 +55,9 @@ typedef enum {
     CORTEX_FRAME_CONFIG       = 0x02,  /* Harness → Adapter (kernel selection) */
     CORTEX_FRAME_ACK          = 0x03,  /* Adapter → Harness (ready) */
     CORTEX_FRAME_WINDOW_CHUNK = 0x04,  /* Harness → Adapter (input chunk) */
-    CORTEX_FRAME_RESULT       = 0x05,  /* Adapter → Harness (output + timing) */
+    CORTEX_FRAME_RESULT       = 0x05,  /* Adapter → Harness (output + timing) - DEPRECATED, use RESULT_CHUNK */
     CORTEX_FRAME_ERROR        = 0x06,  /* Either direction (error report) */
+    CORTEX_FRAME_RESULT_CHUNK = 0x07,  /* Adapter → Harness (output chunk with timing) */
 } cortex_frame_type_t;
 
 /*
@@ -177,6 +179,42 @@ typedef struct __attribute__((packed)) {
     uint32_t output_length_samples;
     uint32_t output_channels;
 } cortex_wire_result_t;
+
+/*
+ * RESULT_CHUNK Frame Payload (Adapter → Harness)
+ *
+ * Chunked result transmission for large outputs (mirrors WINDOW_CHUNK pattern).
+ * Combines RESULT metadata with WINDOW_CHUNK chunking fields.
+ *
+ * Followed by: chunk_length bytes of float32 data (little-endian)
+ *
+ * Metadata fields (session_id...output_channels) populated in all chunks:
+ *   - Receiver extracts from first chunk (offset==0)
+ *   - Redundant in subsequent chunks (simplifies parsing)
+ *
+ * Chunking fields (total_bytes...flags) control reassembly:
+ *   - total_bytes:   Total result size (output_length × output_channels × 4)
+ *   - offset_bytes:  Offset of this chunk in total
+ *   - chunk_length:  Bytes in this chunk's payload
+ *   - flags:         CORTEX_CHUNK_FLAG_LAST on final chunk
+ */
+typedef struct __attribute__((packed)) {
+    /* RESULT metadata (same as cortex_wire_result_t) */
+    uint32_t session_id;
+    uint32_t sequence;
+    uint64_t tin;
+    uint64_t tstart;
+    uint64_t tend;
+    uint64_t tfirst_tx;
+    uint64_t tlast_tx;
+    uint32_t output_length_samples;
+    uint32_t output_channels;
+    /* WINDOW_CHUNK pattern (chunking control) */
+    uint32_t total_bytes;
+    uint32_t offset_bytes;
+    uint32_t chunk_length;
+    uint32_t flags;
+} cortex_wire_result_chunk_t;
 
 /*
  * ERROR Frame Payload (Either direction)
