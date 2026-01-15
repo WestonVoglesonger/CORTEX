@@ -405,18 +405,20 @@ Round-trip latency (harness-side): tout_ns - tin_ns
 ## Supported Kernels
 
 **Phase 1 (Current):**
-- All 6 kernels from `primitives/kernels/v1/`:
+- All 8 kernels from `primitives/kernels/v1/`:
   - `car@f32` — Common Average Reference
   - `notch_iir@f32` — 60Hz line noise removal
   - `bandpass_fir@f32` — 8-30Hz passband filter
   - `goertzel@f32` — Alpha/beta bandpower
   - `welch_psd@f32` — Power spectral density
+  - `ica@f32` — Independent Component Analysis (trainable)
+  - `csp@f32` — Common Spatial Patterns (trainable)
   - `noop@f32` — Identity function (overhead baseline)
 
 **HELLO frame currently advertises only `noop@f32`** (line 227), but adapter supports all kernels via dynamic loading.
 
 **Future (Phase 1.1):**
-- Advertise all 6 kernels in HELLO frame
+- Advertise all 8 kernels in HELLO frame
 - Harness selects kernel from advertised list
 - Validation: Reject CONFIG if kernel not in HELLO list
 
@@ -634,7 +636,7 @@ Total:                          ~248µs
 ## Future Enhancements
 
 **Phase 1.1:**
-- Advertise all 6 kernels in HELLO (not just noop)
+- Advertise all 8 kernels in HELLO (not just noop)
 - Support calibration state in CONFIG (for ICA, CSP)
 - Improve tlast_tx accuracy (DMA interrupts or post-send timestamp)
 

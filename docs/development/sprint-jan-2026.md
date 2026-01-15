@@ -1032,7 +1032,7 @@ git push origin v0.5.0
 ## Success Criteria Summary
 
 ### Week 1 Exit Criteria
-- [ ] All 7 kernels run successfully on Jetson via auto-deploy
+- [ ] All 8 kernels run successfully on Jetson via auto-deploy
 - [ ] Synthetic datasets validated at 64, 256, 512, 1024, 2048 channels
 - [ ] ICA trainable kernel workflow works on remote hardware
 - [ ] TCP daemon mode tested with multiple kernels
@@ -1131,7 +1131,7 @@ ssh nvidia@jetson "uname -a"
 cortex run --device nvidia@jetson --kernel noop --duration 1 --repeats 1
 
 # Full kernel suite
-for kernel in noop car notch_iir bandpass_fir goertzel welch_psd ica; do
+for kernel in noop car notch_iir bandpass_fir goertzel welch_psd ica csp; do
   echo "Testing $kernel..."
   cortex run --device nvidia@jetson --kernel $kernel --duration 5 --repeats 3
 done

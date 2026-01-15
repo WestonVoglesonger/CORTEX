@@ -1,6 +1,6 @@
 # CORTEX
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![CI](https://github.com/WestonVoglesonger/CORTEX/actions/workflows/ci.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8+-blue)
@@ -8,7 +8,7 @@
 
 **CORTEX** — Common Off-implant Runtime Test Ecosystem for BCI kernels. A production-grade benchmarking framework for Brain-Computer Interface signal processing, built on **AWS-inspired primitives architecture** for maximum composability and reproducibility.
 
-CORTEX measures latency, jitter, throughput, memory usage, and energy consumption for BCI kernels under real-time deadlines, providing comprehensive telemetry for performance-critical neurotechnology research.
+CORTEX measures latency, jitter, throughput, and memory usage for BCI kernels under real-time deadlines, providing comprehensive telemetry for performance-critical neurotechnology research.
 
 ## Architecture Highlights
 
@@ -123,7 +123,7 @@ done
 - ✅ **Automated CLI Pipeline** - Build, validate, benchmark, and analyze with one command
 - ✅ **Device Adapter Architecture** - Unified execution via adapters (local/remote HIL testing)
 - ✅ **Plugin Architecture** - Dynamically loadable signal processing kernels (ABI v3)
-- ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP, LDA)
+- ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP)
 - ✅ **Runtime Parameters** - Type-safe configuration API for kernel customization
 - ✅ **Real-Time Scheduling** - Deadline enforcement with SCHED_FIFO/RR support (Linux)
 - ✅ **Comprehensive Telemetry** - Latency, jitter, throughput, memory, deadline tracking
@@ -146,6 +146,7 @@ done
 - Goertzel (Alpha/Beta bandpower) - Configurable frequency bands
 - Welch PSD (Power spectral density) - Configurable FFT/overlap
 - ICA (Independent Component Analysis) - Artifact removal (trainable, ABI v3)
+- CSP (Common Spatial Patterns) - Motor imagery classification (trainable, ABI v3)
 - No-op (Identity function) - Harness overhead baseline
 
 ## Installation
@@ -210,7 +211,7 @@ cortex --help
 cortex run primitives/configs/cortex.yaml
 
 # Run test suite
-make test
+make tests
 ```
 
 ## Validation & Measurement Methodology
@@ -264,7 +265,7 @@ CORTEX/
 │       └── tools/                 # Development tools (cortex_validate, cortex_calibrate)
 │
 ├── primitives/                    # Composable building blocks (AWS philosophy)
-│   ├── kernels/v1/                # Signal processing kernel implementations (7 kernels)
+│   ├── kernels/v1/                # Signal processing kernel implementations (8 kernels)
 │   │   ├── bandpass_fir@f32/      # FIR bandpass filter (8-30 Hz)
 │   │   ├── car@f32/               # Common Average Reference
 │   │   ├── goertzel@f32/          # Goertzel bandpower (alpha/beta)
@@ -388,7 +389,7 @@ cortex build
 cortex validate
 
 # Calibrate trainable kernels (ABI v3)
-cortex calibrate --kernel ica --data primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
+cortex calibrate --kernel ica --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
   --output ica_S001.cortex_state
 
 # Run benchmarks with custom config
@@ -452,7 +453,7 @@ If you use CORTEX in your research, please cite:
   author = {Voglesonger, Weston and Kumar, Avi},
   year = {2025},
   url = {https://github.com/WestonVoglesonger/CORTEX},
-  version = {0.3.0}
+  version = {0.2.0}
 }
 ```
 
@@ -474,7 +475,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 
 ## Project Status
 
-**Current Version**: 0.3.0 (Winter 2025)
+**Current Version**: 0.2.0 (Winter 2025)
 
 **Latest Release**: ABI v3 with trainable kernel support
 - Offline calibration workflow for ML-based algorithms
@@ -485,7 +486,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 **Roadmap**: See [docs/development/roadmap.md](docs/development/roadmap.md) for implementation timeline and future plans.
 
 **Future Work** (Spring 2026):
-- Additional trainable kernels (CSP, LDA)
+- Additional trainable kernels (LDA)
 - Quantization support (Q15/Q7 fixed-point kernels)
 - Energy measurement (RAPL on x86, INA226 on embedded)
 - Hardware-in-the-Loop testing on embedded targets (STM32H7, Jetson)

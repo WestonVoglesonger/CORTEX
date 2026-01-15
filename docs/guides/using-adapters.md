@@ -197,7 +197,7 @@ See each kernel's README for available parameters.
 
 ### Trainable Kernels (ABI v3)
 
-Trainable kernels (ICA, CSP, LDA) require calibration before execution:
+Trainable kernels (ICA, CSP) require calibration before execution:
 
 **Step 1: Calibrate kernel offline**
 ```bash
@@ -377,6 +377,8 @@ grep adapter_name results/run-*/kernel-data/*/telemetry.ndjson
 - bandpass_fir: ~2-5 ms
 - goertzel: ~100-500 µs
 - welch_psd: ~500-2000 µs
+- ica: ~50-150 µs (trainable)
+- csp: ~40-120 µs (trainable)
 
 **If latencies 100× higher:** Check CPU frequency scaling (see [Configuration Guide](../reference/configuration.md#background-load-profiles))
 

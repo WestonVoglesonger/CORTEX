@@ -26,8 +26,12 @@ primitives/
 │   ├── v1/            # Version 1 kernels (stable)
 │   │   ├── bandpass_fir@f32/
 │   │   ├── car@f32/
+│   │   ├── csp@f32/
 │   │   ├── goertzel@f32/
-│   │   └── notch_iir@f32/
+│   │   ├── ica@f32/
+│   │   ├── noop@f32/
+│   │   ├── notch_iir@f32/
+│   │   └── welch_psd@f32/
 │   └── v2/            # Version 2 kernels (future)
 │
 └── configs/           # Benchmark configuration templates
@@ -55,8 +59,12 @@ primitives/kernels/v1/{name}@{dtype}/
 **Available Kernels**:
 - **`bandpass_fir@f32`**: FIR bandpass filter (8-30 Hz, 129 taps)
 - **`car@f32`**: Common Average Reference (artifact rejection)
+- **`csp@f32`**: Common Spatial Patterns (motor imagery, trainable)
 - **`goertzel@f32`**: Goertzel algorithm (alpha/beta band power)
+- **`ica@f32`**: Independent Component Analysis (artifact removal, trainable)
+- **`noop@f32`**: No-op kernel (harness overhead baseline)
 - **`notch_iir@f32`**: IIR notch filter (60 Hz powerline removal)
+- **`welch_psd@f32`**: Welch power spectral density
 
 **Usage**:
 ```bash
@@ -155,7 +163,7 @@ cortex validate --kernel mykernel
 ```
 
 **Critical Requirements**:
-- ✅ Makefile include path: `-I../../../../src/engine/include`
+- ✅ Makefile include path: `-I../../../../sdk/kernel/include`
 - ✅ Implement all required ABI functions: `init`, `execute`, `destroy`
 - ✅ Match spec.yaml dimensions exactly (input_shape, output_shape)
 - ✅ Provide Python oracle for validation
@@ -249,7 +257,7 @@ primitives/profiles/
 
 **C Engine Integration**:
 - Harness dynamically loads kernel plugins from `primitives/kernels/v*/`
-- Plugin ABI defined in `src/engine/include/cortex_plugin.h`
+- Plugin ABI defined in `sdk/kernel/include/cortex_plugin.h`
 - Scheduler coordinates multi-kernel pipelines
 - Replayer streams data to kernel instances
 

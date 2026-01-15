@@ -7,7 +7,7 @@
 
 ## Overview
 
-ABI v3 adds support for **trainable kernels** that require offline batch training (calibration) before real-time inference. This enables adaptive signal processing algorithms like ICA, CSP, and LDA while maintaining zero-latency overhead during `cortex_process()`.
+ABI v3 adds support for **trainable kernels** that require offline batch training (calibration) before real-time inference. This enables adaptive signal processing algorithms like ICA and CSP while maintaining zero-latency overhead during `cortex_process()`.
 
 ### Key Changes
 
@@ -49,7 +49,7 @@ ABI v3 adds support for **trainable kernels** that require offline batch trainin
 
 ### Path 2: New Trainable Kernels
 
-**For algorithms requiring batch training** (ICA, CSP, LDA):
+**For algorithms requiring batch training** (ICA, CSP):
 
 1. **Implement `cortex_calibrate()`** (offline batch training)
 2. **Load state in `cortex_init()`** (deserialize model parameters)

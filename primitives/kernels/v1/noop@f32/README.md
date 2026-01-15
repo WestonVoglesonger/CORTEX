@@ -81,6 +81,9 @@ cortex run --kernel noop
 - car@f32: 8-50 µs (16× to 100× larger than no-op)
 - notch_iir@f32: 37-115 µs (74× to 230× larger)
 - goertzel@f32: 93-417 µs (186× to 834× larger)
+- welch_psd@f32: 200-600 µs (400× to 1200× larger)
+- ica@f32: 50-150 µs (100× to 300× larger)
+- csp@f32: 40-120 µs (80× to 240× larger)
 - bandpass_fir@f32: 1.5-5 ms (3000× to 10000× larger)
 
 ## Interpretation

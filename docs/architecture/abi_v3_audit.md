@@ -8,7 +8,7 @@
 ## Executive Summary
 
 **Total files requiring updates**: 35+ files identified
-**Scope**: Core ABI definition, all 6 kernels, harness, CLI, tests, documentation
+**Scope**: Core ABI definition, all 8 kernels, harness, CLI, tests, documentation
 
 ---
 

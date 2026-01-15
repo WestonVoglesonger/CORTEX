@@ -7,7 +7,7 @@ This document describes the **CORTEX kernel plugin interface** (ABI v3) and how 
 
 The goal is to standardize how kernels plug into the harness so that timing, memory, and energy can be measured fairly across implementations.
 
-**New in v3**: Calibration support for trainable kernels (ICA, CSP, LDA, SVM).
+**New in v3**: Calibration support for trainable kernels (ICA, CSP).
 
 ---
 
@@ -213,7 +213,7 @@ cortex_calibration_result_t cortex_calibrate(
 );
 ```
 
-**Purpose**: Offline batch training for trainable kernels (ICA, CSP, LDA, SVM).
+**Purpose**: Offline batch training for trainable kernels (ICA, CSP).
 
 **Parameters**:
 - `config`: Same as `cortex_init()` (channels, sample_rate, etc.)
@@ -427,7 +427,7 @@ void cortex_teardown(void *handle) {
 
 ### Overview
 
-Trainable kernels (ICA, CSP, LDA, SVM) require a **two-phase workflow**:
+Trainable kernels (ICA, CSP) require a **two-phase workflow**:
 
 1. **Calibration Phase** (offline, expensive): Learn parameters from batch data
 2. **Inference Phase** (online, cheap): Apply learned parameters per-window
@@ -479,7 +479,7 @@ Offset | Size | Field               | Value
 |-------------|----------------------|-------------------------------|----------|
 | Stateless | Not exported | No | CAR, bandpass_fir, noop |
 | Stateful (filters) | Not exported | No | notch_iir (filter history), Welch PSD (FFT config) |
-| Trainable | Exported | Yes | ICA, CSP, LDA, SVM |
+| Trainable | Exported | Yes | ICA, CSP |
 
 ---
 

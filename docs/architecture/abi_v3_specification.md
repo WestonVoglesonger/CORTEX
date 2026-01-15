@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-ABI v3 extends CORTEX's plugin interface to support **offline calibration** for trainable kernels (ICA, CSP, LDA, SVM). The design maintains backward compatibility with v2 kernels while enabling a two-phase workflow: batch calibration → per-window inference.
+ABI v3 extends CORTEX's plugin interface to support **offline calibration** for trainable kernels (ICA, CSP). The design maintains backward compatibility with v2 kernels while enabling a two-phase workflow: batch calibration → per-window inference.
 
 **Key Additions**:
 - Optional `cortex_calibrate()` function for batch training
@@ -176,7 +176,7 @@ return (cortex_init_result_t){
 /**
  * Result structure returned by cortex_calibrate().
  *
- * Contains trained state (e.g., ICA unmixing matrix, CSP filters, LDA weights).
+ * Contains trained state (e.g., ICA unmixing matrix, CSP filters).
  * Harness serializes this state to .cortex_state files for later use.
  */
 typedef struct {
@@ -224,7 +224,7 @@ cortex_init(config with calibration_state) → uses pre-trained state
  * Calibrate kernel on batch data (optional - trainable kernels only).
  *
  * The harness provides multiple windows of calibration data. The kernel
- * performs batch training (e.g., FastICA, CSP eigendecomposition, LDA fit)
+ * performs batch training (e.g., FastICA, CSP eigendecomposition)
  * and returns learned state.
  *
  * If kernel doesn't export this symbol, harness assumes:
@@ -359,7 +359,6 @@ struct cortex_state_header {
  * Examples:
  * - ICA: float32 unmixing matrix W (C × C elements)
  * - CSP: float32 spatial filters (K × C elements)
- * - LDA: float64 mean vectors + covariance matrix
  */
 ```
 

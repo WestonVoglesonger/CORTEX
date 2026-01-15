@@ -164,7 +164,7 @@ stress-ng --cpu 4 --cpu-load 50 &
 - macOS DVFS Validation: `experiments/dvfs-validation-2025-11-15/`
 - Harness Overhead Measurement: `experiments/noop-overhead-2025-12-05/`
   - Empirically validates that harness overhead (1 µs) is negligible compared to DVFS effects (3.21× on Linux)
-  - Provides measurement methodology validation for all CORTEX kernels
+  - Provides measurement methodology validation for all 8 CORTEX kernels
 - Technical Report: `technical-report/COMPREHENSIVE_VALIDATION_REPORT.md`
 - Architecture Decision Record: `docs/architecture/adr/adr-002-benchmark-reproducibility-macos.md`
 

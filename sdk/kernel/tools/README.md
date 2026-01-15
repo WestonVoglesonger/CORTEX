@@ -10,7 +10,7 @@ The CORTEX SDK provides two essential development tools:
 
 | Tool | Purpose | Use Case |
 |------|---------|----------|
-| **cortex_calibrate** | Offline kernel training | Train ICA, CSP, LDA kernels on batch data |
+| **cortex_calibrate** | Offline kernel training | Train ICA, CSP kernels on batch data |
 | **cortex_validate** | Oracle validation | Verify C kernels match Python/SciPy references |
 
 **Key Characteristics:**
@@ -26,7 +26,7 @@ The CORTEX SDK provides two essential development tools:
 
 ### Purpose
 
-Trains trainable kernels (ICA, CSP, LDA) on batch calibration data and serializes learned parameters to `.cortex_state` files for runtime loading.
+Trains trainable kernels (ICA, CSP) on batch calibration data and serializes learned parameters to `.cortex_state` files for runtime loading.
 
 **Workflow:**
 ```
@@ -207,7 +207,7 @@ Output:
 [validate] Testing welch_psd...      PASS (10 windows, max_error=8.9e-7)
 [validate] Testing noop...           PASS (10 windows, max_error=0.0e+0)
 
-Summary: 6/6 kernels passed
+Summary: 8/8 kernels passed
 ```
 
 **Validate specific kernel with verbose output:**

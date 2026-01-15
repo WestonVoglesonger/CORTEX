@@ -417,7 +417,7 @@ Typical timeout values:
 
 ### Protocol Version 1 (Current)
 
-**Release:** v0.4.0 (2025-12-29)
+**Release:** v0.2.0 (2025-12-27)
 **Status:** Stable
 
 **Features:**

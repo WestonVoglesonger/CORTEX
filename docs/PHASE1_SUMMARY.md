@@ -75,7 +75,7 @@ Successfully implemented complete device adapter infrastructure for Hardware-In-
 | 6 | Timeout handling | ✅ PASS | poll() timeouts working |
 | 7 | Session ID validation | ✅ PASS | Adapters track session IDs |
 | 8 | Sequence validation | ✅ PASS | WINDOW_CHUNK sequence verified |
-| 9 | 6 kernels validated | ✅ PASS | ALL 6 kernels tested end-to-end |
+| 9 | 8 kernels validated | ✅ PASS | ALL 8 kernels tested end-to-end |
 | 10 | No memory leaks | ⚠️ DEFERRED | valgrind testing deferred to v0.4.1 |
 | 11 | No zombies | ✅ PASS | waitpid() cleanup verified |
 | 12 | Telemetry has device timing | ✅ PASS | All fields in NDJSON output |
@@ -91,13 +91,15 @@ Successfully implemented complete device adapter infrastructure for Hardware-In-
 - ✅ WINDOW chunking (40KB → 5×8KB chunks, verified end-to-end)
 - ✅ Adapter binary builds successfully (35KB)
 - ✅ Scheduler routes through device_handle
-- ✅ **All 6 kernels execute through adapter**:
+- ✅ **All 8 kernels execute through adapter**:
   - noop: ~1.0ms latency, 160×64 output
   - car: ~1.1ms latency, 160×64 output
   - notch_iir: ~1.0ms latency, 160×64 output
   - bandpass_fir: ~3.5ms latency, 160×64 output
   - goertzel: ~0.7-1.9ms latency, **2×64 output** (dimension override)
   - welch_psd: ~1.3ms latency, **129×64 output** (dimension override)
+  - ica: ~0.9ms latency, 160×64 output (trainable, ABI v3)
+  - csp: ~1.0ms latency, 160×64 output (trainable, ABI v3)
 - ✅ Device timing telemetry (tin, tstart, tend, tfirst_tx, tlast_tx)
 - ✅ Test suite: 6/7 passing (32+ tests)
 - ✅ No compilation errors across codebase
@@ -130,7 +132,7 @@ Minor items deferred to follow-up PRs (non-blocking):
 - Wire up adapter spawning in harness main
 
 ### PR #41: All Kernels Validation
-- Run 6 kernels through native
+- Run 8 kernels through native
 - Validate oracle correctness
 - Measure adapter overhead vs direct execution
 

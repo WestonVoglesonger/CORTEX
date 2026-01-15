@@ -28,7 +28,6 @@ CORTEX/
 │   │   └── utils/     # Utility functions
 │   └── engine/        # C execution engine
 │       ├── harness/   # Benchmark harness implementation
-│       ├── include/   # C header files
 │       ├── replayer/  # Dataset replay engine
 │       └── scheduler/ # Window scheduler
 ├── tests/             # Test suites (unit and integration)
@@ -53,7 +52,10 @@ Understanding this structure is essential for contributing effectively.
 - `primitives/kernels/v1/` contains versioned kernel implementations:
   - `bandpass_fir@f32/` - FIR bandpass filter
   - `car@f32/` - Common Average Reference
+  - `csp@f32/` - Common Spatial Patterns (trainable)
   - `goertzel@f32/` - Goertzel algorithm for frequency detection
+  - `ica@f32/` - Independent Component Analysis (trainable)
+  - `noop@f32/` - No-op kernel (harness overhead baseline)
   - `notch_iir@f32/` - IIR notch filter
   - `welch_psd@f32/` - Welch power spectral density
 - `primitives/configs/cortex.yaml` configures which kernels to load
@@ -74,7 +76,6 @@ Understanding this structure is essential for contributing effectively.
   - `utils/` - Utility functions
 - `engine/` contains the C execution engine:
   - `harness/` - Main benchmark harness
-  - `include/` - C header files (plugin ABI, types)
   - `replayer/` - Dataset replay engine
   - `scheduler/` - Window scheduling logic
 
@@ -199,7 +200,7 @@ To add a new kernel implementation:
 3. **Makefile template**:
    ```makefile
    CC = cc
-   CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include
+   CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include
 
    UNAME_S := $(shell uname -s)
    ifeq ($(UNAME_S),Darwin)
@@ -223,7 +224,7 @@ To add a new kernel implementation:
    	rm -f $(PLUGIN_LIB) *.o
    ```
 
-   **Note**: The include path `-I../../../../src/engine/include` points to the C headers from the kernel directory.
+   **Note**: The include path `-I../../../../sdk/kernel/include` points to the C headers from the kernel directory.
 
 4. **Implementation requirements**:
    - Implement `cortex_init()`, `cortex_process()`, `cortex_teardown()`
@@ -277,7 +278,7 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 
 ### Before Submitting PRs
 
-- [ ] All C unit tests pass: `cd tests && make test`
+- [ ] All C unit tests pass: `cd tests && make tests`
 - [ ] All Python tests pass: `pytest tests/`
 - [ ] Kernel accuracy tests pass: `cortex validate`
 - [ ] Build succeeds on both macOS and Linux
@@ -297,7 +298,7 @@ See [docs/guides/adding-kernels.md](docs/guides/adding-kernels.md) for comprehen
 
 ```bash
 # Run all C unit tests
-cd tests && make test
+cd tests && make tests
 
 # Run all Python tests
 pytest tests/
@@ -382,7 +383,7 @@ make plugins
 make harness
 
 # Run C tests
-cd tests && make test
+cd tests && make tests
 
 # Run Python tests
 pytest tests/

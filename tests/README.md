@@ -137,7 +137,7 @@ C tests for adapter SDK (protocol, transport, device communication).
 - **test_adapter_smoke** - Basic adapter initialization
   - ⏸️ SKIP: Requires native adapter binary
 
-- **test_adapter_all_kernels** - All 6 kernels through adapter
+- **test_adapter_all_kernels** - All 8 kernels through adapter
   - ⏸️ SKIP: Requires native adapter binary
 
 - **test_socketpair_hello** - Minimal HELLO exchange

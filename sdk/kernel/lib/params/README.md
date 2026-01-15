@@ -50,7 +50,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 Update kernel Makefile:
 
 ```makefile
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../src/engine/include -I../../../../src/engine/params
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include -I../../../../src/engine/params
 PARAMS_LIB = ../../../../src/engine/params/libcortex_params.a
 
 $(PLUGIN_LIB): $(PLUGIN_OBJ) $(PARAMS_LIB)
@@ -260,7 +260,7 @@ For now, keep parameters flat and simple. Complex configurations can be handled 
 
 ## References
 
-- **ABI Specification**: `src/engine/include/cortex_plugin.h`
+- **ABI Specification**: `sdk/kernel/include/cortex_plugin.h`
 - **Unit Tests**: `tests/test_param_accessor.c`
 - **Example Usage**: `primitives/kernels/v1/notch_iir@f32/notch_iir.c`
 - **Config Format**: `docs/reference/configuration.md`

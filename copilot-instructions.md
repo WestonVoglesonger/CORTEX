@@ -148,7 +148,7 @@ These instructions guide Copilot's automated code reviews for the CORTEX real-ti
 3. **Test command**: Flag `make test` → Correct is `make tests` (plural)
 4. **Header location**: Flag `plugin_abi.h` → Correct is `cortex_plugin.h`
 5. **Directory naming**: Flag `run-configs/` → Correct is `primitives/configs/`
-6. **Kernel count**: Flag claims of "4 kernels" → Correct is 7 (car, notch_iir, bandpass_fir, goertzel, welch_psd, noop, ica)
+6. **Kernel count**: Flag claims of "4 kernels" → Correct is 8 (car, notch_iir, bandpass_fir, goertzel, welch_psd, ica, csp, noop)
 7. **Parallel execution**: Flag kernel parallelization → Must be sequential
 8. **Primitive modification**: Flag edits to `v1/` → Must create `v2/`
 9. **Benchmark-first**: Flag performance work without oracle validation

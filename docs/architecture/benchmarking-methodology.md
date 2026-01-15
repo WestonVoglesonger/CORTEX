@@ -31,8 +31,8 @@ A benchmarking harness running entirely on x86 development machines (macOS/Linux
 │                Deadlines)          │       │
 │                                    ↓       │
 │                         Kernel Plugin      │
-│                         (CAR, IIR, FIR,    │
-│                          Goertzel)         │
+│                         (8 kernels: CAR,   │
+│                          IIR, FIR, etc.)   │
 │                                    │       │
 │                         Telemetry ←┘       │
 │                         (CSV/NDJSON)       │

@@ -433,7 +433,7 @@ env CORTEX_DURATION_OVERRIDE=1 ./src/engine/harness/cortex run \
 
 **Pass criteria:**
 - ✅ No crashes or hangs
-- ✅ All 6 kernels execute successfully
+- ✅ All 8 kernels execute successfully
 - ✅ Telemetry output looks reasonable (latencies < 10ms for noop)
 - ✅ No valgrind errors (see [Testing section](#memory-leak-testing))
 
@@ -443,7 +443,7 @@ env CORTEX_DURATION_OVERRIDE=1 ./src/engine/harness/cortex run \
 
 ### Supporting Trainable Kernels
 
-Trainable kernels (ICA, CSP, LDA) require calibration state:
+Trainable kernels (ICA, CSP) require calibration state:
 
 ```c
 // In CONFIG handler:
