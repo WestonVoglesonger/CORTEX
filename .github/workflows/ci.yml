@@ -10,7 +10,8 @@ jobs:
   test:
     name: C Unit Tests
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30  # Prevent 6-hour hangs
+
     steps:
     - uses: actions/checkout@v3
     
@@ -35,6 +36,7 @@ jobs:
   python-tests:
     name: Python Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # Prevent hangs
 
     steps:
     - uses: actions/checkout@v3
