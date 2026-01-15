@@ -212,8 +212,8 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 ## ABI v3 (December 2025)
 
 ### Release Context
-- **CORTEX Version**: 0.3.0
-- **Strategic Goal**: Enable calibration-based kernels (ICA, CSP, LDA, SVM)
+- **CORTEX Version**: 0.2.0
+- **Strategic Goal**: Enable calibration-based kernels (ICA, CSP)
 - **Breaking Change**: Extended config struct, added calibration function
 
 ### Migration Summary
@@ -299,7 +299,7 @@ typedef enum {
 
 **Why Add Calibration?**
 
-1. **Industry Coverage**: 60% of production BCI algorithms require training (CSP, ICA, LDA)
+1. **Industry Coverage**: 60% of production BCI algorithms require training (CSP, ICA)
 2. **Research Differentiation**: Enables end-to-end pipeline benchmarking (calibration → inference)
 3. **Embedded Deployment**: Separates expensive calibration (host) from cheap inference (embedded)
 

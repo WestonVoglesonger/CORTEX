@@ -38,11 +38,15 @@ cortex list --verbose    # Detailed view
 Kernel               Version    DType      Status
 ----------------------------------------------------------------
 bandpass_fir         v1         f32        ✓ Built
-car                  v1         f32        [ ] No impl
+car                  v1         f32        ✓ Built
+csp                  v1         f32        ✓ Built (trainable)
 goertzel             v1         f32        ✓ Built
+ica                  v1         f32        ✓ Built (trainable)
+noop                 v1         f32        ✓ Built
 notch_iir            v1         f32        ✓ Built
+welch_psd            v1         f32        ✓ Built
 
-Summary: 3/4 implemented, 3/4 built
+Summary: 8/8 implemented, 8/8 built
 ```
 
 ---
@@ -78,7 +82,7 @@ cortex validate --kernel goertzel --verbose  # With verbose output
 - Compares C implementation against SciPy/MNE reference
 - Validates output within tolerance bounds (rtol=1e-5, atol=1e-6)
 
-**Note**: Testing all kernels at once is not yet implemented. Validate kernels individually.
+**Note**: Run without `--kernel` flag to validate all kernels at once.
 
 ---
 
@@ -271,6 +275,100 @@ cortex clean --results     # Clean only results directory
 
 ---
 
+### `cortex calibrate`
+Calibrate trainable kernels (ICA, CSP) using offline batch training.
+
+```bash
+cortex calibrate --kernel ica --dataset path/to/dataset.float32
+cortex calibrate --kernel csp --dataset path/to/dataset.float32 \
+    --window-length 160 --channels 64 --sample-rate 160
+```
+
+**What it does:**
+- Runs offline batch training on provided dataset
+- Generates calibration state file (`.cortex_state`)
+- Stores trained parameters (e.g., ICA unmixing matrix, CSP spatial filters)
+- Required before benchmarking trainable kernels
+
+**Trainable kernels:**
+- `ica` - Independent Component Analysis (blind source separation)
+- `csp` - Common Spatial Patterns (motor imagery classification)
+
+**Note**: Trainable kernels require calibration before running benchmarks.
+
+---
+
+### `cortex generate`
+Generate synthetic dataset primitives for testing and scalability validation.
+
+```bash
+# Generate pink noise dataset (realistic 1/f spectrum)
+cortex generate --signal pink_noise \
+    --channels 64 --duration 120 \
+    --output-dir primitives/datasets/v1/my_dataset
+
+# Generate sine wave dataset (known frequencies)
+cortex generate --signal sine_wave \
+    --channels 128 --duration 60 \
+    --frequency 10.0 --output-dir path/to/output
+```
+
+**Signal types:**
+- `pink_noise` - 1/f spectrum (realistic EEG-like noise)
+- `sine_wave` - Pure sinusoid (frequency validation)
+
+**Options:**
+- `--channels N` - Number of channels (required)
+- `--duration S` - Duration in seconds (required)
+- `--window-length W` - Window length in samples (default: 160)
+- `--sample-rate F` - Sample rate in Hz (default: 160.0)
+- `--seed N` - Random seed for reproducibility
+- `--frequency F` - Frequency for sine_wave signal (default: 10.0)
+
+**Use cases:**
+- High-channel scalability testing (512, 1024, 2048 channels)
+- Cross-platform validation with deterministic data
+- Algorithm testing without PhysioNet download
+
+---
+
+### `cortex check-system`
+Check system configuration for benchmark reproducibility.
+
+```bash
+cortex check-system              # Full system check
+cortex check-system --verbose    # Detailed diagnostics
+```
+
+**What it checks:**
+- **Platform detection**: OS, architecture, CPU model
+- **Build tools**: GCC/Clang version, make, Python
+- **CPU governor**: Linux DVFS settings (performance vs schedutil)
+- **Turbo Boost**: Status on macOS/Linux
+- **Real-time priority**: Capability for SCHED_FIFO
+- **Dataset availability**: PhysioNet data presence
+
+**Example output:**
+```
+System Configuration Check
+==================================================
+✓ Platform: macOS arm64 (Apple Silicon)
+✓ Compiler: Apple Clang 15.0.0
+✓ Python: 3.10.8
+⚠ CPU Governor: Not applicable (macOS)
+✓ Turbo Boost: Disabled (recommended)
+✓ Datasets: PhysioNet found (120 files)
+
+Summary: 5 passed, 1 warning, 0 failures
+```
+
+**Use cases:**
+- Pre-experiment validation
+- Cross-platform reproducibility debugging
+- CI/CD environment verification
+
+---
+
 ## Typical Workflows
 
 ### First-Time Setup
@@ -281,10 +379,9 @@ pip install -e .
 # 2. Build everything
 cortex build
 
-# 3. Validate kernels work
-cortex validate --kernel notch_iir
-cortex validate --kernel bandpass_fir
-cortex validate --kernel goertzel
+# 3. Validate kernels work (validate all or specific ones)
+cortex validate                          # All kernels
+cortex validate --kernel notch_iir       # Individual kernel
 
 # 4. Run quick test with one kernel
 cortex run --kernel goertzel --duration 10 --repeats 1

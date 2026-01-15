@@ -9,7 +9,7 @@ This document consolidates all planned features, deferred implementations, and f
 | Phase | Timeframe | Focus |
 |-------|-----------|-------|
 | **Spring 2026** | Embedded Device Phase | Energy monitoring, quantization, HIL infrastructure |
-| **Fall 2025 (Optional)** | Current Semester | Config wiring, SCHED_DEADLINE, load profiles |
+| **Completed (2025)** | Done | Config wiring, SCHED_DEADLINE, load profiles |
 | **Future/Unscheduled** | TBD | Testing improvements, analysis tools, code quality |
 
 ---
@@ -51,7 +51,7 @@ This document consolidates all planned features, deferred implementations, and f
 **Infrastructure Status:**
 - ✅ Plugin ABI supports multiple dtypes (`CORTEX_DTYPE_FLOAT32`, `Q15`, `Q7`)
 - ✅ Kernel specs include quantized tolerances (rtol=1e-3, atol=1e-3)
-- ❌ No Q15/Q7 kernel implementations exist yet (need 8 new plugins)
+- ❌ No Q15/Q7 kernel implementations exist yet (need 16 new plugins: 8 kernels × 2 formats)
 - ❌ Harness hardcodes `dtype=float32`
 - ❌ Replayer only reads float32 datasets
 
@@ -73,11 +73,15 @@ This document consolidates all planned features, deferred implementations, and f
    - Pass dtype-agnostic buffers to plugins
 
 4. **Kernel Implementations**
-   - Implement 4 kernels × 2 quantized formats = 8 new plugins:
+   - Implement 8 kernels × 2 quantized formats = 16 new plugins:
      - `primitives/kernels/v1/car@q15/`, `primitives/kernels/v1/car@q7/`
      - `primitives/kernels/v1/notch_iir@q15/`, `primitives/kernels/v1/notch_iir@q7/`
      - `primitives/kernels/v1/bandpass_fir@q15/`, `primitives/kernels/v1/bandpass_fir@q7/`
      - `primitives/kernels/v1/goertzel@q15/`, `primitives/kernels/v1/goertzel@q7/`
+     - `primitives/kernels/v1/welch_psd@q15/`, `primitives/kernels/v1/welch_psd@q7/`
+     - `primitives/kernels/v1/ica@q15/`, `primitives/kernels/v1/ica@q7/`
+     - `primitives/kernels/v1/csp@q15/`, `primitives/kernels/v1/csp@q7/`
+     - `primitives/kernels/v1/noop@q15/`, `primitives/kernels/v1/noop@q7/`
    - Implement fixed-point arithmetic: manual scaling, overflow protection, saturation
 
 5. **Validation**
@@ -211,13 +215,16 @@ See `src/engine/harness/config/config.c` TODOs for implementation locations.
 
 **Status:** Parsed but NOT wired up in harness
 
-**Current Limitation:**
-- `kernel_params` set to NULL in `src/engine/harness/app/main.c` lines 82-83
-- All v1 kernels use hardcoded parameters:
-  - `notch_iir`: f0=60 Hz, Q=30
-  - `bandpass_fir`: numtaps=129, passband=[8,30] Hz
-  - `goertzel`: alpha (8-13 Hz), beta (13-30 Hz)
+**Status: IMPLEMENTED (2025)**
+- ✅ Runtime parameter accessor API complete
+- ✅ Kernels support configurable parameters via `kernel_params`:
+  - `notch_iir`: f0_hz, Q (configurable)
+  - `bandpass_fir`: numtaps, low_hz, high_hz (configurable)
+  - `goertzel`: frequency bands (configurable)
+  - `welch_psd`: n_fft, n_overlap (configurable)
   - `car`: No parameters
+  - `ica`, `csp`: Trainable (state-based, no runtime params)
+  - `noop`: No parameters
 
 **Implementation Needed:**
 1. Update harness to serialize YAML `params` → `kernel_params` struct

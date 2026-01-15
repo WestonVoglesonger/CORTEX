@@ -73,7 +73,7 @@ This document tracks progress against the original Fall 2025 proposal and implem
 1. Dataset conversion: float32 → Q15/Q7 binary formats
 2. Replayer dtype handling: read Q15/Q7 from disk
 3. Scheduler buffer allocation: variable element size
-4. Kernel implementations: 4 kernels × 2 quantized formats = 8 new plugins
+4. Kernel implementations: 8 kernels × 2 quantized formats = 16 new plugins
 5. Fixed-point arithmetic: manual scaling, overflow protection, saturation
 6. Validation: test against float32 oracles with looser tolerances
 7. Analysis: compare latency/memory/energy across float32/Q15/Q7 on embedded targets

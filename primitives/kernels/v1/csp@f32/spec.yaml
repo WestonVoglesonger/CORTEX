@@ -1,0 +1,51 @@
+kernel:
+  name: "csp"
+  version: "v1"
+  dtype: "float32"
+  description: "Common Spatial Pattern for motor imagery classification (ABI v3 trainable)"
+  trainable: true  # Requires offline calibration
+
+abi:
+  version: 3  # Requires ABI v3
+  capabilities:
+    - offline_calibration  # Uses cortex_calibrate()
+  input_shape:
+    window_length: 160  # Can be overridden at runtime (CSP is purely spatial)
+    channels: 64        # CANNOT be overridden (baked into calibration state)
+  output_shape:
+    window_length: 160  # Matches input window_length (passthrough)
+    channels: 4         # n_components (set during calibration)
+  stateful: false  # Stateless at runtime (trained filters applied per-window)
+
+  # Runtime configuration flexibility
+  runtime_constraints:
+    channels: "fixed"          # Must match calibration state (enforced in cortex_init)
+    window_length: "flexible"  # Can vary (CSP applies same spatial filters per timestep)
+    sample_rate: "flexible"    # CSP is sample-rate agnostic (purely spatial)
+
+calibration:
+  min_windows: 200        # 100 per class minimum for stable covariance
+  recommended_windows: 500
+  max_duration_sec: 120   # 2 minutes typical
+
+algorithm:
+  family: "Common Spatial Pattern"
+  variant: "Two-class CSP with generalized eigenvalue decomposition"
+  selection: "top-N and bottom-N eigenvectors"
+  max_iterations: 50      # For eigenvalue solver
+
+numerical:
+  tolerance:
+    rtol: 1.0e-4  # Looser than ICA due to eigenvalue numerical variance
+    atol: 1.0e-4
+
+oracle:
+  calibrate_function: "calibrate_csp"
+  apply_function: "apply_csp"
+  path: "oracle.py"
+  dependencies: ["numpy", "scipy", "mne"]
+
+references:
+  - "Ramoser, H., et al. (2000). Optimal spatial filtering of single trial EEG during imagined hand movement. IEEE Trans Rehabil Eng."
+  - "Blankertz, B., et al. (2008). Optimizing spatial filters for robust EEG single-trial analysis. IEEE Signal Process Mag."
+  - "MNE-Python CSP: mne.decoding.CSP"

@@ -145,7 +145,17 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
         return -1;
     }
 
-    /* Run for the specified duration, or until shutdown signal received */
+    /* Wait for the first window to complete before starting the timer.
+     * This ensures initialization overhead (buffer allocation, file I/O, thread startup)
+     * doesn't count against the configured duration. Critical for large channel counts
+     * where initialization can take 1+ seconds. */
+    size_t initial_telemetry_count = ctx->telemetry.count;
+    while (ctx->telemetry.count == initial_telemetry_count && !cortex_should_shutdown()) {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000L };  /* 10ms sleep */
+        nanosleep(&ts, NULL);
+    }
+
+    /* Now start the duration timer */
     const uint64_t start = cortex_now_ns();
     const uint64_t end_target = start + (uint64_t)seconds * 1000000000ULL;
     while (cortex_now_ns() < end_target && !cortex_should_shutdown()) {

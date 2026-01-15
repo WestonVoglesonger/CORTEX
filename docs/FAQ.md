@@ -17,13 +17,15 @@ These parameters are configured in `primitives/configs/cortex.yaml` and can be c
 
 ### What is the Plugin ABI version?
 
-**Current ABI Version**: 2
+**Current ABI Version**: 3
 
-ABI v2 introduced breaking changes from v1:
-- `cortex_init()` now returns `cortex_init_result_t` (includes output dimensions)
-- Eliminates need for separate `cortex_get_info()` function
+ABI v3 introduced trainable kernel support:
+- New `cortex_calibrate()` function for offline batch training
+- Capability flags (`CORTEX_CAP_OFFLINE_CALIB`) for advertising kernel features
+- State file I/O for loading pre-trained model parameters
+- Backward compatible with v2 kernels
 
-See [docs/reference/plugin-interface.md](reference/plugin-interface.md) for complete ABI specification.
+See [docs/architecture/abi_v3_specification.md](architecture/abi_v3_specification.md) for complete ABI specification.
 
 ### What data types are supported?
 
@@ -36,12 +38,14 @@ See [docs/reference/plugin-interface.md](reference/plugin-interface.md) for comp
 
 ### What are the kernel-specific parameters?
 
-**Current Limitation**: All v1 kernels use hardcoded parameters (`kernel_params` not yet wired in harness):
+Runtime parameters are configurable via the `kernel_params` string in config YAML. Kernels use the parameter accessor API for type-safe extraction:
 
-- **notch_iir**: f0=60 Hz, Q=30
-- **bandpass_fir**: numtaps=129, passband=[8,30] Hz
-- **goertzel**: alpha (8-13 Hz), beta (13-30 Hz)
+- **notch_iir**: f0_hz (center frequency), Q (quality factor) - defaults: f0=60 Hz, Q=30
+- **bandpass_fir**: numtaps, low_hz, high_hz - defaults: numtaps=129, passband=[8,30] Hz
+- **goertzel**: alpha_low, alpha_high, beta_low, beta_high - defaults: alpha [8-13 Hz], beta [13-30 Hz]
+- **welch_psd**: n_fft, n_overlap - configurable FFT size and overlap
 - **car**: No parameters (uses all channels)
+- **ica**, **csp**: Trainable kernels requiring offline calibration (no runtime params)
 
 ### What output formats are supported?
 

@@ -70,7 +70,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
     - stdin/stdout transport via socketpair
     - Dynamic kernel loading (dlopen) inside adapter process
     - Full protocol implementation (handshake + window loop)
-    - Validated with all 6 kernels (noop, car, notch_iir, bandpass_fir, goertzel, welch_psd)
+    - Validated with all 8 kernels (noop, car, notch_iir, bandpass_fir, goertzel, welch_psd, ica, csp)
 
 - **SDK Adapter Library** (`sdk/adapter/`)
   - Protocol layer (`sdk/adapter/lib/protocol/`)
@@ -103,7 +103,7 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
 
 - **Calibration State Transfer** (Phase 4)
   - 16KB calibration state support via CONFIG frame
-  - Enables trainable kernels (ICA, CSP, LDA) to execute through adapters
+  - Enables trainable kernels (ICA, CSP) to execute through adapters
   - State transferred in single frame (no chunking needed for 16KB limit)
 
 - **Error Infrastructure** (Phases 1-2)
@@ -154,13 +154,15 @@ Major architectural refactor introducing the **Universal Adapter Model** - ALL k
 
 ### Testing
 
-- **End-to-End Validation**: All 6 kernels tested through native adapter
+- **End-to-End Validation**: All 8 kernels tested through native adapter
   - noop: ~1.0ms latency, 160×64 output
   - car: ~1.1ms latency, 160×64 output
   - notch_iir: ~1.0ms latency, 160×64 output
   - bandpass_fir: ~3.5ms latency, 160×64 output
   - goertzel: ~0.7-1.9ms latency, **2×64 output** (dimension override working)
   - welch_psd: ~1.3ms latency, **129×64 output** (dimension override working)
+  - ica: Trainable kernel with offline calibration
+  - csp: Trainable kernel with offline calibration
 - **Test Suite**: 6/7 test suites passing (32+ tests)
   - test_protocol, test_adapter_smoke, test_telemetry, test_replayer, test_signal_handler, test_param_accessor
   - test_scheduler temporarily disabled (needs refactoring for device API)
@@ -205,7 +207,7 @@ Major release introducing trainable kernel support (ABI v3) and standalone SDK f
     - `cortex_calibrate` - Offline batch training tool (SDK-based, harness-independent)
     - `cortex_validate` - Kernel accuracy testing tool (moved from test suite)
   - **Public API Headers** (`sdk/kernel/include/`):
-    - `cortex_plugin.h` - Plugin ABI v3 specification (moved from `src/engine/include/`)
+    - `cortex_plugin.h` - Plugin ABI v3 specification (moved from `sdk/kernel/include/`)
     - `cortex_loader.h` - Dynamic plugin loading utilities
     - `cortex_state_io.h` - Calibration state serialization API
     - `cortex_params.h` - Runtime parameter accessor API
@@ -261,7 +263,7 @@ Major release introducing trainable kernel support (ABI v3) and standalone SDK f
 ### Changed
 
 - **SDK Restructure** - Major refactoring to enable standalone kernel development
-  - **Header Location**: `src/engine/include/` → `sdk/kernel/include/`
+  - **Header Location**: `sdk/kernel/include/` → `sdk/kernel/include/`
     - All kernel Makefiles updated to include from SDK
     - Platform-independent: SDK headers have no harness dependencies
   - **Loader Extraction**: `src/engine/harness/loader/` → `sdk/kernel/lib/loader/`
@@ -428,7 +430,7 @@ Comprehensive security hardening across ABI v3 implementation (commits 8e12003, 
 
 **For Kernel Developers:**
 1. **Update includes** (all kernels):
-   - Old: `-I../../../../src/engine/include`
+   - Old: `-I../../../../sdk/kernel/include`
    - New: `-I../../../../sdk/kernel/include`
    - Example: See updated Makefiles in `primitives/kernels/v1/*/Makefile`
 
@@ -464,7 +466,7 @@ Comprehensive security hardening across ABI v3 implementation (commits 8e12003, 
 ### Future Work
 - ABI v4 (Q2 2026): Online adaptation during `cortex_process()`
 - ABI v5 (Q3 2026): Hybrid learning (offline calibration + online adaptation)
-- Additional trainable kernels: CSP (motor imagery), LDA (classification)
+- Additional trainable kernels: LDA (classification)
 
 ---
 
@@ -475,7 +477,7 @@ Comprehensive security hardening across ABI v3 implementation (commits 8e12003, 
   - Source code moved to unified `src/` directory
     - Python CLI: `cortex_cli/` → `src/cortex/`
     - C engine: `src/{harness,replayer,scheduler}/` → `src/engine/{harness,replayer,scheduler}/`
-    - Plugin ABI: `include/cortex_plugin/` → `src/engine/include/cortex_plugin/`
+    - Plugin ABI: `include/cortex_plugin/` → `sdk/kernel/include/cortex_plugin/`
   - Composable primitives layer created in `primitives/`
     - Kernels: `kernels/` → `primitives/kernels/`
     - Configs: `configs/` → `primitives/configs/`
@@ -542,7 +544,7 @@ Comprehensive security hardening across ABI v3 implementation (commits 8e12003, 
 **For Developers:**
 1. Kernel development paths updated:
    - New location: `primitives/kernels/v1/your_kernel@f32/`
-   - Include path: `-I../../../../src/engine/include`
+   - Include path: `-I../../../../sdk/kernel/include`
 
 2. Binary path updated:
    - `./src/harness/cortex` → `./src/engine/harness/cortex`

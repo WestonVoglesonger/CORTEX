@@ -8,7 +8,7 @@ Complete reference for all public SDK headers.
 |--------|---------|----------|----------|
 | [`cortex_plugin.h`](#cortex_pluginh) | Plugin ABI v3 specification | ✅ Yes | All kernels |
 | [`cortex_params.h`](#cortex_paramsh) | Runtime parameter parsing | Optional | Kernels with configurable parameters |
-| [`cortex_state_io.h`](#cortex_state_ioh) | Calibration state serialization | Optional | Trainable kernels (ICA, CSP, LDA) |
+| [`cortex_state_io.h`](#cortex_state_ioh) | Calibration state serialization | Optional | Trainable kernels (ICA, CSP) |
 | [`cortex_loader.h`](#cortex_loaderh) | Plugin loader utilities | No | Harness-only (not for kernels) |
 
 ## cortex_plugin.h
@@ -113,7 +113,7 @@ typedef enum {
 // v2 kernel (stateless/stateful, no calibration)
 result.capabilities = 0;
 
-// v3 trainable kernel (ICA, CSP, LDA)
+// v3 trainable kernel (ICA, CSP)
 result.capabilities = CORTEX_CAP_OFFLINE_CALIB;
 ```
 
@@ -398,7 +398,7 @@ See [`../lib/params/README.md`](../lib/params/README.md) for complete documentat
 
 ## cortex_state_io.h
 
-Binary state file serialization. Required for trainable kernels (ICA, CSP, LDA).
+Binary state file serialization. Required for trainable kernels (ICA, CSP).
 
 ### Functions
 

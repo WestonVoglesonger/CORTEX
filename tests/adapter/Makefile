@@ -55,6 +55,9 @@ build/test_protocol: unit/test_protocol.c $(PROTOCOL_SRC) ../../sdk/adapter/lib/
 build/test_protocol_loopback: unit/test_protocol_loopback.c $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
+build/test_result_chunking: unit/test_result_chunking.c $(PROTOCOL_SRC) ../../sdk/adapter/lib/transport/local/mock.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+
 build/test_adapter_smoke: integration/test_adapter_smoke.c $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 

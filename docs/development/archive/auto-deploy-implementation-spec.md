@@ -1728,7 +1728,7 @@ ssh nvidia@192.168.1.123 "ls ~/cortex-temp"
   ssh nvidia@192.168.1.123 "cd ~/cortex-temp && make clean && make all"
     Build harness: ✓
     Build adapters: ✓
-    Build kernels: ✓ (6 kernels)
+    Build kernels: ✓ (8 kernels)
     Time: ~60 seconds
 
   ssh nvidia@192.168.1.123 "nohup ~/cortex-temp/.../cortex_adapter_native tcp://:9000 &"
@@ -1740,7 +1740,7 @@ ssh nvidia@192.168.1.123 "ls ~/cortex-temp"
     Success after ~2 seconds
 
 [3. Run Pipeline]
-  For each kernel in [car, notch_iir, bandpass_fir, goertzel, welch_psd, noop]:
+  For each kernel in [car, notch_iir, bandpass_fir, goertzel, welch_psd, ica, csp, noop]:
     Execute benchmark via tcp://192.168.1.123:9000
     Results → results/run-*/kernel-data/<kernel>/
 
@@ -1757,7 +1757,7 @@ ssh nvidia@192.168.1.123 "ls ~/cortex-temp"
 [5. Complete]
   Total time: 5s + 60s + 2s + 30s + 1s = 98s
   Device state: Clean (no CORTEX files)
-  Results: results/run-2026-01-06-001/ (6 kernels)
+  Results: results/run-2026-01-06-001/ (8 kernels)
 ```
 
 ---

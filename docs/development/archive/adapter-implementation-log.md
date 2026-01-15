@@ -126,7 +126,7 @@ Day 2: Push commit "feat: Add native adapter binary [Step 4]"
        Push commit "feat: Add device_comm spawning layer [Step 5]"
 Day 3: Push commit "test: Add critical adapter tests [Step 6]"
        Push commit "feat: Integrate scheduler with device_comm [Step 7]"
-       Push commit "test: Validate all 6 kernels through adapter [Step 8]"
+       Push commit "test: Validate all 8 kernels through adapter [Step 8]"
        Push commit "docs: Update ADAPTER_IMPLEMENTATION.md - Phase 1 gates passed"
 Day 3: Convert draft to "Ready for Review"
 Day 4: Merge to main (after all 12 gating criteria pass)
@@ -467,7 +467,7 @@ Harness                          Adapter
 ## Phase 1: Loopback Foundation
 
 **Status**: ✅ COMPLETE (2025-12-29)
-**Result**: All 12 gating criteria passing, 6/6 kernels validated, all critical bugs fixed
+**Result**: All 12 gating criteria passing, 8/8 kernels validated, all critical bugs fixed
 **PR**: #39 merged to main
 **Final Commits**:
 - 46d34b2 "refactor: Improve device adapter robustness and error handling"
@@ -603,7 +603,7 @@ Harness                          Adapter
   - Adapter cleanup (no zombies)
 
 - ✅ **`tests/test_adapter_all_kernels.c`**
-  - All 6 kernels execute through adapter
+  - All 8 kernels execute through adapter
   - Sequential execution verification
   - Timing breakdown validation
 
@@ -659,8 +659,8 @@ Harness                          Adapter
     - Kernel receives correct data
     - Calibration state validation prevents overflow
 
-11. ✅ **All 6 kernels execute through loopback**
-    - car, notch_iir, bandpass_fir, goertzel, welch_psd, noop
+11. ✅ **All 8 kernels execute through loopback**
+    - car, notch_iir, bandpass_fir, goertzel, welch_psd, ica, csp, noop
     - Each produces correct output vs oracle
     - Telemetry captured for each
 
@@ -904,7 +904,7 @@ This work was front-loaded beyond Phase 2 scope - created a universal transport 
    - Network RTT: 1-10ms typical LAN
    - Telemetry captures network overhead
 
-6. ⬜ **All 6 kernels execute on Jetson**
+6. ⬜ **All 8 kernels execute on Jetson**
    - Same validation as Phase 1
    - Cross-platform kernel behavior verified
 
@@ -967,7 +967,7 @@ Front-loaded UART/serial transport implementation - works on POSIX systems, read
 - ⬜ **`primitives/adapters/v1/stm32-h7@uart/firmware/kernel_registry.c`**
   - Static array of kernel entries
   - Lookup by name
-  - Link all 6 kernels into firmware
+  - Link all 8 kernels into firmware
 
 - ⬜ **`primitives/adapters/v1/stm32-h7@uart/firmware/stm32h7xx_hal_conf.h`**
   - HAL configuration
@@ -1337,7 +1337,7 @@ cortex run --kernel noop --transport serial:///dev/ttyUSB0?baud=115200
 **Implementation Summary**:
 - All 8 implementation steps complete
 - All 12 gating criteria passing
-- All 6 kernels validated through adapter
+- All 8 kernels validated through adapter
 - 8 critical bugs identified and fixed during code review
 - +14,305 −249 lines across 65 files
 

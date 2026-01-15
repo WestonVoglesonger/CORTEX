@@ -42,6 +42,12 @@ datasets = [
     "pyedflib>=0.1.30",
 ]
 
+# Oracle validation (reference implementations for kernel correctness testing)
+oracle = [
+    "scipy>=1.7.0",      # CSP: eigendecomposition, signal processing
+    "scikit-learn>=1.0.0",  # ICA: FastICA implementation
+]
+
 # Development dependencies
 dev = [
     "pytest>=7.0.0",

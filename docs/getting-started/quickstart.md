@@ -34,7 +34,7 @@ pip install -e .
 
 ```bash
 # Clean build of harness, device adapters, plugins, and tests
-make clean && make
+make clean && make all
 ```
 
 **Expected output:**
@@ -42,9 +42,14 @@ make clean && make
 Building harness...
 Building device adapters...
 Building kernel plugins from registry...
+  Building v1/car@f32...
   Building v1/notch_iir@f32...
   Building v1/bandpass_fir@f32...
   Building v1/goertzel@f32...
+  Building v1/welch_psd@f32...
+  Building v1/ica@f32...
+  Building v1/csp@f32...
+  Building v1/noop@f32...
 Building and running tests...
 ```
 
@@ -87,13 +92,18 @@ open results/run-*/analysis/deadline_miss_rate.png
 xdg-open results/run-*/analysis/latency_comparison.png
 ```
 
-**Example output:**
+**Example output (showing 8 kernels):**
 ```
 Kernel          | Median Latency | p95 Latency | p99 Latency | Deadline Miss Rate
 ----------------|----------------|-------------|-------------|--------------------
+car             |   12.5 µs     |   18.3 µs   |   25.1 µs   | 0.00%
 notch_iir       |   18.2 µs     |   24.5 µs   |   32.1 µs   | 0.00%
 bandpass_fir    |   42.3 µs     |   58.7 µs   |   78.4 µs   | 0.00%
 goertzel        |   35.6 µs     |   48.2 µs   |   64.9 µs   | 0.00%
+welch_psd       |   28.4 µs     |   36.7 µs   |   48.2 µs   | 0.00%
+ica             |   22.1 µs     |   29.5 µs   |   38.7 µs   | 0.00%
+csp             |   19.8 µs     |   26.3 µs   |   34.9 µs   | 0.00%
+noop            |    1.0 µs     |    1.2 µs   |    1.5 µs   | 0.00%
 ```
 
 ## 5. Run Individual Commands
@@ -139,7 +149,9 @@ cortex run primitives/configs/my-custom-config.yaml
 
 ### Add Your Own Kernel
 
-See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-step guide.
+**New to kernel development?** Start with the [Building Your First Kernel Tutorial](first-kernel-tutorial.md) (1-2 hours) to learn the basics by implementing a simple moving average filter.
+
+**Ready for production kernels?** See the complete [Adding Kernels Guide](../guides/adding-kernels.md) for the full workflow including oracle validation and documentation.
 
 ## Verification Checklist
 

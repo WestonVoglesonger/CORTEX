@@ -8,11 +8,11 @@ A kernel in CORTEX is a signal processing algorithm (like filtering, feature ext
 
 **Kernel Types**:
 - **Stateless/Stateful Kernels** (ABI v2/v3): Fixed-parameter algorithms like filters, spatial processing, frequency analysis
-- **Trainable Kernels** (ABI v3 only): Algorithms requiring calibration phase like ICA, CSP, LDA
+- **Trainable Kernels** (ABI v3 only): Algorithms requiring calibration phase like ICA, CSP
 
 **Time estimate**:
 - 4-8 hours for simple stateless/stateful kernels (CAR, notch filter)
-- 12-20 hours for trainable kernels (ICA, CSP, LDA)
+- 12-20 hours for trainable kernels (ICA, CSP)
 
 ## Prerequisites
 
@@ -468,7 +468,7 @@ PHASE 2: Inference (online, per-window)
 ### Additional Prerequisites
 
 - Calibration dataset with sufficient windows (typically 100-1000 depending on algorithm)
-- Understanding of batch training algorithm (FastICA, CSP, LDA, etc.)
+- Understanding of batch training algorithm (FastICA, CSP, etc.)
 - NumPy/SciPy libraries for oracle calibration reference
 
 ### Step 1: Design State Format

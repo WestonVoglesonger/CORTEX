@@ -63,7 +63,7 @@ Running the no-op under different load profiles reveals what is **harness overhe
 **Empirical measurement**: **1 µs minimum** (timing + dispatch + memcpy)
 **Signal range**: 8 µs - 5 ms (car → bandpass_fir)
 
-**Overhead as % of signal** (using 1 µs harness overhead):
+**Overhead as % of signal** (using 1 µs harness overhead, representative kernels):
 
 | Kernel | Latency Range | Overhead % | Status |
 |--------|---------------|------------|--------|

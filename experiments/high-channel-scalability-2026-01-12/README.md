@@ -151,7 +151,7 @@ For production benchmarking, use 120s (19,200 samples) as specified in `examples
 
 ### Why `noop` Kernel?
 
-This experiment tests **dataset generation scalability**, not kernel performance. The `noop` kernel has minimal overhead (<2µs) and validates that:
+This experiment tests **dataset generation scalability**, not kernel performance. The `noop` kernel has minimal overhead (1 µs) and validates that:
 1. Generated datasets load correctly into the harness
 2. Chunked files can be memory-mapped and streamed to kernels
 3. No corruption or truncation occurred during generation

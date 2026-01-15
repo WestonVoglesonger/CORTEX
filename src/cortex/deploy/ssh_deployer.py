@@ -66,7 +66,7 @@ class SSHDeployer:
         self.host = host
         self.ssh_port = ssh_port
         self.adapter_port = adapter_port
-        self.remote_dir = "~/cortex-temp"
+        self.remote_dir = "$HOME/cortex-temp"  # Use $HOME instead of ~ for shell expansion in quoted contexts
         self.adapter_pid: Optional[int] = None
 
     def _ssh_cmd(self, command: str) -> list[str]:
@@ -219,7 +219,8 @@ class SSHDeployer:
         if verbose:
             print(f"[3/5] Building on device...")
 
-        build_cmd = f"cd {shlex.quote(self.remote_dir)} && make clean && make build-only"
+        # Don't quote remote_dir - it needs shell expansion and is not user input
+        build_cmd = f"cd {self.remote_dir} && make clean && make build-only"
         try:
             result = self._run_ssh(build_cmd, capture_output=True)  # Always capture for log fetch
             self._build_output = result.stdout  # Store for fetch_logs()
@@ -248,7 +249,8 @@ class SSHDeployer:
             if python_check.returncode == 0:
                 # Python available, run validation
                 # Use PYTHONPATH to make cortex module importable from rsync'd source
-                validate_cmd = f"cd {shlex.quote(self.remote_dir)} && PYTHONPATH={shlex.quote(self.remote_dir)}/src python3 -m cortex.commands.validate"
+                # Don't quote remote_dir - it needs shell expansion and is not user input
+                validate_cmd = f"cd {self.remote_dir} && PYTHONPATH={self.remote_dir}/src python3 -m cortex.commands.validate"
                 try:
                     result = self._run_ssh(validate_cmd, capture_output=True)  # Always capture for log fetch
                     self._validation_output = result.stdout  # Store for fetch_logs()
@@ -276,8 +278,9 @@ class SSHDeployer:
 
         # Start adapter in background with all I/O streams redirected to prevent SSH hanging
         # Critical: Redirect stdin (<), stdout (>), and stderr (2>&1) to close SSH streams
+        # Don't quote remote_dir - it needs shell expansion and is not user input
         start_cmd = (
-            f"cd {shlex.quote(self.remote_dir)} && "
+            f"cd {self.remote_dir} && "
             f"nohup ./primitives/adapters/v1/native/cortex_adapter_native tcp://:{shlex.quote(str(self.adapter_port))} "
             f"</dev/null >/tmp/cortex-adapter.log 2>&1 & "
             f"echo $! | tee /tmp/cortex-adapter.pid"
@@ -587,7 +590,8 @@ Note: Logs >10MB are truncated to prevent disk space issues.
 
         # Step 6: Cleanup files (only after killing processes)
         try:
-            self._run_ssh(f"rm -rf {shlex.quote(self.remote_dir)} /tmp/cortex-adapter.*", check=False)
+            # Don't quote remote_dir - it needs shell expansion and is not user input
+            self._run_ssh(f"rm -rf {self.remote_dir} /tmp/cortex-adapter.*", check=False)
         except Exception as e:
             errors.append(f"Failed to cleanup files: {e}")
 

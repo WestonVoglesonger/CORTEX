@@ -373,12 +373,13 @@ YAML → config parser → numerical parameters → cortex_plugin_config_t
 
 **Important**: Plugins receive **only numeric runtime parameters**, not raw YAML:
 - Window length, hop, channels, sample rate
-- Optional: `kernel_params` pointer (not yet wired up in harness)
+- Optional: `kernel_params` string parsed via parameter accessor API
 
-**Note**: Current limitation - all kernel parameters are hardcoded:
-- `notch_iir`: f0=60 Hz, Q=30
-- `bandpass_fir`: numtaps=129, passband=[8,30] Hz
-- `goertzel`: alpha (8-13 Hz), beta (13-30 Hz)
+**Configurable Parameters**:
+- `notch_iir`: f0_hz (center frequency), Q (quality factor)
+- `bandpass_fir`: numtaps, low_hz, high_hz
+- `goertzel`: alpha_low, alpha_high, beta_low, beta_high
+- `welch_psd`: n_fft, n_overlap
 
 ## File Organization
 
@@ -386,20 +387,24 @@ YAML → config parser → numerical parameters → cortex_plugin_config_t
 CORTEX/
 ├── src/               # All source code
 │   ├── cortex/        # Python CLI and analysis tools
-│   └── engine/        # C engine (harness, replayer, scheduler, include)
+│   └── engine/        # C engine (harness, replayer, scheduler)
 │       ├── harness/   # Main orchestration
 │       ├── replayer/  # Dataset streaming
-│       ├── scheduler/ # Windowing & deadlines
-│       └── include/   # Public ABI headers
-│           └── cortex_plugin/
-│               └── cortex_plugin.h
+│       └── scheduler/ # Windowing & deadlines
+├── sdk/               # Kernel development kit
+│   └── kernel/
+│       └── include/   # Public ABI headers (cortex_plugin.h)
 ├── primitives/        # Composable building blocks
 │   ├── kernels/       # Kernel implementations
 │   │   └── v1/        # Initial float32 implementations
 │   │       ├── car@f32/
+│   │       ├── csp@f32/
 │   │       ├── notch_iir@f32/
 │   │       ├── bandpass_fir@f32/
-│   │       └── goertzel@f32/
+│   │       ├── goertzel@f32/
+│   │       ├── ica@f32/
+│   │       ├── noop@f32/
+│   │       └── welch_psd@f32/
 │   └── configs/       # YAML configuration templates
 ├── datasets/          # Input datasets
 │   └── tools/         # Dataset conversion utilities

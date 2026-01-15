@@ -64,7 +64,13 @@ int cortex_adapter_recv_config(
     uint32_t *out_calibration_state_size
 )
 {
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
+    /* Allocate buffer for CONFIG frame (header + calibration state up to 16MB) */
+    size_t frame_buf_size = sizeof(cortex_wire_config_t) + CORTEX_MAX_CALIBRATION_STATE;
+    uint8_t *frame_buf = (uint8_t *)malloc(frame_buf_size);
+    if (!frame_buf) {
+        return -1;  /* Out of memory */
+    }
+
     cortex_frame_type_t frame_type;
     size_t payload_len;
 
@@ -72,20 +78,23 @@ int cortex_adapter_recv_config(
         transport,
         &frame_type,
         frame_buf,
-        sizeof(frame_buf),
+        frame_buf_size,
         &payload_len,
         CORTEX_HANDSHAKE_TIMEOUT_MS
     );
 
     if (ret < 0) {
+        free(frame_buf);
         return ret;
     }
 
     if (frame_type != CORTEX_FRAME_CONFIG) {
+        free(frame_buf);
         return CORTEX_EPROTO_INVALID_FRAME;
     }
 
     if (payload_len < sizeof(cortex_wire_config_t)) {
+        free(frame_buf);
         return CORTEX_EPROTO_INVALID_FRAME;
     }
 
@@ -112,12 +121,14 @@ int cortex_adapter_recv_config(
         if (calib_size > CORTEX_MAX_CALIBRATION_STATE) {
             fprintf(stderr, "[adapter_recv_config] Calibration state too large: %u bytes (max %lu)\n",
                     calib_size, (unsigned long)CORTEX_MAX_CALIBRATION_STATE);
+            free(frame_buf);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
         /* Verify payload contains the calibration state */
         if (payload_len < sizeof(cortex_wire_config_t) + calib_size) {
             fprintf(stderr, "[adapter_recv_config] Payload too small for calibration state\n");
+            free(frame_buf);
             return CORTEX_EPROTO_INVALID_FRAME;
         }
 
@@ -125,6 +136,7 @@ int cortex_adapter_recv_config(
         void *calib_buffer = malloc(calib_size);
         if (!calib_buffer) {
             fprintf(stderr, "[adapter_recv_config] Failed to allocate calibration state buffer\n");
+            free(frame_buf);
             return -1;
         }
 
@@ -135,6 +147,7 @@ int cortex_adapter_recv_config(
         *out_calibration_state = NULL;
     }
 
+    free(frame_buf);
     return 0;
 }
 
@@ -164,35 +177,20 @@ int cortex_adapter_send_result(
     uint32_t output_channels
 )
 {
-    size_t output_bytes = output_length * output_channels * sizeof(float);
-    size_t payload_len = sizeof(cortex_wire_result_t) + output_bytes;
-
-    uint8_t *payload = (uint8_t *)malloc(payload_len);
-    if (!payload) {
-        return -1;
-    }
-
-    /* Build RESULT header (little-endian) */
-    cortex_write_u32_le(payload + 0, session_id);
-    cortex_write_u32_le(payload + 4, sequence);
-    cortex_write_u64_le(payload + 8, tin);
-    cortex_write_u64_le(payload + 16, tstart);
-    cortex_write_u64_le(payload + 24, tend);
-    cortex_write_u64_le(payload + 32, tfirst_tx);
-    cortex_write_u64_le(payload + 40, tlast_tx);
-    cortex_write_u32_le(payload + 48, output_length);
-    cortex_write_u32_le(payload + 52, output_channels);
-
-    /* Convert output samples to little-endian */
-    uint8_t *sample_buf = payload + sizeof(cortex_wire_result_t);
-    for (size_t i = 0; i < output_length * output_channels; i++) {
-        cortex_write_f32_le(sample_buf + (i * sizeof(float)), output_samples[i]);
-    }
-
-    int ret = cortex_protocol_send_frame(transport, CORTEX_FRAME_RESULT, payload, payload_len);
-
-    free(payload);
-    return ret;
+    /* Use chunked protocol for all results (no size limits) */
+    return cortex_protocol_send_result_chunked(
+        transport,
+        session_id,
+        sequence,
+        tin,
+        tstart,
+        tend,
+        tfirst_tx,
+        tlast_tx,
+        output_samples,
+        output_length,
+        output_channels
+    );
 }
 
 int cortex_adapter_send_error(

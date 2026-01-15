@@ -136,7 +136,7 @@ Kernel Plugin (.so, aarch64)
 ### Gating Criteria (Phase 2)
 
 1. TCP connection stable (no drops over 1000 windows)
-2. All 6 kernels execute correctly on Jetson
+2. All 8 kernels execute correctly on Jetson
 3. Telemetry shows realistic network latency
 4. No memory leaks (valgrind validation)
 5. Daemon runs stable for extended periods
@@ -170,7 +170,7 @@ Kernel Code (compiled into firmware)
 
 ### Planned Features
 
-- **Static kernel table:** All 6 kernels linked into firmware (no dynamic loading)
+- **Static kernel table:** All 8 kernels linked into firmware (no dynamic loading)
 - **DWT timestamps:** Sub-microsecond resolution using Data Watchpoint and Trace unit
 - **Hardware FPU:** M7 has IEEE-754 float32 FPU
 - **Interrupt-driven:** UART RX/TX via DMA interrupts
@@ -450,7 +450,7 @@ plugins:
 
 ### Can adapters support multiple kernels?
 
-**Yes.** HELLO frame advertises multiple kernels, CONFIG selects one. Phase 1 `native` advertises only `noop@f32`, but Phase 1.1 will advertise all 6 kernels.
+**Yes.** HELLO frame advertises multiple kernels, CONFIG selects one. Phase 1 `native` advertises only `noop@f32`, but Phase 1.1 will advertise all 8 kernels.
 
 ### What if my platform doesn't fit these categories?
 

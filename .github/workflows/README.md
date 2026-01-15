@@ -23,7 +23,7 @@ Runs on every push and pull request to `main` and `develop` branches.
 
 ```bash
 cd tests/
-make test           # Run all C tests (13 tests)
+make tests          # Run all C tests (13 tests)
 make test-replayer  # Replayer only (5 tests)
 make test-scheduler # Scheduler only (8 tests)
 make clean          # Clean up binaries
@@ -53,7 +53,7 @@ make clean          # Clean up binaries
 
 ### Tests Failing on CI
 1. **Build failures**: Check gcc/make installation
-2. **Test failures**: Run locally to reproduce: `cd tests && make test`
+2. **Test failures**: Run locally to reproduce: `cd tests && make tests`
 3. **Header issues**: Verify `#include` paths are correct
 
 ### Platform-Specific Notes

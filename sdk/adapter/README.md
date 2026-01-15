@@ -251,7 +251,7 @@ int cortex_adapter_recv_config(
 );
 ```
 
-Receives CONFIG frame and extracts parameters. For trainable kernels (ICA, CSP, LDA), calibration state is provided.
+Receives CONFIG frame and extracts parameters. For trainable kernels (ICA, CSP), calibration state is provided.
 
 #### cortex_adapter_send_ack_with_dims()
 ```c
@@ -421,7 +421,7 @@ Platform-specific - see `load_kernel_plugin()` in native adapter for dlopen() ex
 
 - **Wire Protocol Spec**: `ADAPTER_IMPLEMENTATION.md` (detailed protocol description)
 - **Reference Adapter**: `primitives/adapters/v1/native/adapter.c`
-- **Kernel ABI**: `src/engine/include/cortex_plugin.h`
+- **Kernel ABI**: `sdk/kernel/include/cortex_plugin.h`
 - **Test Examples**: `tests/test_adapter_smoke.c`, `tests/test_adapter_all_kernels.c`
 
 ---

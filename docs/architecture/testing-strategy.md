@@ -484,6 +484,10 @@ Each kernel has a Python reference implementation (`oracle.py`) used for validat
 - `notch_iir@f32/oracle.py` - Notch IIR filter (SciPy)
 - `bandpass_fir@f32/oracle.py` - FIR bandpass (SciPy)
 - `goertzel@f32/oracle.py` - Goertzel bandpower
+- `welch_psd@f32/oracle.py` - Welch PSD (SciPy)
+- `ica@f32/oracle.py` - Independent Component Analysis (trainable)
+- `csp@f32/oracle.py` - Common Spatial Patterns (trainable)
+- `noop@f32/oracle.py` - No-op baseline
 
 **CLI Interface:**
 ```bash
@@ -512,9 +516,9 @@ Pre-built binaries appear in `tests/` directory and are required before running 
 
 ### Quick Test
 ```bash
-make -C tests test  # Run from project root
+make -C tests tests  # Run from project root
 # OR
-cd tests && make test  # Run from tests/ directory
+cd tests && make tests  # Run from tests/ directory
 ```
 Runs core unit tests (replayer, scheduler, kernel registry).
 
@@ -588,7 +592,7 @@ TEST_ASSERT_NEAR(160.0, measured_rate, 0.1, "Sample rate incorrect");
 
 Before submitting a pull request:
 
-- [ ] All unit tests pass: `make test`
+- [ ] All unit tests pass: `make tests`
 - [ ] Kernel validation passes: `cortex validate --kernel {name}` (if applicable)
 - [ ] Build succeeds on macOS and Linux
 - [ ] No compiler warnings with `-Wall -Wextra`
@@ -700,7 +704,7 @@ The following testing capabilities are planned but not yet implemented:
 **Planned approach:**
 - GitHub Actions on push/PR
 - Matrix build: macOS (arm64 + x86_64) × Linux (Ubuntu)
-- Run `make test` and `cortex validate` for all kernels
+- Run `make tests` and `cortex validate` for all kernels
 - Fail on compiler warnings
 - Upload test logs as artifacts
 

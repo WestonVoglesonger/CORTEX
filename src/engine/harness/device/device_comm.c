@@ -174,7 +174,7 @@ static int recv_hello(
     char *out_device_os
 )
 {
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
+    uint8_t frame_buf[4096];  /* HELLO frame is small (<1KB) */
     cortex_frame_type_t frame_type;
     size_t payload_len;
 
@@ -296,7 +296,7 @@ static int recv_ack(cortex_transport_t *transport,
                     uint32_t *out_output_window_length,
                     uint32_t *out_output_channels)
 {
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
+    uint8_t frame_buf[4096];  /* ACK frame is small (<100 bytes) */
     cortex_frame_type_t frame_type;
     size_t payload_len;
 
@@ -551,81 +551,34 @@ int device_comm_execute_window(
         return ret;
     }
 
-    /* Receive RESULT */
-    uint8_t frame_buf[CORTEX_MAX_SINGLE_FRAME];
-    cortex_frame_type_t frame_type;
-    size_t payload_len;
+    /* Receive RESULT (chunked protocol) */
+    uint32_t result_session_id;
+    uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
+    uint32_t output_length, output_channels;
 
-    ret = cortex_protocol_recv_frame(
+    ret = cortex_protocol_recv_result_chunked(
         handle->transport,
-        &frame_type,
-        frame_buf,
-        sizeof(frame_buf),
-        &payload_len,
-        CORTEX_WINDOW_TIMEOUT_MS
+        sequence,
+        output_samples,
+        output_buf_size,
+        CORTEX_WINDOW_TIMEOUT_MS,
+        &result_session_id,
+        &tin,
+        &tstart,
+        &tend,
+        &tfirst_tx,
+        &tlast_tx,
+        &output_length,
+        &output_channels
     );
 
     if (ret < 0) {
         return ret;
     }
 
-    /* Check for ERROR frame before expecting RESULT */
-    if (frame_type == CORTEX_FRAME_ERROR) {
-        uint32_t error_code;
-        char error_message[256];
-
-        if (parse_error_frame(frame_buf, payload_len, &error_code, error_message) < 0) {
-            fprintf(stderr, "[harness] Malformed ERROR frame from adapter\n");
-            return CORTEX_EPROTO_INVALID_FRAME;
-        }
-
-        fprintf(stderr, "[harness] Adapter error %u: %s\n", error_code, error_message);
-        return -EIO;  /* Adapter reported error */
-    }
-
-    if (frame_type != CORTEX_FRAME_RESULT) {
-        return CORTEX_EPROTO_INVALID_FRAME;
-    }
-
-    if (payload_len < sizeof(cortex_wire_result_t)) {
-        return CORTEX_EPROTO_INVALID_FRAME;
-    }
-
-    /* Parse RESULT header (convert from little-endian) */
-    uint32_t result_session_id = cortex_read_u32_le(frame_buf + 0);
-    uint32_t result_sequence = cortex_read_u32_le(frame_buf + 4);
-    uint64_t tin = cortex_read_u64_le(frame_buf + 8);
-    uint64_t tstart = cortex_read_u64_le(frame_buf + 16);
-    uint64_t tend = cortex_read_u64_le(frame_buf + 24);
-    uint64_t tfirst_tx = cortex_read_u64_le(frame_buf + 32);
-    uint64_t tlast_tx = cortex_read_u64_le(frame_buf + 40);
-    uint32_t output_length = cortex_read_u32_le(frame_buf + 48);
-    uint32_t output_channels = cortex_read_u32_le(frame_buf + 52);
-
     /* Validate session ID */
     if (result_session_id != handle->session_id) {
-        return CORTEX_ECHUNK_SEQUENCE_MISMATCH;  /* Reuse error code */
-    }
-
-    /* Validate sequence */
-    if (result_sequence != sequence) {
         return CORTEX_ECHUNK_SEQUENCE_MISMATCH;
-    }
-
-    /* Validate output dimensions */
-    size_t output_bytes = output_length * output_channels * sizeof(float);
-    if (output_bytes > output_buf_size) {
-        return CORTEX_ECHUNK_BUFFER_TOO_SMALL;
-    }
-
-    if (payload_len != sizeof(cortex_wire_result_t) + output_bytes) {
-        return CORTEX_EPROTO_INVALID_FRAME;
-    }
-
-    /* Convert output samples from little-endian */
-    const uint8_t *sample_buf = frame_buf + sizeof(cortex_wire_result_t);
-    for (uint32_t i = 0; i < output_length * output_channels; i++) {
-        output_samples[i] = cortex_read_f32_le(sample_buf + (i * sizeof(float)));
     }
 
     /* Return timing */

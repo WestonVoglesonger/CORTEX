@@ -117,7 +117,7 @@ LDFLAGS = -L/path/to/sdk/kernel/lib -lcortex
 
 | Tool | Purpose | Usage |
 |------|---------|-------|
-| **cortex_calibrate** | Train trainable kernels (ICA, CSP, LDA) | `cortex calibrate --kernel ica --dataset data.float32 --output state.cortex_state` |
+| **cortex_calibrate** | Train trainable kernels (ICA, CSP) | `cortex calibrate --kernel ica --dataset data.float32 --output state.cortex_state` |
 | **cortex_validate** | Validate kernels against Python oracles | `cortex validate --kernel notch_iir --verbose` |
 
 See [`tools/README.md`](kernel/tools/README.md) for complete documentation.
@@ -271,7 +271,7 @@ sdk/kernel/tools/cortex_validate --kernel my_kernel --verbose
 #    - Run: cortex pipeline
 ```
 
-### Trainable Kernel Workflow (ICA, CSP, LDA)
+### Trainable Kernel Workflow (ICA, CSP)
 
 ```bash
 # 1. Build SDK
@@ -326,11 +326,11 @@ This enables:
 
 **Old (pre-SDK restructure):**
 ```c
-#include "../../../../src/engine/include/cortex_plugin.h"
+#include "../../../../sdk/kernel/include/cortex_plugin.h"
 #include "../../../../src/engine/params/accessor.h"
 ```
 ```makefile
-CFLAGS = -I../../../../src/engine/include -I../../../../src/engine/params
+CFLAGS = -I../../../../sdk/kernel/include -I../../../../src/engine/params
 LDFLAGS = -L../../../../src/engine/params -lcortex_params
 ```
 

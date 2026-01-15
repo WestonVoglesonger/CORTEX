@@ -14,7 +14,7 @@ def main():
     """Main CLI entry point"""
     from cortex.commands import (
         build, run, analyze, pipeline,
-        list_kernels, validate, clean, check_system, calibrate
+        list_kernels, validate, clean, check_system, calibrate, generate
     )
 
     parser = argparse.ArgumentParser(
@@ -30,8 +30,12 @@ Examples:
   cortex pipeline                   # Full pipeline (build+run+analyze)
   cortex list                       # Show available kernels
   cortex validate                   # Test kernels against oracles
-  cortex calibrate --kernel ica --dataset data.float32 --output state.cortex_state
   cortex check-system               # Check system configuration
+
+  # Calibration workflow (trainable kernels)
+  cortex generate --channels 64 --duration 60 --output-dir calib_64ch
+  cortex calibrate --kernel csp --dataset calib_64ch --labels "100x0,100x1" --output state.cortex_state
+  cortex run --kernel csp --state state.cortex_state
 
 For more info: https://github.com/WestonVoglesonger/CORTEX
         '''
@@ -67,6 +71,10 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     clean_parser = subparsers.add_parser('clean', help='Clean build/results')
     clean.setup_parser(clean_parser)
 
+    # Generate command
+    generate_parser = subparsers.add_parser('generate', help='Generate synthetic dataset primitive')
+    generate.setup_parser(generate_parser)
+
     # Calibrate command (ABI v3)
     calibrate_parser = subparsers.add_parser('calibrate', help='Calibrate trainable kernels (ABI v3)')
     calibrate.setup_parser(calibrate_parser)
@@ -95,6 +103,8 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(list_kernels.execute(args))
         elif args.command == 'validate':
             sys.exit(validate.execute(args))
+        elif args.command == 'generate':
+            sys.exit(generate.execute(args))
         elif args.command == 'calibrate':
             sys.exit(calibrate.execute(args))
         elif args.command == 'clean':

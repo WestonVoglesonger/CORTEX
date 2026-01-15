@@ -44,27 +44,42 @@ Where:
 
 ### Prerequisites
 
-- Calibration dataset: EEG data in `.float32` format
+- Calibration dataset: EEG data in `.float32` format or dataset primitive directory
 - Recommended: 500+ windows for stable ICA convergence
 - Minimum: 100 windows
 
-### Step 1: Prepare Calibration Data
+### Option 1: Using Synthetic Data (For Testing/Development)
+
+```bash
+# Generate 64-channel synthetic calibration data
+cortex generate --signal pink_noise --channels 64 --duration 100 --output-dir calib_64ch
+
+# Calibrate ICA (500 windows for stable convergence)
+cortex calibrate --kernel ica \
+    --dataset calib_64ch \
+    --windows 500 \
+    --output ica_64ch.cortex_state
+```
+
+### Option 2: Using Real EEG Data (Production)
 
 ```bash
 # Use a representative dataset (subject-specific calibration)
-CALIB_DATA="primitives/datasets/v1/physionet-motor-imagery/converted/S001R01.float32"
+cortex calibrate --kernel ica \
+    --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R01.float32 \
+    --windows 500 \
+    --channels 64 \
+    --output ica_S001.cortex_state
 ```
 
 **Important**: Calibration should use data from the same subject and recording conditions as the target application (ICA is subject-specific).
 
-### Step 2: Run Calibration
+### Custom Geometries
 
 ```bash
-cortex calibrate \
-  --kernel ica \
-  --dataset $CALIB_DATA \
-  --windows 500 \
-  --output ica_S001.cortex_state
+# 128-channel configuration
+cortex generate --channels 128 --duration 100 --output-dir calib_128ch
+cortex calibrate --kernel ica --dataset calib_128ch --windows 500 --output ica_128ch.cortex_state
 ```
 
 **Output**:

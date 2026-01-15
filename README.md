@@ -1,6 +1,6 @@
 # CORTEX
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![CI](https://github.com/WestonVoglesonger/CORTEX/actions/workflows/ci.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8+-blue)
@@ -8,7 +8,7 @@
 
 **CORTEX** — Common Off-implant Runtime Test Ecosystem for BCI kernels. A production-grade benchmarking framework for Brain-Computer Interface signal processing, built on **AWS-inspired primitives architecture** for maximum composability and reproducibility.
 
-CORTEX measures latency, jitter, throughput, memory usage, and energy consumption for BCI kernels under real-time deadlines, providing comprehensive telemetry for performance-critical neurotechnology research.
+CORTEX measures latency, jitter, throughput, and memory usage for BCI kernels under real-time deadlines, providing comprehensive telemetry for performance-critical neurotechnology research.
 
 ## Architecture Highlights
 
@@ -45,6 +45,9 @@ cd CORTEX
 # Install Python CLI and dependencies
 pip install -e .
 
+# Optional: Install oracle dependencies for kernel validation
+pip install -e ".[oracle]"  # scipy, scikit-learn for reference implementations
+
 # Build C engine, device adapters, and kernel plugins
 make all
 
@@ -77,13 +80,50 @@ cortex pipeline  # Full verification before trusting results
 
 **See [Quick Start Guide](docs/getting-started/quickstart.md) for detailed setup and configuration instructions.**
 
+### Calibrating Trainable Kernels
+
+For trainable kernels (ICA, CSP) that require offline calibration:
+
+```bash
+# 1. Generate synthetic calibration dataset (creates dataset primitive instance)
+cortex generate --signal pink_noise --channels 64 --duration 60 --output-dir calib_64ch
+
+# 2. Calibrate kernel (reads geometry from spec.yaml automatically)
+cortex calibrate --kernel csp \
+    --dataset calib_64ch \
+    --windows 200 \
+    --labels "100x0,100x1" \
+    --output csp_64ch.cortex_state
+
+# 3. Run benchmark with trained state
+cortex run --kernel csp --state csp_64ch.cortex_state
+```
+
+**Scalability Testing (64 → 2048 channels):**
+
+```bash
+# Generate and calibrate across channel counts
+for ch in 64 128 256 512 1024 2048; do
+  cortex generate --channels $ch --duration 60 --output-dir calib_${ch}ch
+  cortex calibrate --kernel csp \
+      --dataset calib_${ch}ch \
+      --labels "100x0,100x1" \
+      --output csp_${ch}ch.cortex_state
+done
+```
+
+**Labels Pattern Syntax** (for CSP):
+- `"100x0,100x1"` = 100 class-0 windows, then 100 class-1 windows
+- `"50x0,50x1,50x0,50x1"` = Alternating batches
+- Pattern must sum to `--windows` value
+
 ## Features
 
 ### Core Capabilities
 - ✅ **Automated CLI Pipeline** - Build, validate, benchmark, and analyze with one command
 - ✅ **Device Adapter Architecture** - Unified execution via adapters (local/remote HIL testing)
 - ✅ **Plugin Architecture** - Dynamically loadable signal processing kernels (ABI v3)
-- ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP, LDA)
+- ✅ **Trainable Kernels** - Offline calibration support for ML-based algorithms (ICA, CSP)
 - ✅ **Runtime Parameters** - Type-safe configuration API for kernel customization
 - ✅ **Real-Time Scheduling** - Deadline enforcement with SCHED_FIFO/RR support (Linux)
 - ✅ **Comprehensive Telemetry** - Latency, jitter, throughput, memory, deadline tracking
@@ -106,6 +146,7 @@ cortex pipeline  # Full verification before trusting results
 - Goertzel (Alpha/Beta bandpower) - Configurable frequency bands
 - Welch PSD (Power spectral density) - Configurable FFT/overlap
 - ICA (Independent Component Analysis) - Artifact removal (trainable, ABI v3)
+- CSP (Common Spatial Patterns) - Motor imagery classification (trainable, ABI v3)
 - No-op (Identity function) - Harness overhead baseline
 
 ## Installation
@@ -138,8 +179,11 @@ pip install -e .[dev]
 # Install with dataset conversion tools (pyedflib for EDF processing)
 pip install -e .[datasets]
 
+# Install with oracle dependencies (scipy, scikit-learn for kernel validation)
+pip install -e .[oracle]
+
 # Install with all optional dependencies
-pip install -e .[dev,datasets]
+pip install -e .[dev,datasets,oracle]
 ```
 
 ### Build Options
@@ -167,7 +211,7 @@ cortex --help
 cortex run primitives/configs/cortex.yaml
 
 # Run test suite
-make test
+make tests
 ```
 
 ## Validation & Measurement Methodology
@@ -221,7 +265,7 @@ CORTEX/
 │       └── tools/                 # Development tools (cortex_validate, cortex_calibrate)
 │
 ├── primitives/                    # Composable building blocks (AWS philosophy)
-│   ├── kernels/v1/                # Signal processing kernel implementations (7 kernels)
+│   ├── kernels/v1/                # Signal processing kernel implementations (8 kernels)
 │   │   ├── bandpass_fir@f32/      # FIR bandpass filter (8-30 Hz)
 │   │   ├── car@f32/               # Common Average Reference
 │   │   ├── goertzel@f32/          # Goertzel bandpower (alpha/beta)
@@ -345,7 +389,7 @@ cortex build
 cortex validate
 
 # Calibrate trainable kernels (ABI v3)
-cortex calibrate --kernel ica --data primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
+cortex calibrate --kernel ica --dataset primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32 \
   --output ica_S001.cortex_state
 
 # Run benchmarks with custom config
@@ -409,7 +453,7 @@ If you use CORTEX in your research, please cite:
   author = {Voglesonger, Weston and Kumar, Avi},
   year = {2025},
   url = {https://github.com/WestonVoglesonger/CORTEX},
-  version = {0.3.0}
+  version = {0.2.0}
 }
 ```
 
@@ -431,7 +475,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 
 ## Project Status
 
-**Current Version**: 0.3.0 (Winter 2025)
+**Current Version**: 0.2.0 (Winter 2025)
 
 **Latest Release**: ABI v3 with trainable kernel support
 - Offline calibration workflow for ML-based algorithms
@@ -442,7 +486,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 **Roadmap**: See [docs/development/roadmap.md](docs/development/roadmap.md) for implementation timeline and future plans.
 
 **Future Work** (Spring 2026):
-- Additional trainable kernels (CSP, LDA)
+- Additional trainable kernels (LDA)
 - Quantization support (Q15/Q7 fixed-point kernels)
 - Energy measurement (RAPL on x86, INA226 on embedded)
 - Hardware-in-the-Loop testing on embedded targets (STM32H7, Jetson)
