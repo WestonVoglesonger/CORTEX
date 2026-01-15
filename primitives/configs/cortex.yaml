@@ -25,7 +25,7 @@ power:
 benchmark:
   metrics: [latency, jitter, throughput, memory_usage]
   parameters:
-    duration_seconds: 2    # Long run for statistical significance
+    duration_seconds: 120    # Long run for statistical significance
     repeats: 5              # Multiple runs for reproducibility
     warmup_seconds: 10      # Discard initial unstable samples
   load_profile: "medium"    # N/2 CPUs @ 50% - keeps frequency elevated (DVFS workaround)

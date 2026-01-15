@@ -272,7 +272,6 @@ def main():
         output_path = None
         channels = 64
         window_length = 160
-        sample_rate = 160
 
         i = 2
         while i < len(sys.argv):
@@ -296,9 +295,6 @@ def main():
                 i += 2
             elif sys.argv[i] == "--window_length" and i + 1 < len(sys.argv):
                 window_length = int(sys.argv[i + 1])
-                i += 2
-            elif sys.argv[i] == "--sample_rate" and i + 1 < len(sys.argv):
-                sample_rate = int(sys.argv[i + 1])
                 i += 2
             else:
                 calib_path = sys.argv[i] if calib_path is None else calib_path

@@ -1,4 +1,4 @@
-# Makefile for building ICA kernel plugin (ABI v3 trainable)
+# Makefile for building CSP kernel plugin (ABI v3 trainable)
 # Platform-specific shared library build
 
 CC = cc

@@ -318,18 +318,19 @@ else
 endif
 
 TARGET := libsma.$(LIBEXT)
-OBJS := sma.o $(SDK_LIB)/params/cortex_params.o
+SDK_OBJS := $(SDK_LIB)/params/cortex_params.o
+LOCAL_OBJS := sma.o
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
+$(TARGET): $(LOCAL_OBJS) $(SDK_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^
 
 sma.o: sma.c
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(LOCAL_OBJS)
 
 .PHONY: all clean
 ```

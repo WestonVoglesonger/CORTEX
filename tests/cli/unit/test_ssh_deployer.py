@@ -6,7 +6,7 @@ quoted by shlex.quote(), which would prevent shell expansion.
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 import subprocess
 
 # Add project root to path
