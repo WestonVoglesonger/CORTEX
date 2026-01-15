@@ -150,8 +150,7 @@ def execute(args):
 
     if isinstance(result, str):
         # High-channel mode returned temp file - move it
-        import shutil as sh
-        sh.move(result, data_path)
+        shutil.move(result, data_path)
         file_size_bytes = data_path.stat().st_size
     else:
         # Low-channel mode returned ndarray - write it
