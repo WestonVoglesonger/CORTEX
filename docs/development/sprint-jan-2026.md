@@ -281,7 +281,7 @@ Add under `## [Unreleased]`:
   - Robust cleanup (SIGTERM → SIGKILL → killall fallback)
   - Security: Command injection prevention (shlex.quote)
   - Documentation: docs/guides/using-auto-deploy.md (NEW)
-  - Specification: docs/specs/auto-deploy-implementation.md (v3.5)
+  - Specification: docs/development/archive/auto-deploy-implementation-spec.md (v3.5)
 
 - **TCP Daemon Mode** - Multi-session adapter support
   - Remote adapters serve multiple benchmarks without restarting
@@ -319,7 +319,7 @@ Add under `## [Unreleased]`:
 
 - 23 protocol specification fixes (frame sizes, field names, struct layouts)
 - Added docs/guides/using-auto-deploy.md (user guide)
-- Updated docs/specs/auto-deploy-implementation.md to v3.5
+- Updated docs/development/archive/auto-deploy-implementation-spec.md to v3.5
 - Root directory cleanup (-65KB documentation bloat)
 ```
 
