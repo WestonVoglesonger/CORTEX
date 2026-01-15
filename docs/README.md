@@ -69,10 +69,10 @@ Academic foundations and empirical validation of measurement practices.
 | [Benchmarking Philosophy](research/benchmarking-philosophy.md) | Realistic vs ideal performance measurement trade-offs |
 | [Measurement Analysis](research/measurement-analysis.md) | Statistical analysis of small kernel measurement noise |
 
-**Validation Studies**: Timestamped empirical experiments in [`../experiments/`](../experiments/):
-- [Linux Governor Validation (2025-12-05)](../experiments/linux-governor-validation-2025-12-05/) - Idle Paradox and DVFS impact on latency
-- [No-op Overhead (2025-12-05)](../experiments/noop-overhead-2025-12-05/) - Harness overhead measurement baseline
-- [High-Channel Scalability (2026-01-12)](../experiments/high-channel-scalability-2026-01-12/) - 2048-channel synthetic dataset validation
+**Validation Studies**: Timestamped empirical experiments in [`../docs/validation/`](../docs/validation/):
+- [Linux Governor Validation (2025-12-05)](../docs/validation/linux-governor-validation-2025-12-05/) - Idle Paradox and DVFS impact on latency
+- [No-op Overhead (2025-12-05)](../docs/validation/noop-overhead-2025-12-05/) - Harness overhead measurement baseline
+- [High-Channel Scalability (2026-01-12)](../docs/validation/high-channel-scalability-2026-01-12/) - 2048-channel synthetic dataset validation
 
 **Use this section**: To understand theoretical foundations and see reproducibility-focused validation of measurement claims.
 

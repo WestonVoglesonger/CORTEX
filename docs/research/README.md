@@ -28,5 +28,5 @@ This directory contains the theoretical and empirical research that informs CORT
 
 ## See Also
 
-- **Validation Studies**: [`experiments/`](../../experiments/) contains timestamped empirical validation (Idle Paradox, DVFS, etc.)
+- **Validation Studies**: [`docs/validation/`](../validation/) contains timestamped empirical validation (Idle Paradox, DVFS, etc.)
 - **Technical Reports**: Individual experiment directories contain full methodology, results, and reproducibility instructions

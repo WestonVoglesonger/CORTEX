@@ -220,18 +220,18 @@ CORTEX's measurement methodology has been empirically validated across platforms
 
 ### Key Findings
 
-**Harness Overhead** ([`experiments/noop-overhead-2025-12-05/`](experiments/noop-overhead-2025-12-05/)):
+**Harness Overhead** ([`docs/validation/noop-overhead-2025-12-05/`](docs/validation/noop-overhead-2025-12-05/)):
 - **1 µs minimum** measured overhead (n=2399 samples, macOS M1)
 - Components: timing (100ns) + dispatch (50-100ns) + memcpy (800ns) + bookkeeping (100ns)
 - **0.02-12.5% of signal** across all kernels (<3% for kernels >30µs)
 - **SNR: 8:1 to 5000:1** (all exceed 10:1 industry standard using typical latency)
 
-**Idle Paradox** ([`experiments/dvfs-validation-2025-11-15/`](experiments/dvfs-validation-2025-11-15/)):
+**Idle Paradox** ([`docs/validation/dvfs-validation-2025-11-15/`](docs/validation/dvfs-validation-2025-11-15/)):
 - **macOS**: Idle systems run 2.31× slower than medium load (geometric mean across 4 kernels)
 - **Cause**: DVFS downclocking to minimum frequency when idle
 - **Solution**: Background load (4 CPUs @ 50%) locks CPU frequency
 
-**Cross-Platform Replication** ([`experiments/linux-governor-validation-2025-12-05/`](experiments/linux-governor-validation-2025-12-05/)):
+**Cross-Platform Replication** ([`docs/validation/linux-governor-validation-2025-12-05/`](docs/validation/linux-governor-validation-2025-12-05/)):
 - **Linux**: Powersave governor 3.21× slower than performance (confirms Idle Paradox is cross-platform)
 - **Schedutil Trap**: Dynamic scaling is 4.55× slower than performance (worse than fixed minimum!)
 - **Platform Difference**: stress-ng works on macOS (cluster-wide scaling) but fails on Linux (per-CPU scaling)
@@ -281,7 +281,7 @@ CORTEX/
 │   └── configs/                   # Configuration templates (YAML)
 │       └── cortex.yaml            # Default benchmark configuration
 │
-├── experiments/                   # Validation studies & measurement methodology
+├── docs/validation/                   # Validation studies & measurement methodology
 │   ├── dvfs-validation-2025-11-15/          # Idle Paradox discovery (macOS)
 │   ├── linux-governor-validation-2025-12-05/ # Cross-platform + Schedutil Trap
 │   └── noop-overhead-2025-12-05/            # Harness overhead measurement (1µs)
@@ -321,7 +321,7 @@ CORTEX/
 - **Reference**: [Plugin API](docs/reference/plugin-interface.md) | [Configuration](docs/reference/configuration.md)
 - **Architecture**: [System Overview](docs/architecture/overview.md) | [Benchmarking Methodology](docs/architecture/benchmarking-methodology.md)
 - **Guides**: [Adding Kernels](docs/guides/adding-kernels.md) | [Adding Datasets](docs/guides/adding-datasets.md) | [Troubleshooting](docs/guides/troubleshooting.md)
-- **Validation**: [DVFS Validation](experiments/dvfs-validation-2025-11-15/) | [Harness Overhead](experiments/noop-overhead-2025-12-05/) | [Linux Governor Study](experiments/linux-governor-validation-2025-12-05/)
+- **Validation**: [DVFS Validation](docs/validation/dvfs-validation-2025-11-15/) | [Harness Overhead](docs/validation/noop-overhead-2025-12-05/) | [Linux Governor Study](docs/validation/linux-governor-validation-2025-12-05/)
 - **Development**: [Roadmap](docs/development/roadmap.md) | [Contributing](CONTRIBUTING.md)
 
 ## Supported Platforms

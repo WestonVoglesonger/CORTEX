@@ -225,9 +225,6 @@ cortex_adapter_*
 
 # Temporary test data
 
-# Project-specific documentation (local to repository instance)
-CLAUDE.md
-
 # Claude Code directory (personal dev tools, configs, MCP servers, local settings)
 .claude/
 
