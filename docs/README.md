@@ -9,6 +9,7 @@ Perfect for new users who want to quickly start using CORTEX.
 | Document | Description |
 |----------|-------------|
 | [Quick Start Guide](getting-started/quickstart.md) | 5-minute setup and first benchmark |
+| [Building Your First Kernel](getting-started/first-kernel-tutorial.md) | Hands-on tutorial: Implement a simple moving average filter (1-2 hours) |
 | [CLI Usage Guide](getting-started/cli-usage.md) | Complete command reference and workflows |
 
 **Start here**: If this is your first time with CORTEX, begin with the [Quick Start Guide](getting-started/quickstart.md).

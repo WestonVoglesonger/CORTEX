@@ -149,7 +149,9 @@ cortex run primitives/configs/my-custom-config.yaml
 
 ### Add Your Own Kernel
 
-See [docs/guides/adding-kernels.md](../guides/adding-kernels.md) for step-by-step guide.
+**New to kernel development?** Start with the [Building Your First Kernel Tutorial](first-kernel-tutorial.md) (1-2 hours) to learn the basics by implementing a simple moving average filter.
+
+**Ready for production kernels?** See the complete [Adding Kernels Guide](../guides/adding-kernels.md) for the full workflow including oracle validation and documentation.
 
 ## Verification Checklist
 
