@@ -39,6 +39,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - 2026-01-15
+
+Major release enabling high-channel scalability (512-2048 channels), adding CSP trainable kernel, synthetic dataset generation, and comprehensive documentation overhaul.
+
+### Added
+
+- **CSP (Common Spatial Patterns) Kernel** - Trainable kernel for motor imagery BCI classification
+  - Offline calibration via `cortex calibrate` with Jacobi eigendecomposition
+  - Oracle-validated (1e-5 tolerance), P99 latency <100µs
+  - Location: `primitives/kernels/v1/csp@f32/`
+
+- **RESULT Frame Chunking Protocol** - Enables 512-2048 channel support
+  - 8KB chunks remove 2MB single-frame limit (validated: 512ch/320KB, 1024ch/640KB, 2048ch)
+  - New `CORTEX_FRAME_RESULT_CHUNK` type, backward compatible with legacy RESULT frames
+  - Foundation for Neuralink-scale experiments (1024-2048 channels)
+
+- **Synthetic Dataset Generation** - `cortex generate` command
+  - Signal types: Pink noise (1/f spectrum), sine waves
+  - Validated up to 2048 channels with <200MB RAM usage
+  - Reproducible via seed parameter, outputs self-describing spec.yaml + data.float32
+
+- **Intermediate Kernel Tutorial** - 655-line hands-on guide (`docs/getting-started/first-kernel-tutorial.md`)
+  - Bridges 5-min quickstart → 4-8hr production guide with 1-2hr SMA filter example
+  - Covers: ABI lifecycle, stateful processing, circular buffers, parameters, testing
+
+- **Documentation Overhaul** - 184 issues resolved (100% CRITICAL/HIGH, 97% MEDIUM)
+  - Version corrections, path fixes, kernel count updates (6→8)
+  - Added 3 missing CLI command docs: `cortex calibrate`, `cortex generate`, `cortex check-system`
+  - Reorganized structure: Created `docs/research/` category, archived completed specs
+  - Zero broken links after comprehensive cross-reference validation
+
+- **Test Coverage** - 22 new tests (protocol chunking, CLI integration, SSH deployer)
+
+### Changed
+
+- **Calibration State Limit** - Increased from 16KB to 16MB (enables high-channel trainable models)
+- **ICA Kernel** - Improved numerical stability (better convergence, enhanced orthogonalization)
+- **CLI Commands** - Enhanced `cortex calibrate` and `cortex generate` with better error handling
+
+### Fixed
+
+- CI test hang (360 minutes → 33 seconds via timeout + conditional test skip)
+- SSH deployer path expansion, duration timer initialization overhead
+- Tutorial Makefile SDK corruption, config duration comment mismatch
+- Multiple documentation inconsistencies and import cleanup
+
+### Breaking Changes
+
+None - all changes backward compatible.
+
+### Performance
+
+- CSP: ~1s calibration (100 windows, 64ch), <100µs inference
+- Protocol chunking: ~50-100µs overhead for 1024ch transfers
+
+### Migration
+
+No changes required. New features available via:
+- CSP kernel: `cortex run --kernel csp --state model.cortex_state`
+- Synthetic datasets: `cortex generate --signal pink_noise --channels 512 --samples 10000`
+
+---
+
 ## [0.4.0] - 2025-12-29
 
 Major architectural refactor introducing the **Universal Adapter Model** - ALL kernel execution now routes through device adapters, enabling Hardware-In-the-Loop (HIL) testing across multiple platforms (x86, Jetson Nano, STM32, etc.). This is a **breaking change** that eliminates direct plugin execution.
