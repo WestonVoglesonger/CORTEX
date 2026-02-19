@@ -1,5 +1,6 @@
 device:
   name: "NVIDIA Jetson Nano"
+  adapters: [native]
   peak_gflops: 472.0        # 128 CUDA cores × 921 MHz × 2 (FMA) × 2 (FP32)
   cpu_peak_gflops: 16.0     # 4× Cortex-A57 @ 1.43 GHz
   memory_bandwidth_gb_s: 25.6  # 64-bit LPDDR4 @ 1600 MHz

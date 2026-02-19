@@ -74,6 +74,12 @@ def setup_parser(parser):
         help='Window length in samples (default: 160)'
     )
 
+    # Deployment
+    parser.add_argument(
+        '--deploy',
+        help='Deployment strategy (e.g., ssh://pi@rpi, tcp://host:9000). Omit for local.'
+    )
+
     # Output
     parser.add_argument(
         '--output', '-o',
@@ -194,6 +200,7 @@ def execute(args):
             warmup=getattr(args, 'warmup', None),
             verbose=getattr(args, 'verbose', False),
             chain_kernels=chain_kernels,
+            device_spec=device_spec,
         )
 
         if not results_dir:
@@ -211,31 +218,18 @@ def execute(args):
 
         output_dir = args.output if hasattr(args, 'output') and args.output else str(get_analysis_dir(run_name))
 
+        # Use device.yaml saved by runner, or the user-specified path
+        device_yaml = device_path if device_path else f"{results_dir}/device.yaml"
+
         decompose_args = argparse.Namespace(
             prediction=pred_path,
             run_name=results_dir,
-            device=device_path if device_path else args.device,
+            device=device_yaml,
             output=output_dir,
             format='table',
         )
 
-        # If no device file path (auto-detected), write temp device YAML
-        if device_path is None:
-            import yaml
-            dev_fd, dev_path = tempfile.mkstemp(suffix='.yaml', prefix='cortex_device_')
-            os.close(dev_fd)
-            with open(dev_path, 'w') as f:
-                yaml.dump(device_spec, f)
-            decompose_args.device = dev_path
-
         result = decompose_cmd.execute(decompose_args)
-
-        # Cleanup temp device file
-        if device_path is None and hasattr(decompose_args, 'device'):
-            try:
-                os.unlink(decompose_args.device)
-            except OSError:
-                pass
 
         if result != 0:
             print("\nDecomposition failed")

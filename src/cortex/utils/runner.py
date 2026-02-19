@@ -103,7 +103,7 @@ class HarnessRunner:
             # Don't fail if cleanup fails - just log it
             self.log.warning(f"Could not clean up partial run directory {run_dir}: {e}")
 
-    def run(self, config_path: str, run_name: str, verbose: bool = False, transport_uri: Optional[str] = None, env: Optional[dict] = None) -> Optional[str]:
+    def run(self, config_path: str, run_name: str, verbose: bool = False, transport_uri: Optional[str] = None, env: Optional[dict] = None, device_spec: Optional[dict] = None) -> Optional[str]:
         """Run the CORTEX harness with a given config.
 
         Args:
@@ -308,6 +308,13 @@ class HarnessRunner:
                 except Exception as e:
                     self.log.warning(f"Failed to save generation manifest: {e}")
 
+            # Save device spec to run directory for post-run analysis
+            if device_spec is not None:
+                import yaml
+                device_yaml_path = f"{run_dir}/device.yaml"
+                with open(device_yaml_path, 'w') as f:
+                    yaml.safe_dump(device_spec, f, sort_keys=False)
+
             # Return the run directory path
             if self.fs.exists(run_dir):
                 return str(run_dir)
@@ -335,7 +342,8 @@ class HarnessRunner:
         warmup: Optional[int] = None,
         calibration_state: Optional[str] = None,
         verbose: bool = False,
-        transport_uri: Optional[str] = None
+        transport_uri: Optional[str] = None,
+        device_spec: Optional[dict] = None
     ) -> Optional[str]:
         """Run benchmark for a single kernel using temp YAML generation.
 
@@ -369,7 +377,7 @@ class HarnessRunner:
 
         try:
             # Run harness with temp config
-            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=None)
+            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=None, device_spec=device_spec)
 
             if results_dir:
                 self.log.info(f"✓ Benchmark complete: {results_dir}")
@@ -394,7 +402,8 @@ class HarnessRunner:
         calibration_state: Optional[str] = None,
         verbose: bool = False,
         transport_uri: Optional[str] = None,
-        chain_kernels=None
+        chain_kernels=None,
+        device_spec: Optional[dict] = None
     ) -> Optional[str]:
         """Run benchmarks for all available kernels in a single harness invocation.
 
@@ -454,7 +463,7 @@ class HarnessRunner:
                 self.log.info(f"Chain mode: {' -> '.join(chain_kernels)}")
 
             # Single harness invocation with temp config
-            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=chain_env)
+            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=chain_env, device_spec=device_spec)
 
             if results_dir:
                 self.log.info("")

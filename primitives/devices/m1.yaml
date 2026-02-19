@@ -1,5 +1,6 @@
 device:
   name: "Apple M1"
+  adapters: [native]
   peak_gflops: 2600.0       # ~2.6 TFLOPS FP32 (GPU), CPU ~100 GFLOPS
   cpu_peak_gflops: 100.0    # 4 Firestorm cores × ~3.2 GHz × 8 FLOP/cycle
   memory_bandwidth_gb_s: 68.25  # LPDDR4X unified memory

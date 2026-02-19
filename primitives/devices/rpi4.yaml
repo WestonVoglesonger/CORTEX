@@ -1,5 +1,6 @@
 device:
   name: "Raspberry Pi 4 Model B"
+  adapters: [native]
   peak_gflops: 13.5         # 4× Cortex-A72 @ 1.8 GHz, ~2 FLOP/cycle NEON
   cpu_peak_gflops: 13.5     # CPU only (no discrete GPU for compute)
   memory_bandwidth_gb_s: 8.5   # LPDDR4-3200 32-bit
