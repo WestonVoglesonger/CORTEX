@@ -94,6 +94,77 @@ Phenomenology reports are **low-cost, high-upside asymmetric bets**. If they're 
 
 ---
 
+## MCP Integration Protocol
+
+CORTEX has Model Context Protocol (MCP) servers configured for domain-specific development tasks. These tools extend Claude's capabilities for research, tracking, and analysis.
+
+### When to Use MCP Tools
+
+**Memory/Knowledge Graph** — Benchmark Performance Tracking
+- **Use**: Store performance metrics across commits, devices, configurations
+- **Pattern**: Create entity per kernel+device (e.g., "goertzel_jetson_orin"), add observations with timestamp+commit+metrics
+- **Example Relations**: `goertzel_kernel` → `optimized_in` → `commit_abc123`, `raspberry_pi_4` → `runs` → `car_kernel`
+- **Value**: Automatic regression detection, cross-device comparison, optimization history
+- **When**: After each benchmark run with notable results, when comparing across platforms, when tracking optimization work
+
+**GitHub Search** — Reference Implementation Research
+- **Use**: Find DSP algorithm implementations, transport patterns, FPGA examples
+- **Query targets**: FastICA implementations, CSP decomposition code, ZMQ alternatives, EEG dataset repos
+- **Value**: Validate algorithmic choices, discover edge cases, find optimization techniques
+- **When**: Implementing new kernels, researching hardware ports, debugging numerical issues
+
+**Brave Search** — Domain Literature & Hardware Specs
+- **Use**: DSP papers, hardware datasheets, filter parameter research, BCI literature
+- **Query targets**: "Butterworth notch filter Q factor EEG", "STM32H7 CMSIS-DSP performance", "Welch periodogram overlap ratio"
+- **Value**: Authoritative references for parameter choices, hardware capabilities for adapter work
+- **When**: Need theoretical justification, researching target hardware, validating filter designs
+
+**Filesystem Batch Ops** — Results Analysis
+- **Use**: Batch-read telemetry.ndjson from multiple `results/run-*` directories
+- **Pattern**: Read all telemetry files, parse NDJSON, compare percentile distributions
+- **Value**: Cross-run analysis, regression detection, A/B testing of optimizations
+- **When**: Comparing performance across commits, validating optimization impact, generating reports
+
+**IDE Integration** — Live Execution
+- **Use**: Execute Python analysis code in Jupyter, get VS Code diagnostics
+- **Pattern**: Run synthetic dataset generation, execute oracle validation, analyze telemetry
+- **Value**: Rapid iteration on analysis tools, interactive debugging
+- **When**: Developing new analysis features, debugging oracle mismatches, prototyping visualizations
+
+### What NOT to Use MCP For
+
+- ✗ Don't use GitHub/Brave search for local codebase questions (use Read/Grep/Glob instead)
+- ✗ Don't store transient data in Knowledge Graph (only long-term benchmark history)
+- ✗ Don't use IDE execution for production benchmarking (use `cortex pipeline` CLI)
+- ✗ Don't batch-read files that could be handled with single Read tool
+
+### MCP Setup Reference
+
+See `.claude/MCP_SETUP.md` for configuration details. Active servers: memory (knowledge graph), github, brave-search, filesystem, ide.
+
+### Example Usage Pattern
+
+**Tracking Optimization Work:**
+```
+1. Run baseline: cortex run --kernel goertzel
+2. Store result: Create entity "goertzel_m2_baseline" with observation "2026-01-19: P50=45µs, P95=67µs (commit c7ef252)"
+3. Apply optimization to kernel
+4. Run optimized: cortex run --kernel goertzel
+5. Store result: Add observation "2026-01-19: P50=38µs, P95=52µs (commit d8fg363)"
+6. Create relation: "goertzel_kernel" → "optimized_by" → "loop_unrolling_technique"
+```
+
+**Researching New Kernel Implementation:**
+```
+1. Search GitHub for reference implementations of algorithm
+2. Search Brave for academic papers on parameter selection
+3. Use WebFetch to pull algorithm specification from authoritative source
+4. Store key findings in Knowledge Graph as observations on kernel entity
+5. Implement kernel referencing stored research context
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -370,6 +441,26 @@ Dataset → Replayer (H-sized chunks @ Fs cadence)
 | `.so` | Linux plugin binary | `libcar.so` |
 | `.ndjson` | Telemetry output | `telemetry.ndjson` |
 | `.float32` | Raw EEG dataset | `S001R01.float32` |
+
+---
+
+## Development Methodology
+
+**Post-Design TDD (Test-Driven Development):**
+1. Design phase produces a design doc (`docs/plans/`) describing what to build
+2. Tests are written FIRST, defining the contract for each component
+3. Implementation follows to make tests pass (Red → Green → Refactor)
+4. No implementation code is written before its corresponding tests exist
+
+**Test ordering:**
+- Unit tests for pure functions first (no I/O, no mocks)
+- Integration tests with mocked external dependencies second
+- End-to-end verification last
+
+**When to skip TDD:**
+- Pure data changes (YAML schema updates, config changes)
+- Documentation-only changes
+- One-line bug fixes with obvious correctness
 
 ---
 

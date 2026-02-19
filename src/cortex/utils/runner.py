@@ -7,6 +7,7 @@ via Protocol interfaces, enabling full unit test coverage without I/O.
 
 import sys
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional
 from cortex.core.protocols import (
@@ -164,11 +165,23 @@ class HarnessRunner:
         sleep_prevention_tool = None
         no_inhibit = self.env.get_environ().get('CORTEX_NO_INHIBIT', '0') == '1'
 
+        caffeinate_proc = None  # Background caffeinate process (macOS under sudo)
+
         if not no_inhibit:
             if system == 'Darwin':
-                # macOS: use caffeinate
+                # macOS: use caffeinate to prevent display/system sleep.
+                # Under sudo, caffeinate as root can't assert display sleep prevention
+                # (IOPMAssertion needs the GUI session). Spawn as original user in background.
                 if self.tools.has_tool('caffeinate'):
-                    cmd = ['caffeinate', '-dims'] + cmd
+                    env_vars = self.env.get_environ()
+                    sudo_user = env_vars.get('SUDO_USER')
+                    if sudo_user:
+                        caffeinate_proc = subprocess.Popen(
+                            ['sudo', '-u', sudo_user, 'caffeinate', '-dims', '-w', str(os.getpid())],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
+                    else:
+                        cmd = ['caffeinate', '-dims'] + cmd
                     sleep_prevention_tool = 'caffeinate'
             elif system == 'Linux':
                 # Linux: systemd-inhibit requires polkit authentication
@@ -305,6 +318,10 @@ class HarnessRunner:
             self.log.error(f"Error running harness: {e}")
             return None
         finally:
+            # Stop background caffeinate if we spawned one
+            if caffeinate_proc is not None:
+                caffeinate_proc.terminate()
+                caffeinate_proc.wait()
             # Clean up temporary files (generated dataset + modified config)
             if temp_files:
                 cleanup_temp_files(temp_files)
@@ -376,7 +393,8 @@ class HarnessRunner:
         warmup: Optional[int] = None,
         calibration_state: Optional[str] = None,
         verbose: bool = False,
-        transport_uri: Optional[str] = None
+        transport_uri: Optional[str] = None,
+        chain_kernels=None
     ) -> Optional[str]:
         """Run benchmarks for all available kernels in a single harness invocation.
 
@@ -426,8 +444,17 @@ class HarnessRunner:
         )
 
         try:
+            # Set chain mode env vars if requested (SE-8)
+            chain_env = None
+            if chain_kernels:
+                chain_env = {
+                    'CORTEX_KERNEL_FILTER': ','.join(chain_kernels),
+                    'CORTEX_CHAIN_MODE': '1',
+                }
+                self.log.info(f"Chain mode: {' -> '.join(chain_kernels)}")
+
             # Single harness invocation with temp config
-            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=None)
+            results_dir = self.run(temp_config, run_name, verbose=verbose, transport_uri=transport_uri, env=chain_env)
 
             if results_dir:
                 self.log.info("")

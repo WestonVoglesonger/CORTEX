@@ -1,0 +1,259 @@
+"""Profile command - Orchestrator running predict → run → decompose (SE-5).
+
+Runs the full 3-step latency analysis workflow sequentially:
+1. cortex predict   → prediction.json
+2. cortex run       → telemetry.ndjson
+3. cortex decompose → DECOMPOSITION.md
+"""
+import argparse
+import tempfile
+import os
+
+from cortex.utils.decomposition import load_device_spec
+from cortex.utils.device import resolve_device, validate_capabilities
+from cortex.utils.paths import generate_run_name, get_analysis_dir
+
+
+def setup_parser(parser):
+    """Setup argument parser for profile command."""
+    # Device (shared across predict + decompose)
+    parser.add_argument(
+        '--device',
+        help='Path to device spec YAML (optional if auto-detect works)'
+    )
+
+    # Kernel selection (shared across predict + run)
+    kernel_group = parser.add_mutually_exclusive_group()
+    kernel_group.add_argument(
+        '--kernel',
+        help='Single kernel to profile'
+    )
+    kernel_group.add_argument(
+        '--chain',
+        help='Comma-separated kernel names for chain profiling'
+    )
+    kernel_group.add_argument(
+        '--all',
+        action='store_true',
+        dest='run_all',
+        help='Profile all available kernels'
+    )
+
+    # Run parameters
+    parser.add_argument(
+        '--run-name',
+        help='Custom name for this run (default: auto-generated)'
+    )
+    parser.add_argument(
+        '--duration',
+        type=int,
+        help='Benchmark duration in seconds'
+    )
+    parser.add_argument(
+        '--repeats',
+        type=int,
+        help='Number of benchmark repeats'
+    )
+    parser.add_argument(
+        '--warmup',
+        type=int,
+        help='Warmup duration in seconds'
+    )
+
+    # Predict parameters
+    parser.add_argument(
+        '--channels',
+        type=int,
+        default=64,
+        help='Number of channels (default: 64)'
+    )
+    parser.add_argument(
+        '--window-length',
+        type=int,
+        default=160,
+        help='Window length in samples (default: 160)'
+    )
+
+    # Output
+    parser.add_argument(
+        '--output', '-o',
+        help='Output directory for reports'
+    )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Show verbose output'
+    )
+
+
+def execute(args):
+    """Execute full profile workflow: predict → run → decompose."""
+    print("=" * 80)
+    print("CORTEX LATENCY PROFILE")
+    print("=" * 80)
+
+    # Step 0: Resolve device
+    device_path = getattr(args, 'device', None)
+    device_spec = resolve_device(device_path)
+    if device_spec is None:
+        if device_path:
+            print(f"Error: Device spec not found: {device_path}")
+        else:
+            print("Error: Could not auto-detect device. Use --device <path>.")
+        return 1
+    device_spec = validate_capabilities(device_spec)
+    dev = device_spec.get('device', device_spec)
+    tier = dev.get('decomposition_tier', 0)
+    print(f"Device: {dev.get('name', 'Unknown')} [Tier {tier}]")
+
+    # Generate run name
+    if hasattr(args, 'run_name') and args.run_name:
+        try:
+            run_name = generate_run_name(args.run_name)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+    else:
+        run_name = generate_run_name()
+
+    print(f"Run name: {run_name}")
+
+    # Create temp file for prediction.json
+    pred_fd, pred_path = tempfile.mkstemp(suffix='.json', prefix='cortex_prediction_')
+    os.close(pred_fd)
+
+    try:
+        # ----------------------------------------------------------
+        # Step 1: Predict
+        # ----------------------------------------------------------
+        print("\n" + "=" * 80)
+        print("STEP 1: PREDICT (Static Analysis)")
+        print("=" * 80)
+
+        from cortex.commands import predict as predict_cmd
+
+        predict_args = argparse.Namespace(
+            device=device_path,
+            kernel=getattr(args, 'kernel', None),
+            chain=getattr(args, 'chain', None),
+            config=False,
+            output=pred_path,
+            format='table',
+            channels=args.channels,
+            window_length=args.window_length,
+        )
+
+        result = predict_cmd.execute(predict_args)
+        if result != 0:
+            print("\nPrediction failed")
+            return 1
+
+        # ----------------------------------------------------------
+        # Step 2: Run (benchmark)
+        # ----------------------------------------------------------
+        print("\n" + "=" * 80)
+        print("STEP 2: RUN (Benchmark)")
+        print("=" * 80)
+
+        from cortex.commands import run as run_cmd
+        from cortex.utils.runner import HarnessRunner
+        from cortex.core import (
+            ConsoleLogger, RealFileSystemService, SubprocessExecutor,
+            SystemTimeProvider, SystemEnvironmentProvider, SystemToolLocator,
+            YamlConfigLoader,
+        )
+
+        filesystem = RealFileSystemService()
+        runner = HarnessRunner(
+            filesystem=filesystem,
+            process_executor=SubprocessExecutor(),
+            config_loader=YamlConfigLoader(filesystem),
+            time_provider=SystemTimeProvider(),
+            env_provider=SystemEnvironmentProvider(),
+            tool_locator=SystemToolLocator(),
+            logger=ConsoleLogger(),
+        )
+
+        # Determine kernel selection for run
+        kernel_arg = getattr(args, 'kernel', None)
+        chain_arg = getattr(args, 'chain', None)
+        run_all = getattr(args, 'run_all', False)
+
+        # Build kernel list for runner
+        chain_kernels = None
+        if chain_arg:
+            chain_kernels = [k.strip() for k in chain_arg.split(',') if k.strip()]
+            # Ensure noop is included for I/O baseline
+            if 'noop' not in chain_kernels:
+                print("Adding noop to chain for I/O baseline measurement")
+
+        results_dir = runner.run_all_kernels(
+            run_name=run_name,
+            duration=getattr(args, 'duration', None),
+            repeats=getattr(args, 'repeats', None),
+            warmup=getattr(args, 'warmup', None),
+            verbose=getattr(args, 'verbose', False),
+            chain_kernels=chain_kernels,
+        )
+
+        if not results_dir:
+            print("\nBenchmark execution failed")
+            return 1
+
+        # ----------------------------------------------------------
+        # Step 3: Decompose
+        # ----------------------------------------------------------
+        print("\n" + "=" * 80)
+        print("STEP 3: DECOMPOSE (Post-Benchmark Decomposition)")
+        print("=" * 80)
+
+        from cortex.commands import decompose as decompose_cmd
+
+        output_dir = args.output if hasattr(args, 'output') and args.output else str(get_analysis_dir(run_name))
+
+        decompose_args = argparse.Namespace(
+            prediction=pred_path,
+            run_name=results_dir,
+            device=device_path if device_path else args.device,
+            output=output_dir,
+            format='table',
+        )
+
+        # If no device file path (auto-detected), write temp device YAML
+        if device_path is None:
+            import yaml
+            dev_fd, dev_path = tempfile.mkstemp(suffix='.yaml', prefix='cortex_device_')
+            os.close(dev_fd)
+            with open(dev_path, 'w') as f:
+                yaml.dump(device_spec, f)
+            decompose_args.device = dev_path
+
+        result = decompose_cmd.execute(decompose_args)
+
+        # Cleanup temp device file
+        if device_path is None and hasattr(decompose_args, 'device'):
+            try:
+                os.unlink(decompose_args.device)
+            except OSError:
+                pass
+
+        if result != 0:
+            print("\nDecomposition failed")
+            return 1
+
+    finally:
+        # Cleanup prediction temp file
+        try:
+            os.unlink(pred_path)
+        except OSError:
+            pass
+
+    # Success
+    print("\n" + "=" * 80)
+    print("PROFILE COMPLETE")
+    print("=" * 80)
+    print(f"\nResults: {results_dir}/")
+    print(f"Decomposition: {output_dir}/DECOMPOSITION.md")
+    print("=" * 80)
+
+    return 0

@@ -92,13 +92,17 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
         } else {
             fprintf(f, "# Thermal: unavailable\n");
         }
+        if (sysinfo->cpu_freq_mhz > 0) {
+            fprintf(f, "# CPU Freq: %u MHz\n", sysinfo->cpu_freq_mhz);
+        }
+        fprintf(f, "# Governor: %s\n", sysinfo->governor);
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,stage_index\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%u\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -117,7 +121,9 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
                 (unsigned long long)r->device_tlast_tx_ns,
                 r->adapter_name,
                 (unsigned)r->window_failed,
-                r->error_code);
+                r->error_code,
+                r->cpu_freq_mhz,
+                r->stage_index);
     }
     fclose(f);
     return 0;
@@ -150,13 +156,17 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
         } else {
             fprintf(f, "# Thermal: unavailable\n");
         }
+        if (sysinfo->cpu_freq_mhz > 0) {
+            fprintf(f, "# CPU Freq: %u MHz\n", sysinfo->cpu_freq_mhz);
+        }
+        fprintf(f, "# Governor: %s\n", sysinfo->governor);
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,stage_index\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%u\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -175,7 +185,9 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
                 (unsigned long long)r->device_tlast_tx_ns,
                 r->adapter_name,
                 (unsigned)r->window_failed,
-                r->error_code);
+                r->error_code,
+                r->cpu_freq_mhz,
+                r->stage_index);
     }
     fclose(f);
     return 0;
@@ -254,6 +266,14 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             fprintf(f, ",\"thermal_celsius\":null");
         }
 
+        /* Add platform state (SE-4) */
+        {
+            char governor_esc[64];
+            json_escape_string(governor_esc, sizeof(governor_esc), sysinfo->governor);
+            fprintf(f, ",\"cpu_freq_mhz\":%u,\"governor\":\"%s\"",
+                    sysinfo->cpu_freq_mhz, governor_esc);
+        }
+
         /* Add device system info */
         fprintf(f, ",\"device_hostname\":\"%s\","
                    "\"device_cpu\":\"%s\","
@@ -295,7 +315,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             "\"device_tlast_tx_ns\":%llu,"
             "\"adapter_name\":\"%s\","
             "\"window_failed\":%u,"
-            "\"error_code\":%d}\n",
+            "\"error_code\":%d,"
+            "\"cpu_freq_mhz\":%u,"
+            "\"stage_index\":%u}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -314,7 +336,9 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             (unsigned long long)r->device_tlast_tx_ns,
             adapter_name_esc,
             (unsigned)r->window_failed,
-            r->error_code);
+            r->error_code,
+            r->cpu_freq_mhz,
+            r->stage_index);
     }
 
     fclose(f);
@@ -362,6 +386,14 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             fprintf(f, ",\"thermal_celsius\":null");
         }
 
+        /* Add platform state (SE-4) */
+        {
+            char governor_esc[64];
+            json_escape_string(governor_esc, sizeof(governor_esc), sysinfo->governor);
+            fprintf(f, ",\"cpu_freq_mhz\":%u,\"governor\":\"%s\"",
+                    sysinfo->cpu_freq_mhz, governor_esc);
+        }
+
         /* Add device system info */
         fprintf(f, ",\"device_hostname\":\"%s\","
                    "\"device_cpu\":\"%s\","
@@ -403,7 +435,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             "\"device_tlast_tx_ns\":%llu,"
             "\"adapter_name\":\"%s\","
             "\"window_failed\":%u,"
-            "\"error_code\":%d}\n",
+            "\"error_code\":%d,"
+            "\"cpu_freq_mhz\":%u,"
+            "\"stage_index\":%u}\n",
             run_id_esc,
             plugin_esc,
             r->window_index,
@@ -422,7 +456,9 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             (unsigned long long)r->device_tlast_tx_ns,
             adapter_name_esc,
             (unsigned)r->window_failed,
-            r->error_code);
+            r->error_code,
+            r->cpu_freq_mhz,
+            r->stage_index);
     }
 
     fclose(f);
@@ -472,6 +508,10 @@ int cortex_collect_system_info(cortex_system_info_t *info) {
 
     /* Thermal reading - not easily available on macOS without IOKit */
     info->thermal_celsius = -1.0f;
+
+    /* CPU frequency - not available on macOS (Apple Silicon has no user-accessible freq) */
+    info->cpu_freq_mhz = 0;
+    snprintf(info->governor, sizeof(info->governor), "N/A");
 
 #elif defined(__linux__)
     /* Linux: Get CPU model from /proc/cpuinfo */
@@ -526,12 +566,43 @@ int cortex_collect_system_info(cortex_system_info_t *info) {
         info->thermal_celsius = -1.0f;
     }
 
+    /* CPU frequency from sysfs (SE-4) */
+    info->cpu_freq_mhz = 0;
+    {
+        FILE *freq_file = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r");
+        if (freq_file) {
+            unsigned long freq_khz = 0;
+            if (fscanf(freq_file, "%lu", &freq_khz) == 1) {
+                info->cpu_freq_mhz = (uint32_t)(freq_khz / 1000);
+            }
+            fclose(freq_file);
+        }
+    }
+
+    /* CPU governor from sysfs (SE-4) */
+    snprintf(info->governor, sizeof(info->governor), "unknown");
+    {
+        FILE *gov_file = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "r");
+        if (gov_file) {
+            if (fgets(info->governor, sizeof(info->governor), gov_file)) {
+                /* Remove trailing newline */
+                size_t len = strlen(info->governor);
+                if (len > 0 && info->governor[len - 1] == '\n') {
+                    info->governor[len - 1] = '\0';
+                }
+            }
+            fclose(gov_file);
+        }
+    }
+
 #else
     /* Unsupported platform */
     snprintf(info->cpu_model, sizeof(info->cpu_model), "Unknown");
     info->cpu_count = 0;
     info->total_ram_mb = 0;
     info->thermal_celsius = -1.0f;
+    info->cpu_freq_mhz = 0;
+    snprintf(info->governor, sizeof(info->governor), "unknown");
 #endif
 
     return 0;

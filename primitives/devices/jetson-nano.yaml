@@ -1,0 +1,19 @@
+device:
+  name: "NVIDIA Jetson Nano"
+  peak_gflops: 472.0        # 128 CUDA cores × 921 MHz × 2 (FMA) × 2 (FP32)
+  cpu_peak_gflops: 16.0     # 4× Cortex-A57 @ 1.43 GHz
+  memory_bandwidth_gb_s: 25.6  # 64-bit LPDDR4 @ 1600 MHz
+  l1_cache_kb: 32           # Per core
+  l2_cache_kb: 2048         # 2 MB shared
+  frequency:
+    model: dvfs
+    max_hz: 1430000000
+    per_sample: false
+  pmu:
+    instruction_count: true
+    l1d_misses: true
+    memory_stall_hierarchy: false
+    backend_stall: false
+  os_noise:
+    tracer: null
+  decomposition_tier: 1

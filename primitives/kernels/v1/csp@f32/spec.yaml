@@ -45,6 +45,11 @@ oracle:
   path: "oracle.py"
   dependencies: ["numpy", "scipy", "mne"]
 
+computational:
+  flops_per_sample: 512        # Spatial filter W×x: 2*C*K = 2*64*4 = 512 per sample
+  memory_loads_per_sample: 2   # input vector + filter matrix row
+  memory_stores_per_sample: 1  # output component
+
 references:
   - "Ramoser, H., et al. (2000). Optimal spatial filtering of single trial EEG during imagined hand movement. IEEE Trans Rehabil Eng."
   - "Blankertz, B., et al. (2008). Optimizing spatial filters for robust EEG single-trial analysis. IEEE Signal Process Mag."
