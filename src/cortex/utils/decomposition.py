@@ -55,6 +55,8 @@ class PredictionResult:
     instruction_profile: Optional[InstructionProfile]
     source: str                      # "objdump" or "spec.yaml"
     decomposition_tier: int = 0
+    instruction_count: Optional[int] = None      # retired instructions (from PMU)
+    probe_freq_hz: Optional[int] = None          # CPU freq at probe time (from PMU)
 
 
 @dataclass
@@ -77,6 +79,35 @@ class AttributionResult:
     nominal_freq_mhz: Optional[int]
     throttled_window_pct: float
     bound: str
+
+
+@dataclass
+class DistributionalAttribution:
+    """Tier 1 distributional decomposition with per-window compute bound."""
+    kernel_name: str
+    tier: int
+    # Measured
+    measured_p50_us: float
+    measured_p95_us: float
+    measured_p99_us: float
+    # Compute bound
+    compute_p50_us: float
+    compute_p95_us: float
+    compute_p99_us: float
+    # Residual (measured - compute)
+    residual_p50_us: float
+    residual_p95_us: float
+    residual_p99_us: float
+    # Noop baseline
+    noop_p50_us: float
+    noop_p95_us: float
+    noop_p99_us: float
+    # Net residual (residual - noop, quantile subtraction)
+    net_residual_p50_us: float
+    net_residual_p95_us: float
+    net_residual_p99_us: float
+    bound: str
+    n_windows: int
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +298,8 @@ class RooflineDecomposer:
         profile = analyze_kernel(kernel_name)
 
         # Try hardware PMU instruction count first
+        pmu_insn_count = None
+        pmu_freq_hz = None
         pmu_result = count_dynamic_instructions(kernel_name, window_length, channels)
         if pmu_result is not None:
             insn_count = pmu_result["instruction_count"]
@@ -275,6 +308,8 @@ class RooflineDecomposer:
                 ipc = 1.0  # conservative lower bound
                 compute_us = insn_count / (cpu_freq_hz * ipc) * 1e6
                 source = "pmu"
+                pmu_insn_count = insn_count
+                pmu_freq_hz = cpu_freq_hz
             else:
                 # PMU available but freq unknown — fall back to spec
                 compute_us, _, _, _, _ = spec_result
@@ -303,6 +338,8 @@ class RooflineDecomposer:
             instruction_profile=profile,
             source=source,
             decomposition_tier=self.decomposition_tier,
+            instruction_count=pmu_insn_count,
+            probe_freq_hz=pmu_freq_hz,
         )
 
     def predict_all(
@@ -380,6 +417,10 @@ def save_prediction(
             "source": r.source,
             "decomposition_tier": r.decomposition_tier,
         }
+        if r.instruction_count is not None:
+            entry["instruction_count"] = r.instruction_count
+        if r.probe_freq_hz is not None:
+            entry["probe_freq_hz"] = r.probe_freq_hz
         if r.instruction_profile is not None:
             entry["instruction_profile"] = asdict(r.instruction_profile)
         data["predictions"].append(entry)
@@ -468,6 +509,92 @@ def attribute_latency(
         nominal_freq_mhz=nominal_freq,
         throttled_window_pct=throttled_pct,
         bound=prediction.bound,
+    )
+
+
+def attribute_latency_distributional(
+    prediction: PredictionResult,
+    measured_latencies_us: list,
+    noop_latencies_us: list,
+    cpu_freqs_mhz: Optional[list] = None,
+) -> DistributionalAttribution:
+    """Tier 1 distributional decomposition with per-window compute bound.
+
+    For each sample L_i:
+      C_i = instruction_count / (freq_i * IPC)
+      residual_i = max(0, L_i - C_i)
+    Output: percentiles for measured, compute, residual, noop, net_residual.
+
+    Args:
+        prediction: PredictionResult with instruction_count and probe_freq_hz
+        measured_latencies_us: Per-window latency values
+        noop_latencies_us: Per-window noop latency values (full distribution)
+        cpu_freqs_mhz: Per-window CPU frequency in MHz (or None)
+    """
+    import numpy as np
+
+    measured = np.array(measured_latencies_us, dtype=float)
+    noop = np.array(noop_latencies_us, dtype=float)
+
+    instruction_count = prediction.instruction_count
+    probe_freq_hz = prediction.probe_freq_hz
+    ipc = 1.0
+
+    # Build per-window frequency array (Hz)
+    if cpu_freqs_mhz is not None:
+        freq_arr = np.array(cpu_freqs_mhz, dtype=float) * 1e6  # MHz → Hz
+        # Replace zeros (macOS) with probe_freq_hz
+        freq_arr[freq_arr == 0] = probe_freq_hz
+    else:
+        freq_arr = np.full(len(measured), probe_freq_hz, dtype=float)
+
+    # Per-window compute bound: C_i = instruction_count / (freq_i * IPC) * 1e6 → us
+    compute = instruction_count / (freq_arr * ipc) * 1e6
+
+    # Residual clamped to non-negative
+    residual = np.maximum(0.0, measured - compute)
+
+    # Percentile extraction
+    def pcts(arr):
+        return (
+            float(np.percentile(arr, 50)),
+            float(np.percentile(arr, 95)),
+            float(np.percentile(arr, 99)),
+        )
+
+    m50, m95, m99 = pcts(measured)
+    c50, c95, c99 = pcts(compute)
+    r50, r95, r99 = pcts(residual)
+    n50, n95, n99 = pcts(noop)
+
+    # Quantile subtraction: net_residual_pX = max(0, residual_pX - noop_pX)
+    nr50 = max(0.0, r50 - n50)
+    nr95 = max(0.0, r95 - n95)
+    nr99 = max(0.0, r99 - n99)
+
+    # Determine bound from compute vs residual dominance
+    bound = prediction.bound
+
+    return DistributionalAttribution(
+        kernel_name=prediction.kernel_name,
+        tier=prediction.decomposition_tier,
+        measured_p50_us=m50,
+        measured_p95_us=m95,
+        measured_p99_us=m99,
+        compute_p50_us=c50,
+        compute_p95_us=c95,
+        compute_p99_us=c99,
+        residual_p50_us=r50,
+        residual_p95_us=r95,
+        residual_p99_us=r99,
+        noop_p50_us=n50,
+        noop_p95_us=n95,
+        noop_p99_us=n99,
+        net_residual_p50_us=nr50,
+        net_residual_p95_us=nr95,
+        net_residual_p99_us=nr99,
+        bound=bound,
+        n_windows=len(measured),
     )
 
 

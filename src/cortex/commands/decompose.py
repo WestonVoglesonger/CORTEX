@@ -8,9 +8,12 @@ import json
 
 from cortex.core import ConsoleLogger, RealFileSystemService, YamlConfigLoader
 from cortex.utils.analyzer import TelemetryAnalyzer
+import numpy as np
+
 from cortex.utils.decomposition import (
     load_device_spec, load_prediction, attribute_latency,
-    PredictionResult, AttributionResult,
+    attribute_latency_distributional,
+    PredictionResult, AttributionResult, DistributionalAttribution,
 )
 
 
@@ -87,15 +90,32 @@ def execute(args):
     # Filter warmup
     df_real = df[df['warmup'] == 0].copy()
 
-    # Extract noop baseline
-    noop_baseline_us = _get_noop_baseline(df_real)
-
     # Reconstruct PredictionResult objects from prediction.json
     tier = pred_data.get('decomposition_tier', 0)
+    use_distributional = tier >= 1
     predictions = _load_predictions(pred_data)
     if not predictions:
         print("Error: No predictions found in prediction file")
         return 1
+
+    # Derive device execution latency for distributional path
+    has_device_ts = ('device_tstart_ns' in df_real.columns
+                     and 'device_tend_ns' in df_real.columns)
+    if has_device_ts:
+        df_real['device_latency_us'] = (
+            df_real['device_tend_ns'] - df_real['device_tstart_ns']
+        ) / 1000.0
+
+    # Get noop latencies (full distribution for tier >= 1, scalar for tier 0)
+    noop_df = df_real[df_real['plugin'] == 'noop']
+    if use_distributional and has_device_ts:
+        noop_latencies = noop_df['device_latency_us'].tolist() if not noop_df.empty else []
+    else:
+        noop_latencies = noop_df['latency_us'].tolist() if not noop_df.empty else []
+    noop_baseline_us = float(np.median(noop_latencies)) if noop_latencies else 0.0
+
+    if not noop_latencies:
+        print("Warning: No noop kernel in telemetry. I/O baseline set to 0.")
 
     # Run attribution for each kernel
     results = []
@@ -105,25 +125,43 @@ def execute(args):
             print(f"Warning: No telemetry for kernel '{pred.kernel_name}', skipping")
             continue
 
-        latencies = kernel_df['latency_us'].tolist()
+        # Distributional path uses device execution time (matches prediction model)
+        # Scalar path uses total window time (harness-level view)
+        if use_distributional and has_device_ts:
+            latencies = kernel_df['device_latency_us'].tolist()
+        else:
+            latencies = kernel_df['latency_us'].tolist()
         freqs = kernel_df['cpu_freq_mhz'].tolist() if 'cpu_freq_mhz' in kernel_df.columns else None
 
-        attr = attribute_latency(pred, latencies, noop_baseline_us, freqs)
+        if use_distributional and pred.instruction_count is not None and noop_latencies:
+            attr = attribute_latency_distributional(pred, latencies, noop_latencies, freqs)
+        else:
+            attr = attribute_latency(pred, latencies, noop_baseline_us, freqs)
         results.append(attr)
 
     if not results:
         print("Error: No kernels matched between prediction and telemetry")
         return 1
 
-    # Output
+    # Output — dispatch based on result type
     dev = device_spec.get('device', device_spec)
+    has_distributional = any(isinstance(r, DistributionalAttribution) for r in results)
+
     if args.format == 'json':
         _output_json(results, dev, tier)
     elif args.format == 'markdown':
-        md = _generate_markdown(results, dev, tier)
+        if has_distributional:
+            md = _generate_markdown_distributional(
+                [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
+        else:
+            md = _generate_markdown(results, dev, tier)
         print(md)
     else:
-        _output_table(results, dev, tier)
+        if has_distributional:
+            _output_table_distributional(
+                [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
+        else:
+            _output_table(results, dev, tier)
 
     # Write report if output dir specified
     if args.output:
@@ -131,14 +169,6 @@ def execute(args):
 
     return 0
 
-
-def _get_noop_baseline(df):
-    """Extract noop median latency as I/O baseline."""
-    noop = df[df['plugin'] == 'noop']
-    if noop.empty:
-        print("Warning: No noop kernel in telemetry. I/O baseline set to 0.")
-        return 0.0
-    return float(noop['latency_us'].median())
 
 
 def _load_predictions(pred_data):
@@ -157,6 +187,8 @@ def _load_predictions(pred_data):
             instruction_profile=None,
             source=p.get('source', 'unknown'),
             decomposition_tier=p.get('decomposition_tier', tier),
+            instruction_count=p.get('instruction_count'),
+            probe_freq_hz=p.get('probe_freq_hz'),
         ))
     return results
 
@@ -249,7 +281,12 @@ def _generate_markdown(results, dev, tier=0):
 
 def _write_report(results, dev, tier, output_dir, fs):
     """Write DECOMPOSITION.md report to output directory."""
-    md = _generate_markdown(results, dev, tier)
+    has_distributional = any(isinstance(r, DistributionalAttribution) for r in results)
+    if has_distributional:
+        md = _generate_markdown_distributional(
+            [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
+    else:
+        md = _generate_markdown(results, dev, tier)
     try:
         if not fs.exists(output_dir):
             fs.makedirs(output_dir, exist_ok=True)
@@ -259,3 +296,78 @@ def _write_report(results, dev, tier, output_dir, fs):
         print(f"\nReport written to: {report_path}")
     except Exception as e:
         print(f"\nWarning: Could not write report: {e}")
+
+
+def _output_table_distributional(results, dev, tier=1):
+    """Print distributional decomposition as formatted table with percentiles."""
+    print(f"\nDistributional Latency Decomposition [Tier {tier}] — {dev.get('name', 'Unknown Device')}")
+    print("=" * 130)
+    print(f"{'Kernel':<16} {'':>6} {'Measured':>10} {'Compute':>10} {'Residual':>10} "
+          f"{'Noop':>10} {'Net Resid':>10} {'Bound':>10} {'N':>6}")
+    print("-" * 130)
+
+    for r in sorted(results, key=lambda x: x.measured_p50_us, reverse=True):
+        for label, mval, cval, rval, nval, nrval in [
+            ("p50", r.measured_p50_us, r.compute_p50_us, r.residual_p50_us,
+             r.noop_p50_us, r.net_residual_p50_us),
+            ("p95", r.measured_p95_us, r.compute_p95_us, r.residual_p95_us,
+             r.noop_p95_us, r.net_residual_p95_us),
+            ("p99", r.measured_p99_us, r.compute_p99_us, r.residual_p99_us,
+             r.noop_p99_us, r.net_residual_p99_us),
+        ]:
+            name_col = r.kernel_name if label == "p50" else ""
+            n_col = str(r.n_windows) if label == "p50" else ""
+            bound_col = r.bound if label == "p50" else ""
+            print(f"{name_col:<16} {label:>6} {mval:>10.1f} {cval:>10.1f} "
+                  f"{rval:>10.1f} {nval:>10.1f} {nrval:>10.1f} "
+                  f"{bound_col:>10} {n_col:>6}")
+        print("-" * 130)
+
+    print("\nCompute = instruction_count / (freq * IPC). Residual = measured - compute.")
+    print("Net Resid = residual - noop (quantile subtraction).")
+
+
+def _generate_markdown_distributional(results, dev, tier=1):
+    """Generate markdown report for distributional decomposition."""
+    lines = [
+        "# Distributional Latency Decomposition Report",
+        "",
+        f"**Device:** {dev.get('name', 'Unknown')}  ",
+        f"**Decomposition Tier:** {tier}  ",
+        "",
+        "## Distributional Breakdown",
+        "",
+        "| Kernel | Pct | Measured (us) | Compute (us) | Residual (us) | Noop (us) | Net Residual (us) | Bound | N |",
+        "|--------|-----|--------------|-------------|--------------|----------|-------------------|-------|---|",
+    ]
+
+    for r in sorted(results, key=lambda x: x.measured_p50_us, reverse=True):
+        for label, mval, cval, rval, nval, nrval in [
+            ("p50", r.measured_p50_us, r.compute_p50_us, r.residual_p50_us,
+             r.noop_p50_us, r.net_residual_p50_us),
+            ("p95", r.measured_p95_us, r.compute_p95_us, r.residual_p95_us,
+             r.noop_p95_us, r.net_residual_p95_us),
+            ("p99", r.measured_p99_us, r.compute_p99_us, r.residual_p99_us,
+             r.noop_p99_us, r.net_residual_p99_us),
+        ]:
+            name = r.kernel_name if label == "p50" else ""
+            bound = r.bound if label == "p50" else ""
+            n = str(r.n_windows) if label == "p50" else ""
+            lines.append(
+                f"| {name} | {label} | {mval:.1f} | {cval:.1f} | "
+                f"{rval:.1f} | {nval:.1f} | {nrval:.1f} | {bound} | {n} |"
+            )
+
+    lines.extend([
+        "",
+        "## Component Definitions",
+        "",
+        "- **Compute**: Per-window compute bound = instruction_count / (freq_i * IPC), IPC=1.0",
+        "- **Residual**: measured - compute (clamped >= 0)",
+        "- **Noop**: Harness overhead distribution",
+        "- **Net Residual**: residual - noop (quantile subtraction, clamped >= 0)",
+        "",
+        "*Generated by `cortex decompose` (Tier 1 distributional)*",
+    ])
+
+    return '\n'.join(lines)

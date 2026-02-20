@@ -187,19 +187,18 @@ def _probe_pmu() -> dict:
     if not inscount_path.exists():
         return {"pmu_available": False, "cpu_freq_hz": 0}
 
-    noop_plugin = None
-    for ext in (".dylib", ".so"):
-        candidate = Path(f"primitives/kernels/v1/noop@f32/libnoop{ext}")
-        if candidate.exists():
-            noop_plugin = str(candidate)
-            break
-
-    if noop_plugin is None:
+    noop_spec_uri = Path("primitives/kernels/v1/noop@f32")
+    # Verify the plugin is built (dylib/so exists)
+    plugin_built = any(
+        (noop_spec_uri / f"libnoop{ext}").exists()
+        for ext in (".dylib", ".so")
+    )
+    if not plugin_built:
         return {"pmu_available": False, "cpu_freq_hz": 0}
 
     try:
         result = subprocess.run(
-            [str(inscount_path), "--plugin", noop_plugin, "--repeats", "1"],
+            [str(inscount_path), "--plugin", str(noop_spec_uri), "--repeats", "1"],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:

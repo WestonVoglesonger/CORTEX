@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from cortex.utils.decomposition import (
     RooflineDecomposer, DecompositionResult, PredictionResult, ChainPrediction,
+    save_prediction, load_prediction,
 )
 from cortex.utils.instruction_analyzer import (
     InstructionProfile, _classify_arm64, _classify_x86_64,
@@ -714,3 +715,167 @@ class TestPredictionResultTier:
         spec = self._make_kernel_spec()
         decomposer = RooflineDecomposer(device, {"test_kernel": spec})
         assert decomposer.decomposition_tier == 0
+
+
+# ---------------------------------------------------------------------------
+# TestPredictionResultPMUFields
+# ---------------------------------------------------------------------------
+
+class TestPredictionResultPMUFields:
+    """Tests for instruction_count / probe_freq_hz on PredictionResult."""
+
+    def test_prediction_result_stores_instruction_count(self):
+        """PredictionResult accepts instruction_count and probe_freq_hz fields."""
+        result = PredictionResult(
+            kernel_name="goertzel",
+            theoretical_compute_us=0.5,
+            theoretical_memory_us=0.2,
+            theoretical_io_us=0.0,
+            theoretical_peak_us=0.5,
+            bound="compute",
+            operational_intensity=2.5,
+            instruction_profile=None,
+            source="pmu",
+            decomposition_tier=1,
+            instruction_count=50000,
+            probe_freq_hz=3228000000,
+        )
+        assert result.instruction_count == 50000
+        assert result.probe_freq_hz == 3228000000
+
+    def test_prediction_result_pmu_fields_default_none(self):
+        """Fields default to None when not provided."""
+        result = PredictionResult(
+            kernel_name="goertzel",
+            theoretical_compute_us=0.5,
+            theoretical_memory_us=0.2,
+            theoretical_io_us=0.0,
+            theoretical_peak_us=0.5,
+            bound="compute",
+            operational_intensity=2.5,
+            instruction_profile=None,
+            source="spec.yaml",
+        )
+        assert result.instruction_count is None
+        assert result.probe_freq_hz is None
+
+
+# ---------------------------------------------------------------------------
+# TestSavePredictionPMUFields
+# ---------------------------------------------------------------------------
+
+class TestSavePredictionPMUFields:
+    """Tests for PMU field persistence in prediction.json."""
+
+    def _make_prediction(self, instruction_count=None, probe_freq_hz=None):
+        return PredictionResult(
+            kernel_name="goertzel",
+            theoretical_compute_us=0.5,
+            theoretical_memory_us=0.2,
+            theoretical_io_us=0.0,
+            theoretical_peak_us=0.5,
+            bound="compute",
+            operational_intensity=2.5,
+            instruction_profile=None,
+            source="pmu",
+            decomposition_tier=1,
+            instruction_count=instruction_count,
+            probe_freq_hz=probe_freq_hz,
+        )
+
+    def test_save_prediction_includes_pmu_data(self, tmp_path):
+        """When instruction_count is set, prediction.json contains PMU fields."""
+        pred = self._make_prediction(instruction_count=50000, probe_freq_hz=3228000000)
+        out = str(tmp_path / "prediction.json")
+        device_spec = {"device": {"name": "Test", "decomposition_tier": 1}}
+        save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
+
+        import json
+        with open(out) as f:
+            data = json.load(f)
+        entry = data["predictions"][0]
+        assert entry["instruction_count"] == 50000
+        assert entry["probe_freq_hz"] == 3228000000
+
+    def test_save_prediction_omits_pmu_when_none(self, tmp_path):
+        """When fields are None, prediction.json omits them."""
+        pred = self._make_prediction()
+        out = str(tmp_path / "prediction.json")
+        device_spec = {"device": {"name": "Test", "decomposition_tier": 0}}
+        save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
+
+        import json
+        with open(out) as f:
+            data = json.load(f)
+        entry = data["predictions"][0]
+        assert "instruction_count" not in entry
+        assert "probe_freq_hz" not in entry
+
+    def test_load_prediction_roundtrip_pmu(self, tmp_path):
+        """Save then load preserves instruction_count/probe_freq_hz."""
+        pred = self._make_prediction(instruction_count=12345, probe_freq_hz=1800000000)
+        out = str(tmp_path / "prediction.json")
+        device_spec = {"device": {"name": "Test", "decomposition_tier": 1}}
+        save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
+
+        data = load_prediction(out)
+        entry = data["predictions"][0]
+        assert entry["instruction_count"] == 12345
+        assert entry["probe_freq_hz"] == 1800000000
+
+
+# ---------------------------------------------------------------------------
+# TestPredictStoresPMUInResult
+# ---------------------------------------------------------------------------
+
+class TestPredictStoresPMUInResult:
+    """Tests that predict() wires PMU values onto PredictionResult."""
+
+    def _make_device(self, tier=1):
+        return {
+            'device': {
+                'name': 'Test Device',
+                'cpu_peak_gflops': 100.0,
+                'memory_bandwidth_gb_s': 68.25,
+                'decomposition_tier': tier,
+            }
+        }
+
+    def _make_kernel_spec(self):
+        return {
+            'kernel': {'name': 'test_kernel'},
+            'computational': {
+                'flops_per_sample': 128,
+                'memory_loads_per_sample': 2,
+                'memory_stores_per_sample': 1,
+            }
+        }
+
+    def test_predict_pmu_result_has_instruction_count(self):
+        """When PMU succeeds, result.instruction_count matches PMU output."""
+        device = self._make_device(tier=1)
+        spec = self._make_kernel_spec()
+        decomposer = RooflineDecomposer(device, {'test_kernel': spec})
+
+        pmu_result = {"instruction_count": 50000, "cpu_freq_hz": 3228000000}
+        with patch('cortex.utils.decomposition.count_dynamic_instructions', return_value=pmu_result), \
+             patch('cortex.utils.decomposition.analyze_kernel', return_value=None):
+            result = decomposer.predict('test_kernel')
+
+        assert result is not None
+        assert result.instruction_count == 50000
+        assert result.probe_freq_hz == 3228000000
+
+    def test_predict_spec_fallback_no_instruction_count(self):
+        """When PMU unavailable, result.instruction_count is None."""
+        device = self._make_device(tier=1)
+        spec = self._make_kernel_spec()
+        decomposer = RooflineDecomposer(device, {'test_kernel': spec})
+
+        with patch('cortex.utils.decomposition.count_dynamic_instructions', return_value=None), \
+             patch('cortex.utils.decomposition.analyze_kernel', return_value=None):
+            result = decomposer.predict('test_kernel')
+
+        assert result is not None
+        assert result.instruction_count is None
+        assert result.probe_freq_hz is None
