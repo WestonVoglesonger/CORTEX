@@ -1,10 +1,9 @@
-"""Device resolution, capability validation, and tier computation.
+"""Device resolution and capability validation.
 
 Replaces the hardcoded DEVICE_MODELS lookup table with YAML-based device
 primitives. Provides:
 - resolve_device(): Load device spec from path, short name, or auto-detect
-- validate_capabilities(): Probe runtime PMU/osnoise, degrade tier if needed
-- _compute_tier(): Pure function deriving decomposition tier from capabilities
+- validate_capabilities(): Probe runtime PMU/osnoise availability
 """
 import copy
 import json
@@ -142,8 +141,8 @@ def _match_device_yaml(cpu_name: str) -> Optional[dict]:
 def validate_capabilities(device_spec: dict) -> dict:
     """Probe runtime capabilities and degrade tier if reality doesn't match.
 
-    Returns a deep copy with decomposition_tier recomputed from actual
-    capabilities. Does not mutate the input.
+    Returns a deep copy with capabilities validated against actual
+    runtime availability. Does not mutate the input.
     """
     validated = copy.deepcopy(device_spec)
     dev = validated.get("device", validated)
@@ -164,15 +163,6 @@ def validate_capabilities(device_spec: dict) -> dict:
         actual_tracer = _probe_osnoise()
         if actual_tracer is None:
             osnoise_tracer = None
-
-    # Recompute tier from actual capabilities
-    dev["decomposition_tier"] = _compute_tier(
-        pmu_available=pmu_available,
-        osnoise_tracer=osnoise_tracer,
-        backend_stall=pmu.get("backend_stall", False) and pmu_available,
-        memory_stall_hierarchy=pmu.get("memory_stall_hierarchy", False) and pmu_available,
-        per_sample_freq=freq.get("per_sample", False),
-    )
 
     return validated
 
@@ -211,6 +201,8 @@ def _probe_pmu() -> dict:
         return {
             "pmu_available": True,
             "cpu_freq_hz": data.get("cpu_freq_hz", 0),
+            "cycle_count_available": data.get("cycle_count", 0) > 0,
+            "backend_stall_available": data.get("backend_stall_cycles", 0) > 0,
         }
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
         return {"pmu_available": False, "cpu_freq_hz": 0}
@@ -229,34 +221,3 @@ def _probe_osnoise() -> Optional[str]:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Tier computation (pure function)
-# ---------------------------------------------------------------------------
-
-def _compute_tier(
-    pmu_available: bool,
-    osnoise_tracer: Optional[str],
-    backend_stall: bool,
-    memory_stall_hierarchy: bool,
-    per_sample_freq: bool,
-) -> int:
-    """Derive decomposition tier from actual capabilities.
-
-    Tier 0: No PMU → prediction only
-    Tier 1: PMU instruction count → compute + residual
-    Tier 2: + backend stall + osnoise → compute + memory + I/O
-    Tier 3: + full TMA hierarchy + per-sample freq → cache-level decomposition
-    """
-    if not pmu_available:
-        return 0
-
-    # Tier 3: full TMA + per-sample frequency
-    if backend_stall and memory_stall_hierarchy and osnoise_tracer and per_sample_freq:
-        return 3
-
-    # Tier 2: backend stall + osnoise
-    if backend_stall and osnoise_tracer:
-        return 2
-
-    # Tier 1: PMU available
-    return 1

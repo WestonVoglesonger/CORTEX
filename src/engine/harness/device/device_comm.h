@@ -55,6 +55,9 @@ typedef struct {
     uint64_t tend;       /* Kernel process() returned */
     uint64_t tfirst_tx;  /* First result byte transmitted */
     uint64_t tlast_tx;   /* Last result byte transmitted */
+    uint64_t pmu_cycle_count;           /* CPU cycles during kernel execution (0 if unavailable) */
+    uint64_t pmu_instruction_count;     /* Retired instructions during kernel execution (0 if unavailable) */
+    uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
 } cortex_device_timing_t;
 
 /*

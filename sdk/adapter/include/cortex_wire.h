@@ -178,6 +178,9 @@ typedef struct __attribute__((packed)) {
     uint64_t tlast_tx;                /* Last result byte tx */
     uint32_t output_length_samples;
     uint32_t output_channels;
+    uint64_t pmu_cycle_count;           /* CPU cycles during kernel execution (0 if unavailable) */
+    uint64_t pmu_instruction_count;     /* Retired instructions during kernel execution (0 if unavailable) */
+    uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
 } cortex_wire_result_t;
 
 /*
@@ -209,6 +212,10 @@ typedef struct __attribute__((packed)) {
     uint64_t tlast_tx;
     uint32_t output_length_samples;
     uint32_t output_channels;
+    /* PMU counters (measured around kernel process() in adapter) */
+    uint64_t pmu_cycle_count;
+    uint64_t pmu_instruction_count;
+    uint64_t pmu_backend_stall_cycles;
     /* WINDOW_CHUNK pattern (chunking control) */
     uint32_t total_bytes;
     uint32_t offset_bytes;

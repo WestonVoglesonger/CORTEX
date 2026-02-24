@@ -229,7 +229,7 @@ def execute(args):
             return 1
         device_spec = validate_capabilities(device_spec)
         dev = device_spec.get('device', device_spec)
-        print(f"Device: {dev.get('name', 'Unknown')} [Tier {dev.get('decomposition_tier', 0)}]")
+        print(f"Device: {dev.get('name', 'Unknown')}")
 
     # Resolve deploy strategy (--deploy = how to reach it)
     deploy_string = resolve_deploy_arg(args, config_dict)

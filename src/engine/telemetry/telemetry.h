@@ -34,6 +34,14 @@ typedef struct cortex_telemetry_record {
     /* Platform state per window (SE-4) */
     uint32_t cpu_freq_mhz;        /* CPU frequency at window dispatch (0 if unavailable) */
 
+    /* Per-window PMU counters (SE-5 Tier 2) */
+    uint64_t pmu_cycle_count;           /* CPU cycles for this window (0 if unavailable) */
+    uint64_t pmu_instruction_count;     /* Retired instructions for this window (0 if unavailable) */
+    uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
+
+    /* Per-window OS noise (SE-5 Tier 2) */
+    uint64_t osnoise_total_ns;          /* Accumulated OS noise during window (0 if unavailable) */
+
     /* Chain execution (SE-8) */
     uint32_t stage_index;          /* Stage within chain (0xFFFFFFFF = not chained) */
 } cortex_telemetry_record_t;

@@ -350,6 +350,8 @@ def count_dynamic_instructions(
 
     return {
         "instruction_count": count,
+        "cycle_count": data.get("cycle_count", 0),
+        "backend_stall_cycles": data.get("backend_stall_cycles", 0),
         "cpu_freq_hz": data.get("cpu_freq_hz", 0),
     }
 

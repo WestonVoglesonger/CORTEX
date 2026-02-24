@@ -18,6 +18,7 @@
 #include "cortex_protocol.h"
 #include "cortex_adapter_helpers.h"
 #include "cortex_wire.h"
+#include "inscount.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -243,6 +244,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     float *window_buf = NULL;
     float *output_buf = NULL;
     kernel_plugin_t kernel_plugin = {0};
+    int pmu_initialized = 0;
 
     /* 1. Send HELLO */
     if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
@@ -284,7 +286,10 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
         goto cleanup;
     }
 
-    /* 5. Allocate window buffers */
+    /* 5. Initialize PMU counters (per-thread, measured around kernel process()) */
+    pmu_initialized = (cortex_inscount_init() == 0) ? 1 : 0;
+
+    /* 6. Allocate window buffers */
     window_buf = (float *)malloc(window_samples * channels * sizeof(float));
 
     /* Allocate output buffer based on kernel's actual output shape */
@@ -333,12 +338,17 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
         /* Set tin AFTER reassembly complete */
         uint64_t tin = get_timestamp_ns();
 
-        /* Process window with loaded kernel */
+        /* PMU around kernel execution — same window as tstart/tend */
+        cortex_pmu_counters_t pmu = {0};
+        if (pmu_initialized) cortex_inscount_start();
+
         uint64_t tstart = get_timestamp_ns();
         kernel_plugin.process(kernel_plugin.kernel_handle, window_buf, output_buf);
         uint64_t tend = get_timestamp_ns();
 
-        /* Send RESULT with actual output shape */
+        if (pmu_initialized) pmu = cortex_inscount_stop_all();
+
+        /* Send RESULT with actual output shape + PMU counters */
         uint64_t tfirst_tx = get_timestamp_ns();
         ret = cortex_adapter_send_result(
             tp,
@@ -351,7 +361,10 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
             tfirst_tx,  /* tlast_tx = tfirst_tx for now (approximate) */
             output_buf,
             kernel_plugin.output_window_length_samples,
-            kernel_plugin.output_channels
+            kernel_plugin.output_channels,
+            pmu.cycle_count,
+            pmu.instruction_count,
+            pmu.backend_stall_cycles
         );
         uint64_t tlast_tx = get_timestamp_ns();
 
@@ -369,7 +382,10 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     rc = 0;
 
 cleanup:
-    /* 7. Cleanup - always executed regardless of error path */
+    /* Cleanup - always executed regardless of error path */
+    if (pmu_initialized) {
+        cortex_inscount_teardown();
+    }
     free(window_buf);
     free(output_buf);
     free(calibration_state);

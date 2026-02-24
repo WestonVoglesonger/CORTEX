@@ -71,8 +71,7 @@ def execute(args):
         return 1
     device_spec = validate_capabilities(device_spec)
     dev = device_spec.get('device', device_spec)
-    tier = dev.get('decomposition_tier', 0)
-    print(f"Device: {dev.get('name', 'Unknown')} [Tier {tier}]")
+    print(f"Device: {dev.get('name', 'Unknown')}")
 
     # Step 2: Determine kernel list
     kernel_names = _resolve_kernel_list(args)
@@ -170,9 +169,8 @@ def _resolve_kernel_list(args):
 def _output_table(results, device_spec, is_chain=False):
     """Print prediction as formatted table."""
     dev = device_spec.get('device', device_spec)
-    tier = dev.get('decomposition_tier', 0)
     mode = "Chain Prediction" if is_chain else "Latency Prediction"
-    print(f"\n{mode} [Tier {tier}] — {dev.get('name', 'Unknown Device')}")
+    print(f"\n{mode} — {dev.get('name', 'Unknown Device')}")
     print("=" * 90)
     print(f"{'Kernel':<16} {'Compute':>10} {'Memory':>10} {'Peak':>10} "
           f"{'Bound':>10} {'OI':>8} {'Source':>10}")
@@ -201,7 +199,6 @@ def _output_json(results, device_spec, is_chain=False):
     dev = device_spec.get('device', device_spec)
     output = {
         'device': dev.get('name', 'Unknown'),
-        'decomposition_tier': dev.get('decomposition_tier', 0),
         'mode': 'chain' if is_chain else 'individual',
         'predictions': [],
     }

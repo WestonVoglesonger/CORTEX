@@ -14,7 +14,6 @@ device:
     instruction_count: true
     l1d_misses: true
     memory_stall_hierarchy: false
-    backend_stall: false
+    backend_stall: true
   os_noise:
     tracer: osnoise
-  decomposition_tier: 1

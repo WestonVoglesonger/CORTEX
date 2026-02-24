@@ -54,15 +54,6 @@ static const char *extract_kernel_name(const char *spec_uri) {
     return buf;
 }
 
-/* Compare for qsort (uint64_t ascending) */
-static int cmp_u64(const void *a, const void *b) {
-    uint64_t va = *(const uint64_t *)a;
-    uint64_t vb = *(const uint64_t *)b;
-    if (va < vb) return -1;
-    if (va > vb) return  1;
-    return 0;
-}
-
 int main(int argc, char **argv) {
     const char *plugin_spec = NULL;
     uint32_t channels = DEFAULT_CHANNELS;
@@ -178,9 +169,9 @@ int main(int argc, char **argv) {
     /* Warm up: one uncounted call to prime caches */
     plugin.api.process(init_result.handle, input, output);
 
-    /* Measure instruction count over repeats, take median */
-    uint64_t *counts = malloc((size_t)repeats * sizeof(uint64_t));
-    if (!counts) {
+    /* Measure multi-counter PMU over repeats, take median by instruction_count */
+    cortex_pmu_counters_t *counters = malloc((size_t)repeats * sizeof(cortex_pmu_counters_t));
+    if (!counters) {
         printf("{\"kernel\": \"%s\", \"instruction_count\": 0, \"available\": false, "
                "\"error\": \"allocation failed\"}\n", kernel_name);
         cortex_inscount_teardown();
@@ -194,20 +185,34 @@ int main(int argc, char **argv) {
     for (int i = 0; i < repeats; i++) {
         cortex_inscount_start();
         plugin.api.process(init_result.handle, input, output);
-        counts[i] = cortex_inscount_stop();
+        counters[i] = cortex_inscount_stop_all();
     }
 
-    /* Median */
-    qsort(counts, (size_t)repeats, sizeof(uint64_t), cmp_u64);
-    uint64_t median_count = counts[repeats / 2];
+    /* Sort by instruction_count for median (keeps all fields coherent from same run) */
+    for (int i = 0; i < repeats - 1; i++) {
+        for (int j = i + 1; j < repeats; j++) {
+            if (counters[j].instruction_count < counters[i].instruction_count) {
+                cortex_pmu_counters_t tmp = counters[i];
+                counters[i] = counters[j];
+                counters[j] = tmp;
+            }
+        }
+    }
+    cortex_pmu_counters_t median = counters[repeats / 2];
 
-    /* Output JSON */
-    printf("{\"kernel\": \"%s\", \"instruction_count\": %llu, \"cpu_freq_hz\": %llu, "
+    /* Output JSON with all available counters */
+    printf("{\"kernel\": \"%s\", \"instruction_count\": %llu, \"cycle_count\": %llu, "
+           "\"backend_stall_cycles\": %llu, \"cpu_freq_hz\": %llu, "
            "\"repeats\": %d, \"available\": true}\n",
-           kernel_name, (unsigned long long)median_count, (unsigned long long)cpu_freq_hz, repeats);
+           kernel_name,
+           (unsigned long long)median.instruction_count,
+           (unsigned long long)median.cycle_count,
+           (unsigned long long)median.backend_stall_cycles,
+           (unsigned long long)cpu_freq_hz,
+           repeats);
 
     /* Cleanup */
-    free(counts);
+    free(counters);
     cortex_inscount_teardown();
     plugin.api.teardown(init_result.handle);
     cortex_plugin_unload(&plugin);

@@ -5,132 +5,13 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from cortex.utils.decomposition import (
-    RooflineDecomposer, DecompositionResult, PredictionResult, ChainPrediction,
+    RooflineDecomposer, PredictionResult, ChainPrediction,
     save_prediction, load_prediction,
 )
 from cortex.utils.instruction_analyzer import (
     InstructionProfile, _classify_arm64, _classify_x86_64,
     _extract_function_instructions, count_dynamic_instructions,
 )
-
-
-# ---------------------------------------------------------------------------
-# Legacy: TestRooflineDecomposer (backward compat)
-# ---------------------------------------------------------------------------
-
-class TestRooflineDecomposer:
-    """Tests for RooflineDecomposer core logic."""
-
-    def _make_device(self, cpu_gflops=100.0, mem_bw=68.25):
-        return {
-            'device': {
-                'name': 'Test Device',
-                'cpu_peak_gflops': cpu_gflops,
-                'memory_bandwidth_gb_s': mem_bw,
-            }
-        }
-
-    def _make_kernel_spec(self, flops=128, loads=2, stores=1):
-        return {
-            'kernel': {'name': 'test_kernel'},
-            'computational': {
-                'flops_per_sample': flops,
-                'memory_loads_per_sample': loads,
-                'memory_stores_per_sample': stores,
-            }
-        }
-
-    def test_decompose_compute_bound_kernel(self):
-        """High FLOP kernel should be compute-bound."""
-        device = self._make_device(cpu_gflops=1.0, mem_bw=100.0)
-        spec = self._make_kernel_spec(flops=8192, loads=2, stores=1)
-        decomposer = RooflineDecomposer(device, {'ica': spec})
-
-        result = decomposer.decompose('ica', measured_latency_us=1000.0, window_length=160, channels=64)
-
-        assert result is not None
-        assert result.bound == "compute"
-        assert result.compute_pct > result.memory_pct
-        assert result.overhead_us >= 0
-
-    def test_decompose_memory_bound_kernel(self):
-        """Low FLOP kernel with many loads should be memory-bound."""
-        device = self._make_device(cpu_gflops=1000.0, mem_bw=1.0)
-        spec = self._make_kernel_spec(flops=2, loads=3, stores=2)
-        decomposer = RooflineDecomposer(device, {'car': spec})
-
-        result = decomposer.decompose('car', measured_latency_us=1000.0, window_length=160, channels=64)
-
-        assert result is not None
-        assert result.bound == "memory"
-        assert result.memory_pct > result.compute_pct
-
-    def test_decompose_overhead_bound_noop(self):
-        """Noop kernel (0 FLOPs) should be overhead-bound."""
-        device = self._make_device()
-        spec = self._make_kernel_spec(flops=0, loads=1, stores=1)
-        decomposer = RooflineDecomposer(device, {'noop': spec})
-
-        result = decomposer.decompose('noop', measured_latency_us=50.0, window_length=160, channels=64)
-
-        assert result is not None
-        assert result.bound == "overhead"
-        assert result.overhead_pct > 90.0
-
-    def test_decompose_unknown_kernel_returns_none(self):
-        """Unknown kernel name returns None."""
-        device = self._make_device()
-        decomposer = RooflineDecomposer(device, {})
-
-        result = decomposer.decompose('nonexistent', measured_latency_us=100.0)
-        assert result is None
-
-    def test_decompose_kernel_without_computational_returns_none(self):
-        """Kernel spec without computational section returns None."""
-        device = self._make_device()
-        spec = {'kernel': {'name': 'bare'}}
-        decomposer = RooflineDecomposer(device, {'bare': spec})
-
-        result = decomposer.decompose('bare', measured_latency_us=100.0)
-        assert result is None
-
-    def test_operational_intensity(self):
-        """OI = total_flops / total_bytes."""
-        device = self._make_device()
-        spec = self._make_kernel_spec(flops=128, loads=2, stores=1)
-        decomposer = RooflineDecomposer(device, {'fir': spec})
-
-        result = decomposer.decompose('fir', measured_latency_us=100.0, window_length=10, channels=1)
-
-        assert result is not None
-        assert abs(result.operational_intensity - 1280.0 / 120.0) < 0.01
-
-    def test_decompose_all(self):
-        """decompose_all returns results for all kernels with specs."""
-        device = self._make_device()
-        specs = {
-            'a': self._make_kernel_spec(flops=10),
-            'b': self._make_kernel_spec(flops=100),
-            'c': {'kernel': {'name': 'c'}},
-        }
-        decomposer = RooflineDecomposer(device, specs)
-
-        results = decomposer.decompose_all({'a': 50.0, 'b': 200.0, 'c': 30.0})
-
-        assert len(results) == 2
-        names = {r.kernel_name for r in results}
-        assert names == {'a', 'b'}
-
-    def test_percentages_sum_approximately(self):
-        """overhead >= 0 always."""
-        device = self._make_device()
-        spec = self._make_kernel_spec(flops=128, loads=2, stores=1)
-        decomposer = RooflineDecomposer(device, {'fir': spec})
-
-        result = decomposer.decompose('fir', measured_latency_us=500.0, window_length=160, channels=64)
-
-        assert result is not None
-        assert result.overhead_pct >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -411,52 +292,12 @@ class TestResolveDevice:
 # ---------------------------------------------------------------------------
 
 class TestValidateCapabilities:
-    """Tests for runtime capability validation and tier degradation."""
-
-    def test_degrades_tier_when_pmu_unavailable(self):
-        """Declared tier 1 degrades to 0 if PMU probe fails."""
-        from cortex.utils.device import validate_capabilities
-        spec = {"device": {"name": "Test", "decomposition_tier": 1,
-                           "pmu": {"instruction_count": True, "l1d_misses": True,
-                                   "memory_stall_hierarchy": False, "backend_stall": False},
-                           "os_noise": {"tracer": None},
-                           "frequency": {"model": "fixed", "max_hz": 3e9, "per_sample": False}}}
-        with patch('cortex.utils.device._probe_pmu',
-                   return_value={"pmu_available": False, "cpu_freq_hz": 0}):
-            validated = validate_capabilities(spec)
-        assert validated["device"]["decomposition_tier"] == 0
-
-    def test_keeps_tier_when_pmu_available(self):
-        """Declared tier 1 maintained when PMU works."""
-        from cortex.utils.device import validate_capabilities
-        spec = {"device": {"name": "Test", "decomposition_tier": 1,
-                           "pmu": {"instruction_count": True, "l1d_misses": True,
-                                   "memory_stall_hierarchy": False, "backend_stall": False},
-                           "os_noise": {"tracer": None},
-                           "frequency": {"model": "fixed", "max_hz": 3e9, "per_sample": False}}}
-        with patch('cortex.utils.device._probe_pmu',
-                   return_value={"pmu_available": True, "cpu_freq_hz": 3_000_000_000}):
-            validated = validate_capabilities(spec)
-        assert validated["device"]["decomposition_tier"] == 1
-
-    def test_degrades_tier_2_to_1_without_osnoise(self):
-        """Tier 2 device degrades to 1 if osnoise not available."""
-        from cortex.utils.device import validate_capabilities
-        spec = {"device": {"name": "Test", "decomposition_tier": 2,
-                           "pmu": {"instruction_count": True, "l1d_misses": True,
-                                   "memory_stall_hierarchy": False, "backend_stall": True},
-                           "os_noise": {"tracer": "osnoise"},
-                           "frequency": {"model": "dvfs", "max_hz": 1.8e9, "per_sample": False}}}
-        with patch('cortex.utils.device._probe_pmu',
-                   return_value={"pmu_available": True, "cpu_freq_hz": 1_800_000_000}), \
-             patch('cortex.utils.device._probe_osnoise', return_value=None):
-            validated = validate_capabilities(spec)
-        assert validated["device"]["decomposition_tier"] == 1
+    """Tests for runtime capability validation."""
 
     def test_returns_copy_not_mutating_original(self):
-        """validate_capabilities returns a modified copy, not mutating the original."""
+        """validate_capabilities returns a copy, not mutating the original."""
         from cortex.utils.device import validate_capabilities
-        spec = {"device": {"name": "Test", "decomposition_tier": 1,
+        spec = {"device": {"name": "Test",
                            "pmu": {"instruction_count": True, "l1d_misses": True,
                                    "memory_stall_hierarchy": False, "backend_stall": False},
                            "os_noise": {"tracer": None},
@@ -465,38 +306,8 @@ class TestValidateCapabilities:
                    return_value={"pmu_available": False, "cpu_freq_hz": 0}):
             validated = validate_capabilities(spec)
         # Original should be unchanged
-        assert spec["device"]["decomposition_tier"] == 1
-        assert validated["device"]["decomposition_tier"] == 0
-
-
-# ---------------------------------------------------------------------------
-# TestComputeTier
-# ---------------------------------------------------------------------------
-
-class TestComputeTier:
-    """Tests for _compute_tier pure function (tier derivation logic)."""
-
-    def test_tier_0_no_pmu(self):
-        from cortex.utils.device import _compute_tier
-        assert _compute_tier(pmu_available=False, osnoise_tracer=None,
-                             backend_stall=False, memory_stall_hierarchy=False,
-                             per_sample_freq=False) == 0
-
-    def test_tier_1_pmu_only(self):
-        from cortex.utils.device import _compute_tier
-        assert _compute_tier(True, None, False, False, False) == 1
-
-    def test_tier_2_stalls_and_osnoise(self):
-        from cortex.utils.device import _compute_tier
-        assert _compute_tier(True, "osnoise", True, False, False) == 2
-
-    def test_tier_3_full_tma(self):
-        from cortex.utils.device import _compute_tier
-        assert _compute_tier(True, "osnoise", True, True, True) == 3
-
-    def test_osnoise_without_backend_stall_stays_tier_1(self):
-        from cortex.utils.device import _compute_tier
-        assert _compute_tier(True, "osnoise", False, False, False) == 1
+        assert spec["device"]["name"] == "Test"
+        assert validated["device"]["name"] == "Test"
 
 
 # ---------------------------------------------------------------------------
@@ -681,40 +492,6 @@ class TestPredictWithPMU:
 # TestPredictionResultTier
 # ---------------------------------------------------------------------------
 
-class TestPredictionResultTier:
-    """Tests for decomposition_tier on PredictionResult and RooflineDecomposer."""
-
-    def _make_kernel_spec(self, flops=128, loads=2, stores=1):
-        return {
-            'kernel': {'name': 'test_kernel'},
-            'computational': {
-                'flops_per_sample': flops,
-                'memory_loads_per_sample': loads,
-                'memory_stores_per_sample': stores,
-            }
-        }
-
-    def test_prediction_result_carries_device_tier(self):
-        """PredictionResult.decomposition_tier matches device spec."""
-        device = {"device": {"name": "Test", "cpu_peak_gflops": 100.0,
-                             "memory_bandwidth_gb_s": 68.25, "decomposition_tier": 2}}
-        spec = self._make_kernel_spec()
-        decomposer = RooflineDecomposer(device, {"test_kernel": spec})
-
-        with patch('cortex.utils.decomposition.count_dynamic_instructions', return_value=None), \
-             patch('cortex.utils.decomposition.analyze_kernel', return_value=None):
-            result = decomposer.predict("test_kernel")
-
-        assert result is not None
-        assert result.decomposition_tier == 2
-
-    def test_prediction_result_default_tier_zero(self):
-        """Device spec without tier field defaults to 0."""
-        device = {"device": {"name": "Test", "cpu_peak_gflops": 100.0,
-                             "memory_bandwidth_gb_s": 68.25}}
-        spec = self._make_kernel_spec()
-        decomposer = RooflineDecomposer(device, {"test_kernel": spec})
-        assert decomposer.decomposition_tier == 0
 
 
 # ---------------------------------------------------------------------------
@@ -736,7 +513,6 @@ class TestPredictionResultPMUFields:
             operational_intensity=2.5,
             instruction_profile=None,
             source="pmu",
-            decomposition_tier=1,
             instruction_count=50000,
             probe_freq_hz=3228000000,
         )
@@ -778,7 +554,6 @@ class TestSavePredictionPMUFields:
             operational_intensity=2.5,
             instruction_profile=None,
             source="pmu",
-            decomposition_tier=1,
             instruction_count=instruction_count,
             probe_freq_hz=probe_freq_hz,
         )
@@ -787,7 +562,7 @@ class TestSavePredictionPMUFields:
         """When instruction_count is set, prediction.json contains PMU fields."""
         pred = self._make_prediction(instruction_count=50000, probe_freq_hz=3228000000)
         out = str(tmp_path / "prediction.json")
-        device_spec = {"device": {"name": "Test", "decomposition_tier": 1}}
+        device_spec = {"device": {"name": "Test"}}
         save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
 
         import json
@@ -801,7 +576,7 @@ class TestSavePredictionPMUFields:
         """When fields are None, prediction.json omits them."""
         pred = self._make_prediction()
         out = str(tmp_path / "prediction.json")
-        device_spec = {"device": {"name": "Test", "decomposition_tier": 0}}
+        device_spec = {"device": {"name": "Test"}}
         save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
 
         import json
@@ -815,7 +590,7 @@ class TestSavePredictionPMUFields:
         """Save then load preserves instruction_count/probe_freq_hz."""
         pred = self._make_prediction(instruction_count=12345, probe_freq_hz=1800000000)
         out = str(tmp_path / "prediction.json")
-        device_spec = {"device": {"name": "Test", "decomposition_tier": 1}}
+        device_spec = {"device": {"name": "Test"}}
         save_prediction([pred], device_spec, {"window_length": 160, "channels": 64}, out)
 
         data = load_prediction(out)
@@ -831,13 +606,12 @@ class TestSavePredictionPMUFields:
 class TestPredictStoresPMUInResult:
     """Tests that predict() wires PMU values onto PredictionResult."""
 
-    def _make_device(self, tier=1):
+    def _make_device(self):
         return {
             'device': {
                 'name': 'Test Device',
                 'cpu_peak_gflops': 100.0,
                 'memory_bandwidth_gb_s': 68.25,
-                'decomposition_tier': tier,
             }
         }
 
@@ -853,7 +627,7 @@ class TestPredictStoresPMUInResult:
 
     def test_predict_pmu_result_has_instruction_count(self):
         """When PMU succeeds, result.instruction_count matches PMU output."""
-        device = self._make_device(tier=1)
+        device = self._make_device()
         spec = self._make_kernel_spec()
         decomposer = RooflineDecomposer(device, {'test_kernel': spec})
 
@@ -868,7 +642,7 @@ class TestPredictStoresPMUInResult:
 
     def test_predict_spec_fallback_no_instruction_count(self):
         """When PMU unavailable, result.instruction_count is None."""
-        device = self._make_device(tier=1)
+        device = self._make_device()
         spec = self._make_kernel_spec()
         decomposer = RooflineDecomposer(device, {'test_kernel': spec})
 

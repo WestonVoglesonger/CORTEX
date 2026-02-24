@@ -1,45 +1,25 @@
-"""Roofline-based latency decomposition and prediction (SE-5).
+"""Roofline-based latency prediction and characterization (SE-5).
 
-Provides three capabilities:
-1. Decompose (legacy): break measured latency into compute/memory/overhead
-2. Predict (new): static pre-benchmark prediction using instruction analysis
-3. Attribute (new): fit predicted to measured with I/O, DVFS, scheduling breakdown
+Provides:
+1. Predict: static pre-benchmark prediction using instruction analysis
+2. Characterize: post-hoc characterization with distribution landmarks + provenance
 """
 import json
+import logging
 import yaml
 from pathlib import Path
 from typing import Dict, Optional, List
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 
 from cortex.utils.instruction_analyzer import (
     InstructionProfile, analyze_kernel, count_dynamic_instructions,
 )
 
-
-# ---------------------------------------------------------------------------
-# Legacy dataclass (backward compatibility)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class DecompositionResult:
-    """Result of latency decomposition for a single kernel."""
-    kernel_name: str
-    measured_latency_us: float
-    theoretical_compute_us: float
-    theoretical_memory_us: float
-    theoretical_peak_us: float       # max(compute, memory)
-    overhead_us: float               # measured - theoretical_peak
-    compute_pct: float
-    memory_pct: float
-    overhead_pct: float
-    bound: str                       # "compute", "memory", or "overhead"
-    operational_intensity: float     # FLOPs / bytes
-    total_flops: float
-    total_bytes: float
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# New prediction dataclasses
+# Prediction dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -54,7 +34,6 @@ class PredictionResult:
     operational_intensity: float
     instruction_profile: Optional[InstructionProfile]
     source: str                      # "objdump" or "spec.yaml"
-    decomposition_tier: int = 0
     instruction_count: Optional[int] = None      # retired instructions (from PMU)
     probe_freq_hz: Optional[int] = None          # CPU freq at probe time (from PMU)
 
@@ -67,47 +46,289 @@ class ChainPrediction:
     stage_names: List[str]
 
 
-@dataclass
-class AttributionResult:
-    """Post-benchmark attribution breaking measured latency into components."""
-    kernel_name: str
-    predicted_peak_us: float
-    measured_median_us: float
-    io_overhead_us: float              # from noop baseline
-    dvfs_overhead_us: Optional[float]  # from freq segmentation (None if no data)
-    scheduling_overhead_us: float      # remaining residual
-    nominal_freq_mhz: Optional[int]
-    throttled_window_pct: float
-    bound: str
-
+# ---------------------------------------------------------------------------
+# Post-hoc characterization
+# ---------------------------------------------------------------------------
 
 @dataclass
-class DistributionalAttribution:
-    """Tier 1 distributional decomposition with per-window compute bound."""
+class CharacterizationResult:
+    """Post-hoc characterization of a kernel's latency distribution.
+
+    Distribution landmarks (best_us, typical_us, tail_us) use the best
+    available measurement source:
+    - device_latency_us (kernel-only, from device_tstart/tend) when available
+    - outer_latency_us (harness-inclusive, from start_ts/end_ts) as fallback
+
+    Provenance field distinguishes: measured/timing/device vs measured/timing.
+
+    Note on fits_in_l1: total addressable bytes, not active working set.
+    Streaming kernels may fit in L1 despite large total.
+    """
     kernel_name: str
-    tier: int
-    # Measured
-    measured_p50_us: float
-    measured_p95_us: float
-    measured_p99_us: float
-    # Compute bound
-    compute_p50_us: float
-    compute_p95_us: float
-    compute_p99_us: float
-    # Residual (measured - compute)
-    residual_p50_us: float
-    residual_p95_us: float
-    residual_p99_us: float
-    # Noop baseline
-    noop_p50_us: float
-    noop_p95_us: float
-    noop_p99_us: float
-    # Net residual (residual - noop, quantile subtraction)
-    net_residual_p50_us: float
-    net_residual_p95_us: float
-    net_residual_p99_us: float
-    bound: str
-    n_windows: int
+
+    # Roofline classification
+    bound: str                       # "compute" or "memory"
+    operational_intensity: float
+
+    # Working set
+    working_set_bytes: int
+    fits_in_l1: Optional[bool]
+
+    # Floor estimates
+    roofline_floor_us: float         # max(compute_bound, memory_bound)
+    roofline_compute_us: float
+    roofline_memory_us: float
+    osaca_floor_us: Optional[float]  # None until OSACA integrated
+
+    # Distribution landmarks (best available: device > outer)
+    best_us: float                   # p5
+    typical_us: float                # p50
+    tail_us: float                   # p99
+
+    # Distribution shape
+    best_to_typical_gap_us: float    # p50 - p5
+    tail_risk_us: float              # p99 - p50
+
+    # Noop cross-validation (informational, not load-bearing)
+    noop_p50_us: Optional[float]     # None if noop absent
+
+    # Instruction profile from disassembly
+    instruction_profile: Optional[InstructionProfile] = None
+
+    # PMU enrichment (None if no PMU data)
+    ipc: Optional[float] = None
+    effective_freq_ghz: Optional[float] = None    # median of per-window cycles / device_wall_s
+    frequency_tax_pct: Optional[float] = None     # (1 - effective_freq / max_freq) * 100
+
+    # PMU stall decomposition (None if no backend stall data)
+    backend_stall_pct: Optional[float] = None     # stall_cycles / total_cycles * 100
+    compute_time_us: Optional[float] = None       # typical_us * (1 - stall_pct)
+    memory_stall_time_us: Optional[float] = None  # typical_us * stall_pct
+
+
+    n_windows: int = 0
+
+    # Provenance: maps field name -> source string
+    provenance: dict = field(default_factory=dict)
+    # Unavailable: maps field name -> reason string
+    unavailable: dict = field(default_factory=dict)
+
+
+def characterize_kernel(
+    kernel_name: str,
+    outer_latencies_us: list,
+    device_latencies_us: Optional[list],
+    device_spec: dict,
+    kernel_specs: dict,
+    window_length: int = 160,
+    channels: int = 64,
+    dtype_bytes: int = 4,
+    noop_latencies_us: Optional[list] = None,
+    per_window_cycle_counts: Optional[list] = None,
+    per_window_instruction_counts: Optional[list] = None,
+    per_window_backend_stall_counts: Optional[list] = None,
+) -> Optional[CharacterizationResult]:
+    """Post-hoc characterization of a kernel's latency distribution.
+
+    Returns a CharacterizationResult with distribution landmarks, roofline
+    classification, and optional PMU enrichment. Returns None if kernel
+    not found in specs.
+    """
+    import numpy as np
+
+    spec = kernel_specs.get(kernel_name)
+    if spec is None:
+        return None
+    comp = spec.get('computational')
+    if comp is None:
+        return None
+
+    dev = device_spec.get('device', device_spec)
+    provenance = {}
+    unavailable = {}
+
+    # --- 1. Roofline floor ---
+    peak_gflops = dev.get('cpu_peak_gflops', dev.get('peak_gflops', 1.0))
+    mem_bw_gb_s = dev.get('memory_bandwidth_gb_s', 1.0)
+
+    flops_per_sample = comp.get('flops_per_sample', 0)
+    loads_per_sample = comp.get('memory_loads_per_sample', 0)
+    stores_per_sample = comp.get('memory_stores_per_sample', 0)
+
+    total_samples = window_length * channels
+    total_flops = flops_per_sample * total_samples
+    total_bytes = (loads_per_sample + stores_per_sample) * total_samples * dtype_bytes
+
+    oi = total_flops / total_bytes if total_bytes > 0 else 0.0
+    compute_s = total_flops / (peak_gflops * 1e9) if peak_gflops > 0 and total_flops > 0 else 0.0
+    memory_s = total_bytes / (mem_bw_gb_s * 1e9) if mem_bw_gb_s > 0 and total_bytes > 0 else 0.0
+    roofline_compute_us = compute_s * 1e6
+    roofline_memory_us = memory_s * 1e6
+    roofline_floor_us = max(roofline_compute_us, roofline_memory_us)
+    bound = "compute" if roofline_compute_us >= roofline_memory_us else "memory"
+    provenance["roofline_floor_us"] = "estimated/roofline"
+    provenance["bound"] = "estimated/roofline"
+
+    # --- 2. Working set ---
+    working_set_bytes = (loads_per_sample + stores_per_sample) * window_length * channels * dtype_bytes
+    l1_kb = dev.get('l1_cache_kb')
+    fits_in_l1 = working_set_bytes <= l1_kb * 1024 if l1_kb is not None else None
+    provenance["working_set_bytes"] = "estimated/static"
+
+    # --- 3. Distribution landmarks ---
+    if device_latencies_us is not None and len(device_latencies_us) > 0:
+        lat_arr = np.array(device_latencies_us, dtype=float)
+        timing_prov = "measured/timing/device"
+    else:
+        lat_arr = np.array(outer_latencies_us, dtype=float)
+        timing_prov = "measured/timing"
+
+    best, typical, tail = float(np.percentile(lat_arr, 5)), float(np.percentile(lat_arr, 50)), float(np.percentile(lat_arr, 99))
+    best_to_typical_gap = max(0.0, typical - best)
+    tail_risk = max(0.0, tail - typical)
+
+    provenance["best_us"] = timing_prov
+    provenance["typical_us"] = timing_prov
+    provenance["tail_us"] = timing_prov
+
+    n_windows = len(lat_arr)
+
+    # --- 4. Harness overhead check (logged, not stored) ---
+    if device_latencies_us is not None and len(device_latencies_us) > 0:
+        outer_arr = np.array(outer_latencies_us, dtype=float)
+        device_arr = np.array(device_latencies_us, dtype=float)
+        min_len = min(len(outer_arr), len(device_arr))
+        overhead = outer_arr[:min_len] - device_arr[:min_len]
+        overhead_p50 = float(np.median(overhead))
+        median_outer = float(np.median(outer_arr[:min_len]))
+        pct = (overhead_p50 / median_outer * 100) if median_outer > 0 else 0.0
+        logger.info("Harness overhead: %.1f us (%.1f%%)", overhead_p50, pct)
+
+    # --- 5. Noop cross-validation ---
+    noop_p50 = None
+    if noop_latencies_us is not None and len(noop_latencies_us) > 0:
+        noop_p50 = float(np.median(noop_latencies_us))
+        provenance["noop_p50_us"] = "measured/timing/noop"
+
+    # --- 6. Instruction profile ---
+    profile = analyze_kernel(kernel_name)
+    if profile is not None:
+        provenance["instruction_profile"] = "estimated/static/disassembly"
+
+    # --- 7. OSACA stub ---
+    osaca_floor_us = None
+    unavailable["osaca_floor_us"] = "OSACA not integrated"
+
+    # --- 8. PMU enrichment ---
+    ipc = None
+    effective_freq_ghz = None
+    frequency_tax_pct = None
+
+    has_pmu = (per_window_cycle_counts is not None
+               and per_window_instruction_counts is not None
+               and len(per_window_cycle_counts) > 0
+               and len(per_window_instruction_counts) > 0)
+
+    if has_pmu:
+        cycles = np.array(per_window_cycle_counts, dtype=float)
+        insns = np.array(per_window_instruction_counts, dtype=float)
+
+        # IPC: median of per-window insn/cycles (filter zeros)
+        valid = cycles > 0
+        if valid.any():
+            per_window_ipc = insns[valid] / cycles[valid]
+            ipc = float(np.median(per_window_ipc))
+            provenance["ipc"] = "measured/PMU"
+
+        # Effective freq + frequency tax
+        # PMU counters are measured around kernel process() in the adapter,
+        # so pair with device_latencies_us (device_tstart/device_tend).
+        if device_latencies_us is not None and len(device_latencies_us) > 0:
+            device_wall_s = np.array(device_latencies_us, dtype=float) * 1e-6
+        else:
+            device_wall_s = np.array(outer_latencies_us, dtype=float) * 1e-6
+        min_len = min(len(cycles), len(device_wall_s))
+        c = cycles[:min_len]
+        w = device_wall_s[:min_len]
+        valid_freq = (c > 0) & (w > 0)
+        if valid_freq.any():
+            per_window_freq = c[valid_freq] / w[valid_freq]
+            effective_freq_hz = float(np.median(per_window_freq))
+            effective_freq_ghz = effective_freq_hz / 1e9
+            provenance["effective_freq_ghz"] = "measured/PMU+timing"
+
+            max_freq_hz = dev.get('frequency', {}).get('max_hz', 0)
+            if max_freq_hz > 0:
+                frequency_tax_pct = (1 - effective_freq_hz / max_freq_hz) * 100
+                provenance["frequency_tax_pct"] = "measured/PMU+timing"
+            else:
+                unavailable["frequency_tax_pct"] = "no max_hz in device spec"
+        else:
+            unavailable["effective_freq_ghz"] = "no valid cycle/wall-time pairs"
+            unavailable["frequency_tax_pct"] = "no valid cycle/wall-time pairs"
+    else:
+        unavailable["ipc"] = "no PMU data"
+        unavailable["effective_freq_ghz"] = "no PMU data"
+        unavailable["frequency_tax_pct"] = "no PMU data"
+
+    # --- 9. Backend stall decomposition ---
+    backend_stall_pct = None
+    compute_time_us = None
+    memory_stall_time_us = None
+
+    has_stalls = (has_pmu
+                  and per_window_backend_stall_counts is not None
+                  and len(per_window_backend_stall_counts) > 0)
+
+    if has_stalls:
+        stalls = np.array(per_window_backend_stall_counts, dtype=float)
+        min_len = min(len(cycles), len(stalls))
+        c = cycles[:min_len]
+        s = stalls[:min_len]
+        valid_stall = c > 0
+        if valid_stall.any():
+            per_window_stall_pct = s[valid_stall] / c[valid_stall]
+            median_stall_pct = float(np.median(per_window_stall_pct))
+            backend_stall_pct = median_stall_pct * 100
+            compute_time_us = typical * (1 - median_stall_pct)
+            memory_stall_time_us = typical * median_stall_pct
+            provenance["backend_stall_pct"] = "measured/PMU"
+            provenance["compute_time_us"] = "measured/PMU+timing"
+            provenance["memory_stall_time_us"] = "measured/PMU+timing"
+        else:
+            unavailable["backend_stall_pct"] = "no valid cycle counts"
+    elif has_pmu:
+        unavailable["backend_stall_pct"] = "no backend stall data"
+    else:
+        unavailable["backend_stall_pct"] = "no PMU data"
+
+    return CharacterizationResult(
+        kernel_name=kernel_name,
+        bound=bound,
+        operational_intensity=oi,
+        working_set_bytes=working_set_bytes,
+        fits_in_l1=fits_in_l1,
+        roofline_floor_us=roofline_floor_us,
+        roofline_compute_us=roofline_compute_us,
+        roofline_memory_us=roofline_memory_us,
+        osaca_floor_us=osaca_floor_us,
+        best_us=best,
+        typical_us=typical,
+        tail_us=tail,
+        best_to_typical_gap_us=best_to_typical_gap,
+        tail_risk_us=tail_risk,
+        noop_p50_us=noop_p50,
+        instruction_profile=profile,
+        ipc=ipc,
+        effective_freq_ghz=effective_freq_ghz,
+        frequency_tax_pct=frequency_tax_pct,
+        backend_stall_pct=backend_stall_pct,
+        compute_time_us=compute_time_us,
+        memory_stall_time_us=memory_stall_time_us,
+        n_windows=n_windows,
+        provenance=provenance,
+        unavailable=unavailable,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -131,98 +352,10 @@ class RooflineDecomposer:
         self.device_name = dev.get('name', 'Unknown')
         self.peak_gflops = dev.get('cpu_peak_gflops', dev.get('peak_gflops', 1.0))
         self.memory_bw_gb_s = dev.get('memory_bandwidth_gb_s', 1.0)
-        self.decomposition_tier = dev.get('decomposition_tier', 0)
         self.kernel_specs = kernel_specs
 
     # -------------------------------------------------------------------
-    # Legacy decompose (backward compat)
-    # -------------------------------------------------------------------
-
-    def decompose(
-        self,
-        kernel_name: str,
-        measured_latency_us: float,
-        window_length: int = 160,
-        channels: int = 64,
-        dtype_bytes: int = 4
-    ) -> Optional[DecompositionResult]:
-        """Decompose measured latency for a kernel (legacy interface)."""
-        spec = self.kernel_specs.get(kernel_name)
-        if spec is None:
-            return None
-
-        comp = spec.get('computational')
-        if comp is None:
-            return None
-
-        flops_per_sample = comp.get('flops_per_sample', 0)
-        loads_per_sample = comp.get('memory_loads_per_sample', 0)
-        stores_per_sample = comp.get('memory_stores_per_sample', 0)
-
-        total_samples = window_length * channels
-        total_flops = flops_per_sample * total_samples
-        total_bytes = (loads_per_sample + stores_per_sample) * total_samples * dtype_bytes
-
-        oi = total_flops / total_bytes if total_bytes > 0 else 0.0
-
-        compute_s = total_flops / (self.peak_gflops * 1e9) if self.peak_gflops > 0 and total_flops > 0 else 0.0
-        memory_s = total_bytes / (self.memory_bw_gb_s * 1e9) if self.memory_bw_gb_s > 0 and total_bytes > 0 else 0.0
-
-        compute_us = compute_s * 1e6
-        memory_us = memory_s * 1e6
-        theoretical_peak_us = max(compute_us, memory_us)
-        overhead_us = max(0.0, measured_latency_us - theoretical_peak_us)
-
-        if measured_latency_us > 0:
-            compute_pct = (compute_us / measured_latency_us) * 100.0
-            memory_pct = (memory_us / measured_latency_us) * 100.0
-            overhead_pct = (overhead_us / measured_latency_us) * 100.0
-        else:
-            compute_pct = memory_pct = overhead_pct = 0.0
-
-        if theoretical_peak_us == 0:
-            bound = "overhead"
-        elif compute_us >= memory_us:
-            bound = "compute"
-        else:
-            bound = "memory"
-
-        if overhead_pct > 90.0:
-            bound = "overhead"
-
-        return DecompositionResult(
-            kernel_name=kernel_name,
-            measured_latency_us=measured_latency_us,
-            theoretical_compute_us=compute_us,
-            theoretical_memory_us=memory_us,
-            theoretical_peak_us=theoretical_peak_us,
-            overhead_us=overhead_us,
-            compute_pct=compute_pct,
-            memory_pct=memory_pct,
-            overhead_pct=overhead_pct,
-            bound=bound,
-            operational_intensity=oi,
-            total_flops=total_flops,
-            total_bytes=total_bytes,
-        )
-
-    def decompose_all(
-        self,
-        latencies: Dict[str, float],
-        window_length: int = 160,
-        channels: int = 64,
-        dtype_bytes: int = 4
-    ) -> List[DecompositionResult]:
-        """Decompose latency for all kernels with available specs (legacy)."""
-        results = []
-        for name, lat in latencies.items():
-            result = self.decompose(name, lat, window_length, channels, dtype_bytes)
-            if result is not None:
-                results.append(result)
-        return results
-
-    # -------------------------------------------------------------------
-    # New predict methods (pre-benchmark, static analysis)
+    # Predict methods (pre-benchmark, static analysis)
     # -------------------------------------------------------------------
 
     def _compute_from_spec(
@@ -304,12 +437,16 @@ class RooflineDecomposer:
         if pmu_result is not None:
             insn_count = pmu_result["instruction_count"]
             cpu_freq_hz = pmu_result["cpu_freq_hz"]
+            cycle_count = pmu_result.get("cycle_count", 0)
             if insn_count > 0 and cpu_freq_hz > 0:
-                ipc = 1.0  # conservative lower bound
-                compute_us = insn_count / (cpu_freq_hz * ipc) * 1e6
-                source = "pmu"
                 pmu_insn_count = insn_count
                 pmu_freq_hz = cpu_freq_hz
+                if cycle_count > 0:
+                    compute_us = cycle_count / cpu_freq_hz * 1e6  # exact, no IPC
+                else:
+                    ipc = 1.0  # conservative lower bound
+                    compute_us = insn_count / (cpu_freq_hz * ipc) * 1e6
+                source = "pmu"
             else:
                 # PMU available but freq unknown — fall back to spec
                 compute_us, _, _, _, _ = spec_result
@@ -337,7 +474,6 @@ class RooflineDecomposer:
             operational_intensity=oi,
             instruction_profile=profile,
             source=source,
-            decomposition_tier=self.decomposition_tier,
             instruction_count=pmu_insn_count,
             probe_freq_hz=pmu_freq_hz,
         )
@@ -401,7 +537,6 @@ def save_prediction(
     dev = device_spec.get('device', device_spec)
     data = {
         "device": dev.get("name", "Unknown"),
-        "decomposition_tier": dev.get("decomposition_tier", 0),
         "params": params,
         "predictions": [],
     }
@@ -415,7 +550,6 @@ def save_prediction(
             "bound": r.bound,
             "operational_intensity": round(r.operational_intensity, 6),
             "source": r.source,
-            "decomposition_tier": r.decomposition_tier,
         }
         if r.instruction_count is not None:
             entry["instruction_count"] = r.instruction_count
@@ -436,170 +570,9 @@ def load_prediction(path: str) -> dict:
         return json.load(f)
 
 
-# ---------------------------------------------------------------------------
-# Attribution (post-benchmark)
-# ---------------------------------------------------------------------------
-
-def attribute_latency(
-    prediction: PredictionResult,
-    measured_latencies_us: list,
-    noop_baseline_us: float,
-    cpu_freqs_mhz: Optional[list] = None,
-) -> AttributionResult:
-    """Attribute measured latency into compute / I/O / DVFS / scheduling.
-
-    Args:
-        prediction: Static prediction for this kernel
-        measured_latencies_us: Per-window latency values
-        noop_baseline_us: Median noop latency (I/O overhead)
-        cpu_freqs_mhz: Per-window CPU frequency values (or None)
-
-    Returns:
-        AttributionResult with breakdown.
-    """
-    import numpy as np
-
-    measured_arr = np.array(measured_latencies_us)
-    measured_median = float(np.median(measured_arr))
-
-    io_overhead = noop_baseline_us
-    dvfs_overhead: Optional[float] = None
-    nominal_freq: Optional[int] = None
-    throttled_pct = 0.0
-
-    # DVFS attribution (if frequency data available and non-zero)
-    if cpu_freqs_mhz is not None:
-        freq_arr = np.array(cpu_freqs_mhz)
-        nonzero = freq_arr[freq_arr > 0]
-
-        if len(nonzero) > 0:
-            # Nominal frequency = mode (most common)
-            from scipy import stats as sp_stats
-            mode_result = sp_stats.mode(nonzero, keepdims=False)
-            nominal_freq = int(mode_result.mode)
-
-            # Partition windows: nominal vs throttled
-            is_nominal = freq_arr == nominal_freq
-            is_throttled = (freq_arr > 0) & (freq_arr < nominal_freq)
-
-            throttled_count = int(is_throttled.sum())
-            total_nonzero = int((freq_arr > 0).sum())
-            throttled_pct = (throttled_count / total_nonzero * 100.0) if total_nonzero > 0 else 0.0
-
-            if throttled_count > 0 and is_nominal.sum() > 0:
-                nominal_median = float(np.median(measured_arr[is_nominal]))
-                throttled_median = float(np.median(measured_arr[is_throttled]))
-                dvfs_overhead = max(0.0, throttled_median - nominal_median)
-            else:
-                dvfs_overhead = 0.0
-        # else: all zeros (macOS) — skip DVFS
-
-    # Scheduling overhead = residual
-    predicted_peak = prediction.theoretical_peak_us
-    dvfs_val = dvfs_overhead if dvfs_overhead is not None else 0.0
-    scheduling = max(0.0, measured_median - predicted_peak - io_overhead - dvfs_val)
-
-    return AttributionResult(
-        kernel_name=prediction.kernel_name,
-        predicted_peak_us=predicted_peak,
-        measured_median_us=measured_median,
-        io_overhead_us=io_overhead,
-        dvfs_overhead_us=dvfs_overhead,
-        scheduling_overhead_us=scheduling,
-        nominal_freq_mhz=nominal_freq,
-        throttled_window_pct=throttled_pct,
-        bound=prediction.bound,
-    )
-
-
-def attribute_latency_distributional(
-    prediction: PredictionResult,
-    measured_latencies_us: list,
-    noop_latencies_us: list,
-    cpu_freqs_mhz: Optional[list] = None,
-) -> DistributionalAttribution:
-    """Tier 1 distributional decomposition with per-window compute bound.
-
-    For each sample L_i:
-      C_i = instruction_count / (freq_i * IPC)
-      residual_i = max(0, L_i - C_i)
-    Output: percentiles for measured, compute, residual, noop, net_residual.
-
-    Args:
-        prediction: PredictionResult with instruction_count and probe_freq_hz
-        measured_latencies_us: Per-window latency values
-        noop_latencies_us: Per-window noop latency values (full distribution)
-        cpu_freqs_mhz: Per-window CPU frequency in MHz (or None)
-    """
-    import numpy as np
-
-    measured = np.array(measured_latencies_us, dtype=float)
-    noop = np.array(noop_latencies_us, dtype=float)
-
-    instruction_count = prediction.instruction_count
-    probe_freq_hz = prediction.probe_freq_hz
-    ipc = 1.0
-
-    # Build per-window frequency array (Hz)
-    if cpu_freqs_mhz is not None:
-        freq_arr = np.array(cpu_freqs_mhz, dtype=float) * 1e6  # MHz → Hz
-        # Replace zeros (macOS) with probe_freq_hz
-        freq_arr[freq_arr == 0] = probe_freq_hz
-    else:
-        freq_arr = np.full(len(measured), probe_freq_hz, dtype=float)
-
-    # Per-window compute bound: C_i = instruction_count / (freq_i * IPC) * 1e6 → us
-    compute = instruction_count / (freq_arr * ipc) * 1e6
-
-    # Residual clamped to non-negative
-    residual = np.maximum(0.0, measured - compute)
-
-    # Percentile extraction
-    def pcts(arr):
-        return (
-            float(np.percentile(arr, 50)),
-            float(np.percentile(arr, 95)),
-            float(np.percentile(arr, 99)),
-        )
-
-    m50, m95, m99 = pcts(measured)
-    c50, c95, c99 = pcts(compute)
-    r50, r95, r99 = pcts(residual)
-    n50, n95, n99 = pcts(noop)
-
-    # Quantile subtraction: net_residual_pX = max(0, residual_pX - noop_pX)
-    nr50 = max(0.0, r50 - n50)
-    nr95 = max(0.0, r95 - n95)
-    nr99 = max(0.0, r99 - n99)
-
-    # Determine bound from compute vs residual dominance
-    bound = prediction.bound
-
-    return DistributionalAttribution(
-        kernel_name=prediction.kernel_name,
-        tier=prediction.decomposition_tier,
-        measured_p50_us=m50,
-        measured_p95_us=m95,
-        measured_p99_us=m99,
-        compute_p50_us=c50,
-        compute_p95_us=c95,
-        compute_p99_us=c99,
-        residual_p50_us=r50,
-        residual_p95_us=r95,
-        residual_p99_us=r99,
-        noop_p50_us=n50,
-        noop_p95_us=n95,
-        noop_p99_us=n99,
-        net_residual_p50_us=nr50,
-        net_residual_p95_us=nr95,
-        net_residual_p99_us=nr99,
-        bound=bound,
-        n_windows=len(measured),
-    )
-
 
 # ---------------------------------------------------------------------------
-# Legacy helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def load_device_spec(device_path: str) -> dict:

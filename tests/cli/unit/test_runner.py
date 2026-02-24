@@ -504,7 +504,7 @@ class TestHarnessRunnerDeviceSpec:
         mock_handle.poll.return_value = 0
         self.process.popen.return_value = mock_handle
 
-        device_spec = {'device': {'name': 'Apple M1', 'decomposition_tier': 1}}
+        device_spec = {'device': {'name': 'Apple M1'}}
 
         result = self.runner.run(
             "test.yaml", "test-run", verbose=True,

@@ -22,7 +22,9 @@
 #include <sys/syscall.h>
 #include <linux/perf_event.h>
 
-static int pmu_fd = -1;
+static int fd_instructions = -1;
+static int fd_cycles = -1;
+static int fd_backend_stall = -1;
 
 static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
                             int cpu, int group_fd, unsigned long flags)
@@ -33,6 +35,8 @@ static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
 int cortex_inscount_init(void)
 {
     struct perf_event_attr pe;
+
+    /* Instructions (group leader) */
     memset(&pe, 0, sizeof(pe));
     pe.type           = PERF_TYPE_HARDWARE;
     pe.size           = sizeof(pe);
@@ -41,39 +45,102 @@ int cortex_inscount_init(void)
     pe.exclude_kernel = 1;
     pe.exclude_hv     = 1;
 
-    pmu_fd = (int)perf_event_open(&pe, 0, -1, -1, 0);
-    if (pmu_fd < 0) {
-        perror("perf_event_open");
+    fd_instructions = (int)perf_event_open(&pe, 0, -1, -1, 0);
+    if (fd_instructions < 0) {
+        perror("perf_event_open(instructions)");
         return -1;
     }
+
+    /* CPU cycles (group member) */
+    memset(&pe, 0, sizeof(pe));
+    pe.type           = PERF_TYPE_HARDWARE;
+    pe.size           = sizeof(pe);
+    pe.config         = PERF_COUNT_HW_CPU_CYCLES;
+    pe.disabled       = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv     = 1;
+
+    fd_cycles = (int)perf_event_open(&pe, 0, -1, fd_instructions, 0);
+    if (fd_cycles < 0) {
+        /* Non-fatal: cycles unavailable */
+        fd_cycles = -1;
+    }
+
+    /* Backend stall cycles (non-fatal) */
+    memset(&pe, 0, sizeof(pe));
+    pe.type           = PERF_TYPE_HARDWARE;
+    pe.size           = sizeof(pe);
+    pe.config         = PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
+    pe.disabled       = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv     = 1;
+
+    fd_backend_stall = (int)perf_event_open(&pe, 0, -1, fd_instructions, 0);
+    if (fd_backend_stall < 0) {
+        /* Non-fatal: backend stall unavailable */
+        fd_backend_stall = -1;
+    }
+
     return 0;
 }
 
 void cortex_inscount_start(void)
 {
-    if (pmu_fd < 0) return;
-    ioctl(pmu_fd, PERF_EVENT_IOC_RESET, 0);
-    ioctl(pmu_fd, PERF_EVENT_IOC_ENABLE, 0);
+    if (fd_instructions >= 0) {
+        ioctl(fd_instructions, PERF_EVENT_IOC_RESET, 0);
+        ioctl(fd_instructions, PERF_EVENT_IOC_ENABLE, 0);
+    }
+    if (fd_cycles >= 0) {
+        ioctl(fd_cycles, PERF_EVENT_IOC_RESET, 0);
+        ioctl(fd_cycles, PERF_EVENT_IOC_ENABLE, 0);
+    }
+    if (fd_backend_stall >= 0) {
+        ioctl(fd_backend_stall, PERF_EVENT_IOC_RESET, 0);
+        ioctl(fd_backend_stall, PERF_EVENT_IOC_ENABLE, 0);
+    }
+}
+
+cortex_pmu_counters_t cortex_inscount_stop_all(void)
+{
+    cortex_pmu_counters_t result;
+    memset(&result, 0, sizeof(result));
+
+    if (fd_instructions >= 0) {
+        ioctl(fd_instructions, PERF_EVENT_IOC_DISABLE, 0);
+        uint64_t count = 0;
+        if (read(fd_instructions, &count, sizeof(count)) == sizeof(count))
+            result.instruction_count = count;
+    }
+    if (fd_cycles >= 0) {
+        ioctl(fd_cycles, PERF_EVENT_IOC_DISABLE, 0);
+        uint64_t count = 0;
+        if (read(fd_cycles, &count, sizeof(count)) == sizeof(count)) {
+            result.cycle_count = count;
+            result.has_cycles = 1;
+        }
+    }
+    if (fd_backend_stall >= 0) {
+        ioctl(fd_backend_stall, PERF_EVENT_IOC_DISABLE, 0);
+        uint64_t count = 0;
+        if (read(fd_backend_stall, &count, sizeof(count)) == sizeof(count)) {
+            result.backend_stall_cycles = count;
+            result.has_backend_stall = 1;
+        }
+    }
+    return result;
 }
 
 uint64_t cortex_inscount_stop(void)
 {
-    if (pmu_fd < 0) return 0;
-    ioctl(pmu_fd, PERF_EVENT_IOC_DISABLE, 0);
-
-    uint64_t count = 0;
-    if (read(pmu_fd, &count, sizeof(count)) != sizeof(count)) {
-        return 0;
-    }
-    return count;
+    cortex_pmu_counters_t all = cortex_inscount_stop_all();
+    return all.instruction_count;
 }
 
 void cortex_inscount_teardown(void)
 {
-    if (pmu_fd >= 0) {
-        close(pmu_fd);
-        pmu_fd = -1;
-    }
+    if (fd_instructions >= 0) { close(fd_instructions); fd_instructions = -1; }
+    if (fd_cycles >= 0) { close(fd_cycles); fd_cycles = -1; }
+    if (fd_backend_stall >= 0) { close(fd_backend_stall); fd_backend_stall = -1; }
 }
 
 int cortex_inscount_available(void)
@@ -112,8 +179,17 @@ uint64_t cortex_inscount_cpu_freq_hz(void)
 #define KPC_CLASS_FIXED          (0)
 #define KPC_CLASS_CONFIGURABLE   (1)
 #define KPC_CLASS_FIXED_MASK     (1u << KPC_CLASS_FIXED)
+#define KPC_CLASS_CONFIGURABLE_MASK (1u << KPC_CLASS_CONFIGURABLE)
 
-/* Maximum counters we'll read */
+/* MAP_STALL_DISPATCH: dispatch back-pressure stall cycles on Apple Silicon.
+ * Unofficial Firestorm PMU event from dougallj's reverse-engineered event list.
+ * Raw PMESR event code 0x70; CFGWORD_EL0A64EN selects userspace-only counting.
+ * Event code may change across chip generations — verified on M1. */
+#define MAP_STALL_DISPATCH_EVENT   0x70
+#define CFGWORD_EL0A64EN_MASK      0x20000
+#define MAP_STALL_DISPATCH_CONFIG  (MAP_STALL_DISPATCH_EVENT | CFGWORD_EL0A64EN_MASK)
+
+/* Maximum counters we'll read (M1: 2 fixed + 8 configurable = 10) */
 #define KPC_MAX_COUNTERS 32
 
 /* Function pointer types for kpc API */
@@ -122,18 +198,28 @@ typedef int (*kpc_set_counting_fn)(uint32_t);
 typedef int (*kpc_set_thread_counting_fn)(uint32_t);
 typedef int (*kpc_get_thread_counters_fn)(int, unsigned int, uint64_t *);
 typedef uint32_t (*kpc_get_counter_count_fn)(uint32_t);
+typedef int (*kpc_set_config_fn)(uint32_t, uint64_t *);
+typedef uint32_t (*kpc_get_config_count_fn)(uint32_t);
 
 static kpc_force_all_ctrs_set_fn    kpc_force_all_ctrs_set_p;
 static kpc_set_counting_fn          kpc_set_counting_p;
 static kpc_set_thread_counting_fn   kpc_set_thread_counting_p;
 static kpc_get_thread_counters_fn   kpc_get_thread_counters_p;
 static kpc_get_counter_count_fn     kpc_get_counter_count_p;
+static kpc_set_config_fn            kpc_set_config_p;
+static kpc_get_config_count_fn      kpc_get_config_count_p;
 
 static void *kperf_handle;
 static uint64_t baseline[KPC_MAX_COUNTERS];
 static uint32_t counter_count;
-/* Fixed counter index 0 = retired instructions on Apple Silicon */
-static const int INSN_COUNTER_IDX = 0;
+static uint32_t fixed_count;        /* Number of fixed counters (offset for configurable) */
+static int has_configurable;        /* Whether MAP_STALL_DISPATCH is configured */
+/* Apple Silicon kpc fixed counter mapping (verified via kpc_probe):
+ *   index 0 = CPU cycles
+ *   index 1 = retired instructions
+ * Note: counter[1]/iter matches exact instruction count from disassembly. */
+static const int CYCLE_COUNTER_IDX = 0;
+static const int INSN_COUNTER_IDX = 1;
 
 int cortex_inscount_init(void)
 {
@@ -152,6 +238,8 @@ int cortex_inscount_init(void)
     kpc_set_thread_counting_p = (kpc_set_thread_counting_fn)dlsym(kperf_handle, "kpc_set_thread_counting");
     kpc_get_thread_counters_p = (kpc_get_thread_counters_fn)dlsym(kperf_handle, "kpc_get_thread_counters");
     kpc_get_counter_count_p   = (kpc_get_counter_count_fn)dlsym(kperf_handle, "kpc_get_counter_count");
+    kpc_set_config_p          = (kpc_set_config_fn)dlsym(kperf_handle, "kpc_set_config");
+    kpc_get_config_count_p    = (kpc_get_config_count_fn)dlsym(kperf_handle, "kpc_get_config_count");
 
     if (!kpc_force_all_ctrs_set_p || !kpc_set_counting_p ||
         !kpc_set_thread_counting_p || !kpc_get_thread_counters_p ||
@@ -191,6 +279,38 @@ int cortex_inscount_init(void)
         return -1;
     }
 
+    /* Try to configure MAP_STALL_DISPATCH on first programmable counter (PMC2).
+     * Non-fatal: if configurable counters are unavailable, we still have
+     * fixed counters for cycles and instructions. */
+    fixed_count = counter_count;
+    has_configurable = 0;
+
+    if (kpc_set_config_p && kpc_get_config_count_p) {
+        uint32_t cfg_count = kpc_get_config_count_p(KPC_CLASS_CONFIGURABLE_MASK);
+        if (cfg_count > 0 && cfg_count <= KPC_MAX_COUNTERS) {
+            uint64_t config[KPC_MAX_COUNTERS] = {0};
+            config[0] = MAP_STALL_DISPATCH_CONFIG;  /* PMC2 = MAP_STALL_DISPATCH */
+
+            if (kpc_set_config_p(KPC_CLASS_CONFIGURABLE_MASK, config) == 0) {
+                uint32_t combined = KPC_CLASS_FIXED_MASK | KPC_CLASS_CONFIGURABLE_MASK;
+                if (kpc_set_counting_p(combined) == 0 &&
+                    kpc_set_thread_counting_p(combined) == 0) {
+                    counter_count = kpc_get_counter_count_p(combined);
+                    if (counter_count > fixed_count && counter_count <= KPC_MAX_COUNTERS) {
+                        has_configurable = 1;
+                        fprintf(stderr, "inscount: MAP_STALL_DISPATCH configured on PMC2 "
+                                "(counter index %u)\n", fixed_count);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!has_configurable) {
+        fprintf(stderr, "inscount: configurable counters unavailable, "
+                "backend_stall disabled\n");
+    }
+
     return 0;
 }
 
@@ -201,15 +321,37 @@ void cortex_inscount_start(void)
     kpc_get_thread_counters_p(0, counter_count, baseline);
 }
 
-uint64_t cortex_inscount_stop(void)
+cortex_pmu_counters_t cortex_inscount_stop_all(void)
 {
-    if (!kperf_handle) return 0;
+    cortex_pmu_counters_t result;
+    memset(&result, 0, sizeof(result));
+
+    if (!kperf_handle) return result;
 
     uint64_t current[KPC_MAX_COUNTERS];
     memset(current, 0, sizeof(current));
     kpc_get_thread_counters_p(0, counter_count, current);
 
-    return current[INSN_COUNTER_IDX] - baseline[INSN_COUNTER_IDX];
+    result.instruction_count = current[INSN_COUNTER_IDX] - baseline[INSN_COUNTER_IDX];
+
+    if (counter_count > (uint32_t)CYCLE_COUNTER_IDX) {
+        result.cycle_count = current[CYCLE_COUNTER_IDX] - baseline[CYCLE_COUNTER_IDX];
+        result.has_cycles = 1;
+    }
+
+    /* Backend stall from configurable counter (MAP_STALL_DISPATCH on PMC2) */
+    if (has_configurable && counter_count > fixed_count) {
+        result.backend_stall_cycles = current[fixed_count] - baseline[fixed_count];
+        result.has_backend_stall = 1;
+    }
+
+    return result;
+}
+
+uint64_t cortex_inscount_stop(void)
+{
+    cortex_pmu_counters_t all = cortex_inscount_stop_all();
+    return all.instruction_count;
 }
 
 void cortex_inscount_teardown(void)
@@ -282,6 +424,11 @@ uint64_t cortex_inscount_cpu_freq_hz(void)
 
 int cortex_inscount_init(void)          { return -1; }
 void cortex_inscount_start(void)        { }
+cortex_pmu_counters_t cortex_inscount_stop_all(void) {
+    cortex_pmu_counters_t r;
+    memset(&r, 0, sizeof(r));
+    return r;
+}
 uint64_t cortex_inscount_stop(void)     { return 0; }
 void cortex_inscount_teardown(void)     { }
 int cortex_inscount_available(void)     { return 0; }

@@ -1,29 +1,22 @@
-"""Decompose command - Post-benchmark latency decomposition (SE-5 Step 3).
+"""Decompose command - Post-benchmark latency characterization (SE-5).
 
-Fits predicted latency to measured data, decomposing the residual into
-I/O overhead (noop baseline), DVFS effects, and scheduling overhead.
-Surfaces the decomposition tier from the device primitive.
+Characterizes kernel latency distributions using roofline classification,
+distribution landmarks, and optional PMU enrichment. Every platform gets
+a characterization; richer platforms get richer output.
 """
 import json
 
 from cortex.core import ConsoleLogger, RealFileSystemService, YamlConfigLoader
 from cortex.utils.analyzer import TelemetryAnalyzer
-import numpy as np
 
 from cortex.utils.decomposition import (
-    load_device_spec, load_prediction, attribute_latency,
-    attribute_latency_distributional,
-    PredictionResult, AttributionResult, DistributionalAttribution,
+    load_device_spec, load_kernel_specs,
+    characterize_kernel, CharacterizationResult,
 )
 
 
 def setup_parser(parser):
     """Setup argument parser for decompose command."""
-    parser.add_argument(
-        '--prediction',
-        required=True,
-        help='Path to prediction.json from cortex predict'
-    )
     parser.add_argument(
         '--run-name',
         required=True,
@@ -47,21 +40,11 @@ def setup_parser(parser):
 
 
 def execute(args):
-    """Execute post-benchmark latency decomposition."""
+    """Execute post-benchmark latency characterization."""
     from cortex.utils.paths import get_run_directory
 
     fs = RealFileSystemService()
     logger = ConsoleLogger()
-
-    # Load prediction.json
-    try:
-        pred_data = load_prediction(args.prediction)
-    except FileNotFoundError:
-        print(f"Error: Prediction file not found: {args.prediction}")
-        return 1
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid prediction JSON: {e}")
-        return 1
 
     # Resolve run directory
     run_name = args.run_name
@@ -80,6 +63,9 @@ def execute(args):
         print(f"Error: Device spec not found: {args.device}")
         return 1
 
+    # Load kernel specs
+    kernel_specs = load_kernel_specs()
+
     # Load telemetry
     analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
     df = analyzer.load_telemetry(results_dir, prefer_format='ndjson')
@@ -90,15 +76,7 @@ def execute(args):
     # Filter warmup
     df_real = df[df['warmup'] == 0].copy()
 
-    # Reconstruct PredictionResult objects from prediction.json
-    tier = pred_data.get('decomposition_tier', 0)
-    use_distributional = tier >= 1
-    predictions = _load_predictions(pred_data)
-    if not predictions:
-        print("Error: No predictions found in prediction file")
-        return 1
-
-    # Derive device execution latency for distributional path
+    # Device timestamps — present for native adapters (same clock domain)
     has_device_ts = ('device_tstart_ns' in df_real.columns
                      and 'device_tend_ns' in df_real.columns)
     if has_device_ts:
@@ -106,268 +84,259 @@ def execute(args):
             df_real['device_tend_ns'] - df_real['device_tstart_ns']
         ) / 1000.0
 
-    # Get noop latencies (full distribution for tier >= 1, scalar for tier 0)
+    # Noop — cross-validation only, not load-bearing
     noop_df = df_real[df_real['plugin'] == 'noop']
-    if use_distributional and has_device_ts:
-        noop_latencies = noop_df['device_latency_us'].tolist() if not noop_df.empty else []
-    else:
-        noop_latencies = noop_df['latency_us'].tolist() if not noop_df.empty else []
-    noop_baseline_us = float(np.median(noop_latencies)) if noop_latencies else 0.0
+    noop_latencies = noop_df['latency_us'].tolist() if not noop_df.empty else None
 
-    if not noop_latencies:
-        print("Warning: No noop kernel in telemetry. I/O baseline set to 0.")
+    # PMU detection
+    has_pmu = ('pmu_cycle_count' in df_real.columns
+               and 'pmu_instruction_count' in df_real.columns
+               and df_real['pmu_cycle_count'].sum() > 0)
+    has_stall = (has_pmu
+                 and 'pmu_backend_stall_cycles' in df_real.columns
+                 and df_real['pmu_backend_stall_cycles'].sum() > 0)
 
-    # Run attribution for each kernel
+    # Discover kernel names (exclude noop)
+    kernel_names = [name for name in df_real['plugin'].unique() if name != 'noop']
+
+    # Single characterization path
     results = []
-    for pred in predictions:
-        kernel_df = df_real[df_real['plugin'] == pred.kernel_name]
-        if kernel_df.empty:
-            print(f"Warning: No telemetry for kernel '{pred.kernel_name}', skipping")
-            continue
+    for plugin_name in kernel_names:
+        kernel_df = df_real[df_real['plugin'] == plugin_name]
 
-        # Distributional path uses device execution time (matches prediction model)
-        # Scalar path uses total window time (harness-level view)
-        if use_distributional and has_device_ts:
-            latencies = kernel_df['device_latency_us'].tolist()
-        else:
-            latencies = kernel_df['latency_us'].tolist()
-        freqs = kernel_df['cpu_freq_mhz'].tolist() if 'cpu_freq_mhz' in kernel_df.columns else None
+        device_lats = (kernel_df['device_latency_us'].tolist()
+                       if has_device_ts else None)
 
-        if use_distributional and pred.instruction_count is not None and noop_latencies:
-            attr = attribute_latency_distributional(pred, latencies, noop_latencies, freqs)
-        else:
-            attr = attribute_latency(pred, latencies, noop_baseline_us, freqs)
-        results.append(attr)
+        result = characterize_kernel(
+            plugin_name,
+            outer_latencies_us=kernel_df['latency_us'].tolist(),
+            device_latencies_us=device_lats,
+            device_spec=device_spec,
+            kernel_specs=kernel_specs,
+            noop_latencies_us=noop_latencies,
+            per_window_cycle_counts=(kernel_df['pmu_cycle_count'].tolist()
+                                     if has_pmu else None),
+            per_window_instruction_counts=(kernel_df['pmu_instruction_count'].tolist()
+                                           if has_pmu else None),
+            per_window_backend_stall_counts=(kernel_df['pmu_backend_stall_cycles'].tolist()
+                                             if has_stall else None),
+        )
+        if result:
+            results.append(result)
 
     if not results:
-        print("Error: No kernels matched between prediction and telemetry")
+        print("Error: No kernels could be characterized (missing specs?)")
         return 1
 
-    # Output — dispatch based on result type
     dev = device_spec.get('device', device_spec)
-    has_distributional = any(isinstance(r, DistributionalAttribution) for r in results)
-
-    if args.format == 'json':
-        _output_json(results, dev, tier)
-    elif args.format == 'markdown':
-        if has_distributional:
-            md = _generate_markdown_distributional(
-                [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
-        else:
-            md = _generate_markdown(results, dev, tier)
-        print(md)
-    else:
-        if has_distributional:
-            _output_table_distributional(
-                [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
-        else:
-            _output_table(results, dev, tier)
+    _output_characterization(results, dev, args.format)
 
     # Write report if output dir specified
     if args.output:
-        _write_report(results, dev, tier, args.output, fs)
+        _write_report(results, dev, args.output, fs)
 
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Output formatters
+# ---------------------------------------------------------------------------
 
-def _load_predictions(pred_data):
-    """Reconstruct PredictionResult objects from prediction.json dict."""
-    tier = pred_data.get('decomposition_tier', 0)
-    results = []
-    for p in pred_data.get('predictions', []):
-        results.append(PredictionResult(
-            kernel_name=p['kernel_name'],
-            theoretical_compute_us=p['theoretical_compute_us'],
-            theoretical_memory_us=p['theoretical_memory_us'],
-            theoretical_io_us=p.get('theoretical_io_us', 0.0),
-            theoretical_peak_us=p['theoretical_peak_us'],
-            bound=p['bound'],
-            operational_intensity=p.get('operational_intensity', 0.0),
-            instruction_profile=None,
-            source=p.get('source', 'unknown'),
-            decomposition_tier=p.get('decomposition_tier', tier),
-            instruction_count=p.get('instruction_count'),
-            probe_freq_hz=p.get('probe_freq_hz'),
-        ))
-    return results
+def _output_characterization(results, dev, fmt):
+    """Dispatch to table/json/markdown formatter."""
+    if fmt == 'json':
+        _output_json(results, dev)
+    elif fmt == 'markdown':
+        print(_generate_markdown(results, dev))
+    else:
+        _output_table(results, dev)
 
 
-def _output_table(results, dev, tier=0):
-    """Print decomposition as formatted table."""
-    print(f"\nLatency Decomposition [Tier {tier}] — {dev.get('name', 'Unknown Device')}")
-    print("=" * 105)
-    print(f"{'Kernel':<16} {'Measured':>10} {'Predicted':>10} {'I/O':>8} "
-          f"{'DVFS':>8} {'Sched':>8} {'Throttle':>8} {'Bound':>10}")
-    print(f"{'':16} {'(us)':>10} {'(us)':>10} {'(us)':>8} "
-          f"{'(us)':>8} {'(us)':>8} {'(%)':>8} {'':>10}")
-    print("-" * 105)
-
-    for r in sorted(results, key=lambda x: x.measured_median_us, reverse=True):
-        dvfs = f"{r.dvfs_overhead_us:.1f}" if r.dvfs_overhead_us is not None else "N/A"
-        print(f"{r.kernel_name:<16} {r.measured_median_us:>10.1f} "
-              f"{r.predicted_peak_us:>10.4f} {r.io_overhead_us:>8.1f} "
-              f"{dvfs:>8} {r.scheduling_overhead_us:>8.1f} "
-              f"{r.throttled_window_pct:>7.1f}% {r.bound:>10}")
-
-    print("-" * 105)
-    print("\nI/O = noop baseline. DVFS = frequency-throttled overhead.")
-    print("Sched = residual (scheduling, cache, OS jitter).")
-    print("Throttle = % windows below nominal CPU frequency.")
+def _fmt_val(val, fmt_str=".1f", na="N/A"):
+    """Format a value, returning N/A for None."""
+    if val is None:
+        return na
+    return f"{val:{fmt_str}}"
 
 
-def _output_json(results, dev, tier=0):
-    """Print decomposition as JSON."""
+def _output_table(results, dev):
+    """Print characterization as formatted table."""
+    device_name = dev.get('name', 'Unknown Device')
+    print(f"\nLatency Characterization — {device_name}")
+    print("=" * 68)
+
+    for r in results:
+        prov = r.provenance
+        timing_src = prov.get('best_us', 'measured/timing')
+
+        print(f"\nKernel: {r.kernel_name}")
+        print(f"  Bound: {r.bound} (OI={r.operational_intensity:.1f})"
+              f"{'':>20}[{prov.get('bound', 'estimated/roofline')}]")
+
+        ws_kb = r.working_set_bytes / 1024
+        l1_info = ""
+        if r.fits_in_l1 is not None:
+            l1_kb = dev.get('l1_cache_kb', '?')
+            l1_info = f" (fits in L1: {l1_kb} KB)" if r.fits_in_l1 else f" (exceeds L1: {l1_kb} KB)"
+        print(f"  Working set: {ws_kb:.0f} KB{l1_info}"
+              f"{'':>4}[{prov.get('working_set_bytes', 'estimated/static')}]")
+
+        print(f"\n  Floor (roofline): {r.roofline_floor_us:>8.4f} us"
+              f"{'':>14}[{prov.get('roofline_floor_us', 'estimated/roofline')}]")
+        print(f"  Best (p5):        {r.best_us:>8.1f} us"
+              f"{'':>14}[{timing_src}]")
+        print(f"  Typical (p50):    {r.typical_us:>8.1f} us"
+              f"{'':>14}[{timing_src}]")
+        print(f"  Tail (p99):       {r.tail_us:>8.1f} us"
+              f"{'':>14}[{timing_src}]")
+
+        print(f"\n  Best-to-typical gap: {r.best_to_typical_gap_us:>5.1f} us"
+              f"{'':>11}[{timing_src}]")
+        print(f"  Tail risk:           {r.tail_risk_us:>5.1f} us"
+              f"{'':>11}[{timing_src}]")
+
+        # PMU enrichment
+        if r.ipc is not None:
+            print(f"\n  IPC:                 {r.ipc:>5.1f}"
+                  f"{'':>16}[{prov.get('ipc', 'measured/PMU')}]")
+        elif "ipc" in r.unavailable:
+            print(f"\n  IPC:                   N/A"
+                  f"{'':>16}[{r.unavailable['ipc']}]")
+
+        if r.effective_freq_ghz is not None:
+            print(f"  Effective freq:      {r.effective_freq_ghz:>5.1f} GHz"
+                  f"{'':>12}[{prov.get('effective_freq_ghz', 'measured/PMU+timing')}]")
+        elif "effective_freq_ghz" in r.unavailable:
+            print(f"  Effective freq:        N/A"
+                  f"{'':>12}[{r.unavailable['effective_freq_ghz']}]")
+
+        if r.frequency_tax_pct is not None:
+            print(f"  Frequency tax:       {r.frequency_tax_pct:>5.1f}%"
+                  f"{'':>13}[{prov.get('frequency_tax_pct', 'measured/PMU+timing')}]")
+        elif "frequency_tax_pct" in r.unavailable:
+            print(f"  Frequency tax:         N/A"
+                  f"{'':>13}[{r.unavailable['frequency_tax_pct']}]")
+
+        # Kernel time decomposition (compute vs memory stall)
+        if r.backend_stall_pct is not None:
+            compute_pct = 100 - r.backend_stall_pct
+            print(f"\n  Compute time:        {r.compute_time_us:>5.1f} us ({compute_pct:>4.1f}%)"
+                  f"  [{prov.get('compute_time_us', 'measured/PMU+timing')}]")
+            print(f"  Memory stall:        {r.memory_stall_time_us:>5.1f} us ({r.backend_stall_pct:>4.1f}%)"
+                  f"  [{prov.get('memory_stall_time_us', 'measured/PMU+timing')}]")
+        elif "backend_stall_pct" in r.unavailable:
+            print(f"\n  Compute/memory split:  N/A"
+                  f"{'':>10}[{r.unavailable['backend_stall_pct']}]")
+
+        # Noop cross-validation
+        if r.noop_p50_us is not None:
+            print(f"\n  Noop (p50):          {r.noop_p50_us:>5.1f} us"
+                  f"{'':>11}[{prov.get('noop_p50_us', 'measured/timing/noop')}]")
+
+        print(f"\n  N windows: {r.n_windows}")
+        print("-" * 68)
+
+
+def _output_json(results, dev):
+    """Print characterization as JSON."""
     output = {
         'device': dev.get('name', 'Unknown'),
-        'decomposition_tier': tier,
-        'attributions': [],
+        'characterizations': [],
     }
     for r in results:
-        output['attributions'].append({
+        entry = {
             'kernel': r.kernel_name,
-            'measured_median_us': round(r.measured_median_us, 2),
-            'predicted_peak_us': round(r.predicted_peak_us, 6),
-            'io_overhead_us': round(r.io_overhead_us, 2),
-            'dvfs_overhead_us': round(r.dvfs_overhead_us, 2) if r.dvfs_overhead_us is not None else None,
-            'scheduling_overhead_us': round(r.scheduling_overhead_us, 2),
-            'nominal_freq_mhz': r.nominal_freq_mhz,
-            'throttled_window_pct': round(r.throttled_window_pct, 2),
             'bound': r.bound,
-        })
+            'operational_intensity': round(r.operational_intensity, 4),
+            'working_set_bytes': r.working_set_bytes,
+            'fits_in_l1': r.fits_in_l1,
+            'roofline_floor_us': round(r.roofline_floor_us, 6),
+            'roofline_compute_us': round(r.roofline_compute_us, 6),
+            'roofline_memory_us': round(r.roofline_memory_us, 6),
+            'best_us': round(r.best_us, 2),
+            'typical_us': round(r.typical_us, 2),
+            'tail_us': round(r.tail_us, 2),
+            'best_to_typical_gap_us': round(r.best_to_typical_gap_us, 2),
+            'tail_risk_us': round(r.tail_risk_us, 2),
+            'noop_p50_us': round(r.noop_p50_us, 2) if r.noop_p50_us is not None else None,
+            'ipc': round(r.ipc, 3) if r.ipc is not None else None,
+            'effective_freq_ghz': round(r.effective_freq_ghz, 3) if r.effective_freq_ghz is not None else None,
+            'frequency_tax_pct': round(r.frequency_tax_pct, 2) if r.frequency_tax_pct is not None else None,
+            'backend_stall_pct': round(r.backend_stall_pct, 2) if r.backend_stall_pct is not None else None,
+            'compute_time_us': round(r.compute_time_us, 2) if r.compute_time_us is not None else None,
+            'memory_stall_time_us': round(r.memory_stall_time_us, 2) if r.memory_stall_time_us is not None else None,
+            'n_windows': r.n_windows,
+            'provenance': r.provenance,
+            'unavailable': r.unavailable,
+        }
+        output['characterizations'].append(entry)
     print(json.dumps(output, indent=2))
 
 
-def _generate_markdown(results, dev, tier=0):
-    """Generate markdown decomposition report."""
+def _generate_markdown(results, dev):
+    """Generate markdown characterization report."""
     lines = [
-        "# Latency Decomposition Report",
+        "# Latency Characterization Report",
         "",
         f"**Device:** {dev.get('name', 'Unknown')}  ",
-        f"**Decomposition Tier:** {tier}  ",
         f"**CPU Peak:** {dev.get('cpu_peak_gflops', dev.get('peak_gflops', 'N/A'))} GFLOPS  ",
         f"**Memory BW:** {dev.get('memory_bandwidth_gb_s', 'N/A')} GB/s  ",
         "",
-        "## Decomposition Breakdown",
-        "",
-        "| Kernel | Measured (us) | Predicted (us) | I/O (us) | DVFS (us) | Sched (us) | Throttled % | Bound |",
-        "|--------|--------------|----------------|----------|-----------|------------|-------------|-------|",
     ]
 
-    for r in sorted(results, key=lambda x: x.measured_median_us, reverse=True):
-        dvfs = f"{r.dvfs_overhead_us:.1f}" if r.dvfs_overhead_us is not None else "N/A"
-        lines.append(
-            f"| {r.kernel_name} | {r.measured_median_us:.1f} | "
-            f"{r.predicted_peak_us:.4f} | {r.io_overhead_us:.1f} | "
-            f"{dvfs} | {r.scheduling_overhead_us:.1f} | "
-            f"{r.throttled_window_pct:.1f} | {r.bound} |"
-        )
+    for r in results:
+        prov = r.provenance
+        timing_src = prov.get('best_us', 'measured/timing')
+
+        lines.extend([
+            f"## {r.kernel_name}",
+            "",
+            f"| Metric | Value | Provenance |",
+            f"|--------|-------|------------|",
+            f"| Bound | {r.bound} (OI={r.operational_intensity:.1f}) | {prov.get('bound', 'estimated/roofline')} |",
+            f"| Working set | {r.working_set_bytes / 1024:.0f} KB | {prov.get('working_set_bytes', 'estimated/static')} |",
+            f"| Floor (roofline) | {r.roofline_floor_us:.4f} us | {prov.get('roofline_floor_us', 'estimated/roofline')} |",
+            f"| Best (p5) | {r.best_us:.1f} us | {timing_src} |",
+            f"| Typical (p50) | {r.typical_us:.1f} us | {timing_src} |",
+            f"| Tail (p99) | {r.tail_us:.1f} us | {timing_src} |",
+            f"| Best-to-typical gap | {r.best_to_typical_gap_us:.1f} us | {timing_src} |",
+            f"| Tail risk | {r.tail_risk_us:.1f} us | {timing_src} |",
+        ])
+
+        if r.ipc is not None:
+            lines.append(f"| IPC | {r.ipc:.1f} | {prov.get('ipc', 'measured/PMU')} |")
+        if r.effective_freq_ghz is not None:
+            lines.append(f"| Effective freq | {r.effective_freq_ghz:.1f} GHz | {prov.get('effective_freq_ghz', 'measured/PMU+timing')} |")
+        if r.frequency_tax_pct is not None:
+            lines.append(f"| Frequency tax | {r.frequency_tax_pct:.1f}% | {prov.get('frequency_tax_pct', 'measured/PMU+timing')} |")
+        if r.backend_stall_pct is not None:
+            compute_pct = 100 - r.backend_stall_pct
+            lines.append(f"| Compute time | {r.compute_time_us:.1f} us ({compute_pct:.1f}%) | {prov.get('compute_time_us', 'measured/PMU+timing')} |")
+            lines.append(f"| Memory stall | {r.memory_stall_time_us:.1f} us ({r.backend_stall_pct:.1f}%) | {prov.get('memory_stall_time_us', 'measured/PMU+timing')} |")
+        if r.noop_p50_us is not None:
+            lines.append(f"| Noop (p50) | {r.noop_p50_us:.1f} us | {prov.get('noop_p50_us', 'measured/timing/noop')} |")
+
+        lines.extend([
+            f"| N windows | {r.n_windows} | |",
+            "",
+        ])
 
     lines.extend([
-        "",
-        "## Component Definitions",
-        "",
-        "- **Predicted**: Theoretical minimum from Roofline model (max of compute, memory)",
-        "- **I/O**: Noop kernel baseline — harness overhead (scheduling, data copy, syscalls)",
-        "- **DVFS**: Overhead from CPU frequency throttling (median at throttled freq - median at nominal)",
-        "- **Sched**: Residual (measured - predicted - I/O - DVFS) — OS jitter, cache, other platform effects",
-        "- **Throttled %**: Fraction of windows where CPU ran below nominal frequency",
-        "",
         "*Generated by `cortex decompose`*",
     ])
 
     return '\n'.join(lines)
 
 
-def _write_report(results, dev, tier, output_dir, fs):
-    """Write DECOMPOSITION.md report to output directory."""
-    has_distributional = any(isinstance(r, DistributionalAttribution) for r in results)
-    if has_distributional:
-        md = _generate_markdown_distributional(
-            [r for r in results if isinstance(r, DistributionalAttribution)], dev, tier)
-    else:
-        md = _generate_markdown(results, dev, tier)
+def _write_report(results, dev, output_dir, fs):
+    """Write CHARACTERIZATION.md report to output directory."""
+    md = _generate_markdown(results, dev)
     try:
         if not fs.exists(output_dir):
             fs.makedirs(output_dir, exist_ok=True)
-        report_path = f"{output_dir}/DECOMPOSITION.md"
+        report_path = f"{output_dir}/CHARACTERIZATION.md"
         with fs.open(report_path, 'w') as f:
             f.write(md)
         print(f"\nReport written to: {report_path}")
     except Exception as e:
         print(f"\nWarning: Could not write report: {e}")
-
-
-def _output_table_distributional(results, dev, tier=1):
-    """Print distributional decomposition as formatted table with percentiles."""
-    print(f"\nDistributional Latency Decomposition [Tier {tier}] — {dev.get('name', 'Unknown Device')}")
-    print("=" * 130)
-    print(f"{'Kernel':<16} {'':>6} {'Measured':>10} {'Compute':>10} {'Residual':>10} "
-          f"{'Noop':>10} {'Net Resid':>10} {'Bound':>10} {'N':>6}")
-    print("-" * 130)
-
-    for r in sorted(results, key=lambda x: x.measured_p50_us, reverse=True):
-        for label, mval, cval, rval, nval, nrval in [
-            ("p50", r.measured_p50_us, r.compute_p50_us, r.residual_p50_us,
-             r.noop_p50_us, r.net_residual_p50_us),
-            ("p95", r.measured_p95_us, r.compute_p95_us, r.residual_p95_us,
-             r.noop_p95_us, r.net_residual_p95_us),
-            ("p99", r.measured_p99_us, r.compute_p99_us, r.residual_p99_us,
-             r.noop_p99_us, r.net_residual_p99_us),
-        ]:
-            name_col = r.kernel_name if label == "p50" else ""
-            n_col = str(r.n_windows) if label == "p50" else ""
-            bound_col = r.bound if label == "p50" else ""
-            print(f"{name_col:<16} {label:>6} {mval:>10.1f} {cval:>10.1f} "
-                  f"{rval:>10.1f} {nval:>10.1f} {nrval:>10.1f} "
-                  f"{bound_col:>10} {n_col:>6}")
-        print("-" * 130)
-
-    print("\nCompute = instruction_count / (freq * IPC). Residual = measured - compute.")
-    print("Net Resid = residual - noop (quantile subtraction).")
-
-
-def _generate_markdown_distributional(results, dev, tier=1):
-    """Generate markdown report for distributional decomposition."""
-    lines = [
-        "# Distributional Latency Decomposition Report",
-        "",
-        f"**Device:** {dev.get('name', 'Unknown')}  ",
-        f"**Decomposition Tier:** {tier}  ",
-        "",
-        "## Distributional Breakdown",
-        "",
-        "| Kernel | Pct | Measured (us) | Compute (us) | Residual (us) | Noop (us) | Net Residual (us) | Bound | N |",
-        "|--------|-----|--------------|-------------|--------------|----------|-------------------|-------|---|",
-    ]
-
-    for r in sorted(results, key=lambda x: x.measured_p50_us, reverse=True):
-        for label, mval, cval, rval, nval, nrval in [
-            ("p50", r.measured_p50_us, r.compute_p50_us, r.residual_p50_us,
-             r.noop_p50_us, r.net_residual_p50_us),
-            ("p95", r.measured_p95_us, r.compute_p95_us, r.residual_p95_us,
-             r.noop_p95_us, r.net_residual_p95_us),
-            ("p99", r.measured_p99_us, r.compute_p99_us, r.residual_p99_us,
-             r.noop_p99_us, r.net_residual_p99_us),
-        ]:
-            name = r.kernel_name if label == "p50" else ""
-            bound = r.bound if label == "p50" else ""
-            n = str(r.n_windows) if label == "p50" else ""
-            lines.append(
-                f"| {name} | {label} | {mval:.1f} | {cval:.1f} | "
-                f"{rval:.1f} | {nval:.1f} | {nrval:.1f} | {bound} | {n} |"
-            )
-
-    lines.extend([
-        "",
-        "## Component Definitions",
-        "",
-        "- **Compute**: Per-window compute bound = instruction_count / (freq_i * IPC), IPC=1.0",
-        "- **Residual**: measured - compute (clamped >= 0)",
-        "- **Noop**: Harness overhead distribution",
-        "- **Net Residual**: residual - noop (quantile subtraction, clamped >= 0)",
-        "",
-        "*Generated by `cortex decompose` (Tier 1 distributional)*",
-    ])
-
-    return '\n'.join(lines)

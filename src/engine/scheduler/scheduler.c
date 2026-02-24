@@ -14,6 +14,8 @@
 #include "../telemetry/telemetry.h"
 #include "../harness/util/util.h"
 #include "../harness/device/device_comm.h"
+#include "../inscount/inscount.h"
+#include "../osnoise/osnoise.h"
 
 #ifdef __linux__
 #include <sched.h>
@@ -56,9 +58,12 @@ struct cortex_scheduler_t {
     /* Telemetry CSV (Week 3 basic) */
     FILE *telemetry_file;
     int telemetry_header_written;
-    
+
     /* Telemetry buffer integration */
     char run_id[32];  /* Store run_id for telemetry records */
+
+    /* PMU now measured in adapter (per-thread around kernel process()) */
+    uint8_t osnoise_initialized;
 };
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler);
@@ -82,7 +87,9 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tlast_tx_ns,
                                   uint8_t window_failed,
                                   int32_t error_code,
-                                  uint32_t cpu_freq_mhz);
+                                  uint32_t cpu_freq_mhz,
+                                  cortex_pmu_counters_t pmu,
+                                  uint64_t osnoise_ns);
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry);
 
 cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *config) {
@@ -156,6 +163,9 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
         scheduler->run_id[0] = '\0';
     }
 
+    /* Initialize osnoise (PMU now measured in adapter) */
+    scheduler->osnoise_initialized = (cortex_osnoise_init() == 0) ? 1 : 0;
+
     return scheduler;
 }
 
@@ -174,6 +184,12 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
         fclose(scheduler->telemetry_file);
         scheduler->telemetry_file = NULL;
     }
+
+    /* Teardown osnoise (PMU now measured in adapter) */
+    if (scheduler->osnoise_initialized) {
+        cortex_osnoise_teardown();
+    }
+
     free(scheduler);
 }
 
@@ -471,6 +487,12 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
         uint8_t window_failed = 0;
         int32_t error_code = 0;
 
+        /* Per-window PMU (from adapter) + osnoise */
+        cortex_pmu_counters_t pmu = {0};
+        uint64_t osnoise_ns = 0;
+
+        if (scheduler->osnoise_initialized) cortex_osnoise_reset();
+
         clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
         /* Execute via device adapter (universal adapter model) */
@@ -500,9 +522,17 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
             device_tend_ns = device_timing.tend;
             device_tfirst_tx_ns = device_timing.tfirst_tx;
             device_tlast_tx_ns = device_timing.tlast_tx;
+
+            /* PMU from adapter (measured around kernel process()) */
+            pmu.cycle_count = device_timing.pmu_cycle_count;
+            pmu.instruction_count = device_timing.pmu_instruction_count;
+            pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ts);
+
+        /* Collect osnoise after window */
+        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
 
         int deadline_missed = 0;
         if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
@@ -516,7 +546,7 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
 
         record_window_metrics(scheduler, entry, &release_ts, &deadline_ts, &start_ts, &end_ts, deadline_missed,
                               device_tin_ns, device_tstart_ns, device_tend_ns, device_tfirst_tx_ns, device_tlast_tx_ns,
-                              window_failed, error_code, cpu_freq_mhz);
+                              window_failed, error_code, cpu_freq_mhz, pmu, osnoise_ns);
     }
 
     if (scheduler->warmup_windows_remaining > 0) {
@@ -539,7 +569,9 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tlast_tx_ns,
                                   uint8_t window_failed,
                                   int32_t error_code,
-                                  uint32_t cpu_freq_mhz) {
+                                  uint32_t cpu_freq_mhz,
+                                  cortex_pmu_counters_t pmu,
+                                  uint64_t osnoise_ns) {
     uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
     uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
     uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
@@ -600,6 +632,12 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         /* Platform state (SE-4) */
         rec.cpu_freq_mhz = cpu_freq_mhz;
 
+        /* Per-window PMU counters (SE-5 Tier 2) */
+        rec.pmu_cycle_count = pmu.cycle_count;
+        rec.pmu_instruction_count = pmu.instruction_count;
+        rec.pmu_backend_stall_cycles = pmu.backend_stall_cycles;
+        rec.osnoise_total_ns = osnoise_ns;
+
         /* Chain stage (SE-8): 0xFFFFFFFF = not chained */
         rec.stage_index = 0xFFFFFFFF;
 
@@ -656,6 +694,12 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
         uint8_t window_failed = 0;
         int32_t error_code = 0;
 
+        /* Per-stage PMU (from adapter) + osnoise */
+        cortex_pmu_counters_t pmu = {0};
+        uint64_t osnoise_ns = 0;
+
+        if (scheduler->osnoise_initialized) cortex_osnoise_reset();
+
         clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
         cortex_device_handle_t *device = (cortex_device_handle_t *)entry->device_handle;
@@ -685,9 +729,17 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             device_tend_ns = device_timing.tend;
             device_tfirst_tx_ns = device_timing.tfirst_tx;
             device_tlast_tx_ns = device_timing.tlast_tx;
+
+            /* PMU from adapter (measured around kernel process()) */
+            pmu.cycle_count = device_timing.pmu_cycle_count;
+            pmu.instruction_count = device_timing.pmu_instruction_count;
+            pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ts);
+
+        /* Collect osnoise after stage */
+        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
 
         int deadline_missed = 0;
         if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
@@ -722,6 +774,13 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             rec.window_failed = window_failed;
             rec.error_code = error_code;
             rec.cpu_freq_mhz = cpu_freq_mhz;
+
+            /* Per-stage PMU counters (SE-5 Tier 2) */
+            rec.pmu_cycle_count = pmu.cycle_count;
+            rec.pmu_instruction_count = pmu.instruction_count;
+            rec.pmu_backend_stall_cycles = pmu.backend_stall_cycles;
+            rec.osnoise_total_ns = osnoise_ns;
+
             rec.stage_index = (uint32_t)i;
 
             cortex_telemetry_add(buffer, &rec);

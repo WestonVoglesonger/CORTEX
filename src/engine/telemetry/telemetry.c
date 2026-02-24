@@ -99,10 +99,10 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,stage_index\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,pmu_cycle_count,pmu_instruction_count,pmu_backend_stall_cycles,osnoise_total_ns,stage_index\n");
     for (size_t i = 0; i < tb->count; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%llu,%llu,%llu,%llu,%u\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -123,6 +123,10 @@ int cortex_telemetry_write_csv(const char *path, const cortex_telemetry_buffer_t
                 (unsigned)r->window_failed,
                 r->error_code,
                 r->cpu_freq_mhz,
+                (unsigned long long)r->pmu_cycle_count,
+                (unsigned long long)r->pmu_instruction_count,
+                (unsigned long long)r->pmu_backend_stall_cycles,
+                (unsigned long long)r->osnoise_total_ns,
                 r->stage_index);
     }
     fclose(f);
@@ -163,10 +167,10 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
         fprintf(f, "#\n");
     }
 
-    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,stage_index\n");
+    fprintf(f, "run_id,plugin,window_index,release_ts_ns,deadline_ts_ns,start_ts_ns,end_ts_ns,deadline_missed,W,H,C,Fs,warmup,repeat,device_tin_ns,device_tstart_ns,device_tend_ns,device_tfirst_tx_ns,device_tlast_tx_ns,adapter_name,window_failed,error_code,cpu_freq_mhz,pmu_cycle_count,pmu_instruction_count,pmu_backend_stall_cycles,osnoise_total_ns,stage_index\n");
     for (size_t i = start_idx; i < end_idx; i++) {
         const cortex_telemetry_record_t *r = &tb->records[i];
-        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%u\n",
+        fprintf(f, "%s,%s,%u,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%s,%u,%d,%u,%llu,%llu,%llu,%llu,%u\n",
                 r->run_id,
                 r->plugin_name,
                 r->window_index,
@@ -187,6 +191,10 @@ int cortex_telemetry_write_csv_filtered(const char *path, const cortex_telemetry
                 (unsigned)r->window_failed,
                 r->error_code,
                 r->cpu_freq_mhz,
+                (unsigned long long)r->pmu_cycle_count,
+                (unsigned long long)r->pmu_instruction_count,
+                (unsigned long long)r->pmu_backend_stall_cycles,
+                (unsigned long long)r->osnoise_total_ns,
                 r->stage_index);
     }
     fclose(f);
@@ -317,6 +325,10 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             "\"window_failed\":%u,"
             "\"error_code\":%d,"
             "\"cpu_freq_mhz\":%u,"
+            "\"pmu_cycle_count\":%llu,"
+            "\"pmu_instruction_count\":%llu,"
+            "\"pmu_backend_stall_cycles\":%llu,"
+            "\"osnoise_total_ns\":%llu,"
             "\"stage_index\":%u}\n",
             run_id_esc,
             plugin_esc,
@@ -338,6 +350,10 @@ int cortex_telemetry_write_ndjson(const char *path, const cortex_telemetry_buffe
             (unsigned)r->window_failed,
             r->error_code,
             r->cpu_freq_mhz,
+            (unsigned long long)r->pmu_cycle_count,
+            (unsigned long long)r->pmu_instruction_count,
+            (unsigned long long)r->pmu_backend_stall_cycles,
+            (unsigned long long)r->osnoise_total_ns,
             r->stage_index);
     }
 
@@ -437,6 +453,10 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             "\"window_failed\":%u,"
             "\"error_code\":%d,"
             "\"cpu_freq_mhz\":%u,"
+            "\"pmu_cycle_count\":%llu,"
+            "\"pmu_instruction_count\":%llu,"
+            "\"pmu_backend_stall_cycles\":%llu,"
+            "\"osnoise_total_ns\":%llu,"
             "\"stage_index\":%u}\n",
             run_id_esc,
             plugin_esc,
@@ -458,6 +478,10 @@ int cortex_telemetry_write_ndjson_filtered(const char *path, const cortex_teleme
             (unsigned)r->window_failed,
             r->error_code,
             r->cpu_freq_mhz,
+            (unsigned long long)r->pmu_cycle_count,
+            (unsigned long long)r->pmu_instruction_count,
+            (unsigned long long)r->pmu_backend_stall_cycles,
+            (unsigned long long)r->osnoise_total_ns,
             r->stage_index);
     }
 

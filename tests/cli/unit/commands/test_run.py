@@ -160,7 +160,7 @@ class TestRunExecuteDeviceDeploy:
 
     @patch('cortex.commands.run.HarnessRunner')
     @patch('cortex.commands.run.generate_run_name', return_value='test-run')
-    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'Apple M1', 'decomposition_tier': 1}})
+    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'Apple M1'}})
     @patch('cortex.commands.run.validate_capabilities', side_effect=lambda x: x)
     def test_device_only_resolves_local(self, mock_validate, mock_resolve, mock_gen_name, mock_runner_cls):
         """--device m1 with no --deploy = local execution, resolve_device called."""
@@ -184,7 +184,7 @@ class TestRunExecuteDeviceDeploy:
     @patch('cortex.commands.run.HarnessRunner')
     @patch('cortex.commands.run.generate_run_name', return_value='test-run')
     @patch('cortex.commands.run.DeployerFactory')
-    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'RPi4', 'decomposition_tier': 1}})
+    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'RPi4'}})
     @patch('cortex.commands.run.validate_capabilities', side_effect=lambda x: x)
     def test_device_plus_deploy_ssh(self, mock_validate, mock_resolve, mock_factory, mock_gen_name, mock_runner_cls):
         """--device rpi4 --deploy ssh://pi@rpi triggers deployer AND resolves device."""
@@ -208,7 +208,7 @@ class TestRunExecuteDeviceDeploy:
 
     @patch('cortex.commands.run.HarnessRunner')
     @patch('cortex.commands.run.generate_run_name', return_value='test-run')
-    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'Apple M1', 'decomposition_tier': 1}})
+    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'Apple M1'}})
     @patch('cortex.commands.run.validate_capabilities', side_effect=lambda x: x)
     def test_device_spec_passed_to_runner(self, mock_validate, mock_resolve, mock_gen_name, mock_runner_cls):
         """device_spec from resolve_device() is forwarded to runner."""
@@ -218,7 +218,7 @@ class TestRunExecuteDeviceDeploy:
         mock_runner.run_single_kernel.return_value = 'results/test-run'
         mock_runner_cls.return_value = mock_runner
 
-        device_spec = {'device': {'name': 'Apple M1', 'decomposition_tier': 1}}
+        device_spec = {'device': {'name': 'Apple M1'}}
 
         args = self._make_args(device='m1')
         result = execute(args)

@@ -21,13 +21,25 @@
 
 #include <stdint.h>
 
+/* Multi-counter PMU result (SE-5 Phase 4) */
+typedef struct cortex_pmu_counters {
+    uint64_t instruction_count;
+    uint64_t cycle_count;
+    uint64_t backend_stall_cycles;   /* 0 if unavailable */
+    uint8_t  has_cycles;
+    uint8_t  has_backend_stall;
+} cortex_pmu_counters_t;
+
 /* Initialize the instruction counter subsystem. Returns 0 on success, -1 on failure. */
 int cortex_inscount_init(void);
 
 /* Reset and enable the instruction counter. */
 void cortex_inscount_start(void);
 
-/* Disable the counter and return the instruction count since start. */
+/* Disable all counters and return multi-counter result. */
+cortex_pmu_counters_t cortex_inscount_stop_all(void);
+
+/* Disable the counter and return the instruction count since start (backward compat). */
 uint64_t cortex_inscount_stop(void);
 
 /* Release resources. */
