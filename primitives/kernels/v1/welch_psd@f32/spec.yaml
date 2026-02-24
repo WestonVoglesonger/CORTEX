@@ -22,6 +22,11 @@ numerical:
     atol: 1e-4  # Absolute tolerance for near-zero values
 
 # Oracle Configuration
+computational:
+  flops_per_sample: 40         # FFT-dominant: ~5*N*log2(N)/N ≈ 40 per sample (N=256)
+  memory_loads_per_sample: 2   # input + window coefficients
+  memory_stores_per_sample: 1  # PSD output bin
+
 oracle:
   path: oracle.py
   function: compute

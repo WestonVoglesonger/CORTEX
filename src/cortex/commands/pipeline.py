@@ -65,12 +65,35 @@ def setup_parser(parser):
         help='Device connection string (auto-deploy or manual). '
              'Examples: nvidia@192.168.1.123 | tcp://192.168.1.123:9000 | local://'
     )
+    parser.add_argument(
+        '--chain',
+        help='Chained kernel execution: comma-separated ordered kernel names. '
+             'Output of kernel A becomes input of kernel B. '
+             'Example: --chain "notch_iir,bandpass_fir,goertzel"'
+    )
 
 def execute(args):
     """Execute full pipeline"""
     print("=" * 80)
     print("CORTEX FULL PIPELINE")
     print("=" * 80)
+
+    # Chain mode validation (SE-8)
+    chain_kernels = None
+    if hasattr(args, 'chain') and args.chain:
+        chain_kernels = [k.strip() for k in args.chain.split(',') if k.strip()]
+        if len(chain_kernels) < 2:
+            print("Error: --chain requires at least 2 kernel names")
+            return 1
+
+        from cortex.utils.chain import validate_chain
+        valid, error = validate_chain(chain_kernels)
+        if not valid:
+            print(f"Error: Chain validation failed: {error}")
+            return 1
+
+        print(f"\nChain mode: {' -> '.join(chain_kernels)}")
+        print("  Dimension validation: PASSED")
 
     # Generate run name
     if hasattr(args, 'run_name') and args.run_name:
@@ -304,7 +327,8 @@ def execute(args):
             repeats=args.repeats,
             warmup=args.warmup,
             verbose=args.verbose,
-            transport_uri=transport_uri
+            transport_uri=transport_uri,
+            chain_kernels=chain_kernels
         )
 
         if not results_dir:

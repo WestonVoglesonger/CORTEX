@@ -176,7 +176,8 @@ int main(void)
         uint32_t output_size = ack.output_window_length_samples * ack.output_channels;
         if (cortex_adapter_send_result(transport, session_id, window_count,
                                        now, now, now, now, now,
-                                       window_buf, output_size, ack.output_channels) < 0) {
+                                       window_buf, output_size, ack.output_channels,
+                                       0, 0, 0) < 0) {
             fprintf(stderr, "[mock_adapter] Failed to send RESULT\n");
             break;
         }
