@@ -6,6 +6,7 @@ Runs the full 3-step latency analysis workflow sequentially:
 3. cortex decompose → CHARACTERIZATION.md
 """
 import argparse
+from pathlib import Path
 
 from cortex.utils.decomposition import load_device_spec
 from cortex.utils.device import resolve_device, validate_capabilities
@@ -248,8 +249,11 @@ def execute(args):
 
     output_dir = args.output if hasattr(args, 'output') and args.output else str(get_analysis_dir(run_name))
 
-    # Use device.yaml saved by runner, or the user-specified path
-    device_yaml = device_path if device_path else f"{results_dir}/device.yaml"
+    # Always prefer the resolved device.yaml saved by the runner into
+    # the results directory — this handles short names like "m1" that
+    # resolve_device() understands but open() does not.
+    saved_device_yaml = f"{results_dir}/device.yaml"
+    device_yaml = saved_device_yaml if Path(saved_device_yaml).exists() else device_path
 
     decompose_args = argparse.Namespace(
         run_name=results_dir,
