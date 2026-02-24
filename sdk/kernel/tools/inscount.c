@@ -150,11 +150,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Query CPU frequency (available regardless of PMU) */
-    uint64_t cpu_freq_hz = cortex_inscount_cpu_freq_hz();
-
-    /* Initialize PMU */
+    /* Initialize PMU first (establishes core pinning on big.LITTLE) */
     if (cortex_inscount_init() != 0) {
+        /* Query freq even on failure (may still be useful) */
+        uint64_t cpu_freq_hz = cortex_inscount_cpu_freq_hz();
         printf("{\"kernel\": \"%s\", \"instruction_count\": 0, \"cpu_freq_hz\": %llu, "
                "\"available\": false, "
                "\"error\": \"PMU init failed (no permission or unsupported platform)\"}\n",
@@ -165,6 +164,9 @@ int main(int argc, char **argv) {
         free(output);
         return 0;  /* Not an error — PMU just isn't available */
     }
+
+    /* Query CPU frequency after PMU init (core pinning is now established) */
+    uint64_t cpu_freq_hz = cortex_inscount_cpu_freq_hz();
 
     /* Warm up: one uncounted call to prime caches */
     plugin.api.process(init_result.handle, input, output);

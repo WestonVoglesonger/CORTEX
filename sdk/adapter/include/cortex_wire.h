@@ -71,7 +71,7 @@ typedef enum {
  */
 typedef struct __attribute__((packed)) {
     uint32_t magic;           /* Always CORTEX_PROTOCOL_MAGIC (0x43525458, "CRTX") */
-    uint8_t  version;         /* Protocol version (1) */
+    uint8_t  version;         /* Protocol version (2) */
     uint8_t  frame_type;      /* cortex_frame_type_t */
     uint16_t flags;           /* Reserved (0 for Phase 1) */
     uint32_t payload_length;  /* Bytes following this header */

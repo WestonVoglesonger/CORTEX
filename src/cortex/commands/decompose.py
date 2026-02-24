@@ -342,7 +342,7 @@ def _write_report(results, dev, output_dir, fs):
     md = _generate_markdown(results, dev)
     try:
         if not fs.exists(output_dir):
-            fs.makedirs(output_dir, exist_ok=True)
+            fs.mkdir(output_dir, parents=True, exist_ok=True)
         report_path = f"{output_dir}/CHARACTERIZATION.md"
         with fs.open(report_path, 'w') as f:
             f.write(md)
