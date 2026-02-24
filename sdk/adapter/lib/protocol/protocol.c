@@ -377,7 +377,10 @@ int cortex_protocol_send_result_chunked(
     uint64_t tlast_tx,
     const float *samples,
     uint32_t output_length_samples,
-    uint32_t output_channels
+    uint32_t output_channels,
+    uint64_t pmu_cycle_count,
+    uint64_t pmu_instruction_count,
+    uint64_t pmu_backend_stall_cycles
 )
 {
     uint32_t total_bytes = output_length_samples * output_channels * sizeof(float);
@@ -414,11 +417,16 @@ int cortex_protocol_send_result_chunked(
         cortex_write_u32_le(chunk_buf + 48, output_length_samples);
         cortex_write_u32_le(chunk_buf + 52, output_channels);
 
+        /* PMU counters (measured around kernel process() in adapter) */
+        cortex_write_u64_le(chunk_buf + 56, pmu_cycle_count);
+        cortex_write_u64_le(chunk_buf + 64, pmu_instruction_count);
+        cortex_write_u64_le(chunk_buf + 72, pmu_backend_stall_cycles);
+
         /* WINDOW_CHUNK pattern (chunking control) */
-        cortex_write_u32_le(chunk_buf + 56, total_bytes);
-        cortex_write_u32_le(chunk_buf + 60, offset);
-        cortex_write_u32_le(chunk_buf + 64, chunk_len);
-        cortex_write_u32_le(chunk_buf + 68, flags);
+        cortex_write_u32_le(chunk_buf + 80, total_bytes);
+        cortex_write_u32_le(chunk_buf + 84, offset);
+        cortex_write_u32_le(chunk_buf + 88, chunk_len);
+        cortex_write_u32_le(chunk_buf + 92, flags);
 
         /* Convert float samples to little-endian and copy to chunk buffer */
         uint8_t *chunk_data = chunk_buf + sizeof(cortex_wire_result_chunk_t);
@@ -646,7 +654,10 @@ int cortex_protocol_recv_result_chunked(
     uint64_t *out_tfirst_tx,
     uint64_t *out_tlast_tx,
     uint32_t *out_length,
-    uint32_t *out_channels
+    uint32_t *out_channels,
+    uint64_t *out_pmu_cycle_count,
+    uint64_t *out_pmu_instruction_count,
+    uint64_t *out_pmu_backend_stall_cycles
 )
 {
     uint8_t frame_buf[sizeof(cortex_wire_result_chunk_t) + CORTEX_CHUNK_SIZE];
@@ -694,10 +705,13 @@ int cortex_protocol_recv_result_chunked(
         uint64_t tlast_tx = cortex_read_u64_le(frame_buf + 40);
         uint32_t output_length = cortex_read_u32_le(frame_buf + 48);
         uint32_t output_channels = cortex_read_u32_le(frame_buf + 52);
-        uint32_t chunk_total_bytes = cortex_read_u32_le(frame_buf + 56);
-        uint32_t offset = cortex_read_u32_le(frame_buf + 60);
-        uint32_t chunk_len = cortex_read_u32_le(frame_buf + 64);
-        uint32_t flags = cortex_read_u32_le(frame_buf + 68);
+        uint64_t pmu_cycles = cortex_read_u64_le(frame_buf + 56);
+        uint64_t pmu_insns = cortex_read_u64_le(frame_buf + 64);
+        uint64_t pmu_stalls = cortex_read_u64_le(frame_buf + 72);
+        uint32_t chunk_total_bytes = cortex_read_u32_le(frame_buf + 80);
+        uint32_t offset = cortex_read_u32_le(frame_buf + 84);
+        uint32_t chunk_len = cortex_read_u32_le(frame_buf + 88);
+        uint32_t flags = cortex_read_u32_le(frame_buf + 92);
 
         /* Validate sequence */
         if (sequence != expected_sequence) {
@@ -738,6 +752,9 @@ int cortex_protocol_recv_result_chunked(
             if (out_tlast_tx) *out_tlast_tx = tlast_tx;
             if (out_length) *out_length = output_length;
             if (out_channels) *out_channels = output_channels;
+            if (out_pmu_cycle_count) *out_pmu_cycle_count = pmu_cycles;
+            if (out_pmu_instruction_count) *out_pmu_instruction_count = pmu_insns;
+            if (out_pmu_backend_stall_cycles) *out_pmu_backend_stall_cycles = pmu_stalls;
         }
 
         /* Validate chunk parameters */

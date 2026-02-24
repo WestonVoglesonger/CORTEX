@@ -30,6 +30,20 @@ typedef struct cortex_telemetry_record {
     /* Error tracking (distinguish transport failures from deadline misses) */
     uint8_t window_failed;        /* 1 = transport/adapter failure, 0 = success */
     int32_t error_code;           /* Error reason if window_failed=1 (cortex_error_code_t) */
+
+    /* Platform state per window (SE-4) */
+    uint32_t cpu_freq_mhz;        /* CPU frequency at window dispatch (0 if unavailable) */
+
+    /* Per-window PMU counters (SE-5 Tier 2) */
+    uint64_t pmu_cycle_count;           /* CPU cycles for this window (0 if unavailable) */
+    uint64_t pmu_instruction_count;     /* Retired instructions for this window (0 if unavailable) */
+    uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
+
+    /* Per-window OS noise (SE-5 Tier 2) */
+    uint64_t osnoise_total_ns;          /* Accumulated OS noise during window (0 if unavailable) */
+
+    /* Chain execution (SE-8) */
+    uint32_t stage_index;          /* Stage within chain (0xFFFFFFFF = not chained) */
 } cortex_telemetry_record_t;
 
 typedef struct cortex_telemetry_buffer {
@@ -46,6 +60,10 @@ typedef struct cortex_system_info {
     uint64_t total_ram_mb;   /* Total system RAM in MB */
     uint32_t cpu_count;      /* Number of CPU cores */
     float thermal_celsius;   /* Current thermal reading (-1.0 if unavailable) */
+
+    /* Platform state snapshot at run start (SE-4) */
+    uint32_t cpu_freq_mhz;    /* CPU frequency at run start (0 if unavailable) */
+    char governor[32];         /* CPU governor: "performance", "powersave", etc. */
 
     /* Device system info (where kernel executes - may differ from harness) */
     char device_hostname[64]; /* Device hostname (from HELLO frame) */

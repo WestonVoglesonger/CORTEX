@@ -576,6 +576,233 @@ class TelemetryAnalyzer:
             self.log.error(f"Failed to save summary table: {e}")
             return False
 
+    def plot_freq_latency_scatter(self, df: pd.DataFrame, output_path: str,
+                                  format: str = 'png') -> bool:
+        """Generate scatter plot of CPU frequency vs latency, colored by kernel.
+
+        Requires 'cpu_freq_mhz' column in telemetry (SE-4). Skips if not present
+        or all values are 0 (macOS).
+
+        Args:
+            df: Telemetry DataFrame (raw data)
+            output_path: Path to save plot
+            format: Image format
+
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        if 'cpu_freq_mhz' not in df.columns:
+            self.log.info("No cpu_freq_mhz column; skipping freq-latency scatter")
+            return False
+
+        df_plot = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)]
+        if df_plot.empty:
+            self.log.info("No non-zero CPU frequency data; skipping freq-latency scatter")
+            return False
+
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plugins = df_plot['plugin'].unique()
+        colors = plt.cm.tab10(range(len(plugins)))
+
+        for plugin, color in zip(plugins, colors):
+            subset = df_plot[df_plot['plugin'] == plugin]
+            ax.scatter(subset['cpu_freq_mhz'], subset['latency_us'],
+                       label=plugin, color=color, alpha=0.4, s=10)
+
+        ax.set_xlabel('CPU Frequency (MHz)')
+        ax.set_ylabel('Latency (us)')
+        ax.set_title('CPU Frequency vs Latency')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved freq-latency scatter: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save freq-latency scatter: {e}")
+            return False
+        finally:
+            plt.close('all')
+
+    def detect_freq_transitions(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Detect windows where CPU frequency changed and compute latency delta.
+
+        Args:
+            df: Telemetry DataFrame with cpu_freq_mhz column
+
+        Returns:
+            DataFrame with transition points and latency deltas, or None
+        """
+        if 'cpu_freq_mhz' not in df.columns:
+            return None
+
+        df_real = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)].copy()
+        if df_real.empty:
+            return None
+
+        rows = []
+        for plugin in df_real['plugin'].unique():
+            pdata = df_real[df_real['plugin'] == plugin].sort_values('window_index')
+            freqs = pdata['cpu_freq_mhz'].values
+            latencies = pdata['latency_us'].values
+            indices = pdata['window_index'].values
+
+            for i in range(1, len(freqs)):
+                if freqs[i] != freqs[i - 1]:
+                    rows.append({
+                        'plugin': plugin,
+                        'window_index': int(indices[i]),
+                        'freq_before_mhz': int(freqs[i - 1]),
+                        'freq_after_mhz': int(freqs[i]),
+                        'latency_before_us': float(latencies[i - 1]),
+                        'latency_after_us': float(latencies[i]),
+                        'latency_delta_us': float(latencies[i] - latencies[i - 1]),
+                    })
+
+        if not rows:
+            return None
+        return pd.DataFrame(rows)
+
+    def plot_platform_state_timeline(self, df: pd.DataFrame, output_path: str,
+                                      format: str = 'png') -> bool:
+        """Generate dual-axis timeline: latency + CPU frequency over window index.
+
+        Args:
+            df: Telemetry DataFrame (raw data)
+            output_path: Path to save plot
+            format: Image format
+
+        Returns:
+            True if plot saved successfully, False otherwise
+        """
+        if 'cpu_freq_mhz' not in df.columns:
+            self.log.info("No cpu_freq_mhz column; skipping platform state timeline")
+            return False
+
+        df_plot = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)]
+        if df_plot.empty:
+            self.log.info("No non-zero CPU frequency data; skipping platform state timeline")
+            return False
+
+        self.fs.mkdir(Path(output_path).parent, parents=True, exist_ok=True)
+
+        fig, ax1 = plt.subplots(figsize=(14, 6))
+        ax2 = ax1.twinx()
+
+        # Plot latency per kernel on primary axis
+        plugins = df_plot['plugin'].unique()
+        colors = plt.cm.tab10(range(len(plugins)))
+
+        for plugin, color in zip(plugins, colors):
+            subset = df_plot[df_plot['plugin'] == plugin].sort_values('window_index')
+            ax1.plot(subset['window_index'], subset['latency_us'],
+                     label=f"{plugin} latency", color=color, alpha=0.6, linewidth=0.5)
+
+        # Plot CPU frequency on secondary axis (use first kernel's data)
+        first_kernel = df_plot[df_plot['plugin'] == plugins[0]].sort_values('window_index')
+        ax2.plot(first_kernel['window_index'], first_kernel['cpu_freq_mhz'],
+                 label='CPU Freq', color='red', linewidth=1.5, alpha=0.8)
+
+        ax1.set_xlabel('Window Index')
+        ax1.set_ylabel('Latency (us)')
+        ax2.set_ylabel('CPU Frequency (MHz)')
+        ax1.set_title('Platform State Timeline: Latency & CPU Frequency')
+
+        # Combine legends
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8)
+
+        ax1.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        try:
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', format=format)
+            self.log.info(f"Saved platform state timeline: {output_path}")
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to save platform state timeline: {e}")
+            return False
+        finally:
+            plt.close('all')
+
+    def compare_runs(self, df_baseline: pd.DataFrame, df_candidate: pd.DataFrame,
+                     alpha: float = 0.05) -> Optional[pd.DataFrame]:
+        """Compare two benchmark runs with statistical tests.
+
+        For each kernel present in both runs, computes Welch's t-test,
+        Cohen's d effect size, and relative change in mean latency.
+
+        Args:
+            df_baseline: Telemetry DataFrame from baseline run
+            df_candidate: Telemetry DataFrame from candidate run
+            alpha: Significance level (default 0.05)
+
+        Returns:
+            DataFrame with per-kernel comparison, or None if no common kernels
+        """
+        # Filter warmup
+        b = df_baseline[df_baseline['warmup'] == 0]
+        c = df_candidate[df_candidate['warmup'] == 0]
+
+        common_kernels = sorted(set(b['plugin'].unique()) & set(c['plugin'].unique()))
+        if not common_kernels:
+            self.log.warning("No common kernels between baseline and candidate")
+            return None
+
+        # Try to import scipy for statistical tests
+        try:
+            from scipy.stats import ttest_ind
+            has_scipy = True
+        except ImportError:
+            self.log.warning("scipy not installed; statistical tests unavailable (raw means only)")
+            has_scipy = False
+
+        rows = []
+        for kernel in common_kernels:
+            b_lat = b[b['plugin'] == kernel]['latency_us'].values
+            c_lat = c[c['plugin'] == kernel]['latency_us'].values
+
+            b_mean = float(np.mean(b_lat))
+            c_mean = float(np.mean(c_lat))
+            b_std = float(np.std(b_lat, ddof=1)) if len(b_lat) > 1 else 0.0
+            c_std = float(np.std(c_lat, ddof=1)) if len(c_lat) > 1 else 0.0
+
+            relative_change = ((c_mean - b_mean) / b_mean * 100) if b_mean > 0 else 0.0
+
+            p_value = None
+            cohens_d = None
+            significant = False
+
+            if has_scipy and len(b_lat) > 1 and len(c_lat) > 1:
+                stat, p_value = ttest_ind(b_lat, c_lat, equal_var=False)
+                significant = p_value < alpha
+
+                # Cohen's d (pooled std)
+                pooled_std = np.sqrt((b_std**2 + c_std**2) / 2)
+                if pooled_std > 0:
+                    cohens_d = float((c_mean - b_mean) / pooled_std)
+
+            rows.append({
+                'kernel': kernel,
+                'baseline_mean': b_mean,
+                'baseline_std': b_std,
+                'baseline_n': len(b_lat),
+                'candidate_mean': c_mean,
+                'candidate_std': c_std,
+                'candidate_n': len(c_lat),
+                'relative_change_pct': relative_change,
+                'p_value': p_value,
+                'cohens_d': cohens_d,
+                'significant': significant,
+            })
+
+        return pd.DataFrame(rows)
+
     def run_full_analysis(self, results_dir: str, output_dir: str,
                          plots: List[str] = None, format: str = 'png',
                          telemetry_format: str = 'ndjson') -> bool:
@@ -631,6 +858,25 @@ class TelemetryAnalyzer:
         if 'throughput' in plots:
             output_path = f"{output_dir}/throughput_comparison.{format}"
             plot_results['throughput'] = self.plot_throughput_comparison(stats, output_path, format)
+
+        # Platform correlation plots (SE-7): auto-generate when freq data present
+        if 'cpu_freq_mhz' in df.columns and (df['cpu_freq_mhz'] > 0).any():
+            self.log.info("CPU frequency data detected — generating platform correlation plots")
+
+            freq_scatter_path = f"{output_dir}/freq_latency_scatter.{format}"
+            plot_results['freq_scatter'] = self.plot_freq_latency_scatter(df, freq_scatter_path, format)
+
+            timeline_path = f"{output_dir}/platform_state_timeline.{format}"
+            plot_results['platform_timeline'] = self.plot_platform_state_timeline(df, timeline_path, format)
+
+            transitions = self.detect_freq_transitions(df)
+            if transitions is not None and not transitions.empty:
+                trans_path = f"{output_dir}/freq_transitions.csv"
+                try:
+                    transitions.to_csv(trans_path, index=False)
+                    self.log.info(f"Saved {len(transitions)} frequency transitions: {trans_path}")
+                except Exception as e:
+                    self.log.warning(f"Failed to save transitions CSV: {e}")
 
         # Generate summary table
         summary_path = f"{output_dir}/SUMMARY.md"
