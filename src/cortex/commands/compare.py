@@ -1,9 +1,9 @@
 """Compare two benchmark runs with statistical analysis."""
+from pathlib import Path
+
+from cortex.core import ConsoleLogger, RealFileSystemService
 from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import get_run_directory
-from cortex.core import ConsoleLogger, RealFileSystemService
-from pathlib import Path
-import json
 
 
 def setup_parser(parser):
@@ -76,11 +76,7 @@ def execute(args):
     print(f"Candidate: {candidate_dir}")
     print()
 
-    # Determine output directory
-    if args.output:
-        output_dir = args.output
-    else:
-        output_dir = "results/comparisons"
+    output_dir = args.output or "results/comparisons"
 
     # Create analyzer
     filesystem = RealFileSystemService()

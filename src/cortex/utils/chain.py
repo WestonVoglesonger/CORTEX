@@ -4,6 +4,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 
+def _shape_dim(shape, index):
+    """Extract a dimension from a shape list, or None if absent/dynamic."""
+    if isinstance(shape, list) and len(shape) > index:
+        return shape[index]
+    return None
+
+
 def validate_chain(kernel_names: List[str], kernels_dir: str = "primitives/kernels") -> Tuple[bool, Optional[str]]:
     """Validate dimension compatibility for a chain of kernels.
 
@@ -38,26 +45,21 @@ def validate_chain(kernel_names: List[str], kernels_dir: str = "primitives/kerne
         input_shape = spec_b.get('abi', {}).get('input_shape')
 
         if output_shape is None or input_shape is None:
-            # If shapes aren't specified, assume compatible (best-effort)
             continue
 
-        # Compare first dimension (W). 'null' means dynamic — always compatible.
-        out_w = output_shape[0] if isinstance(output_shape, list) and len(output_shape) > 0 else None
-        in_w = input_shape[0] if isinstance(input_shape, list) and len(input_shape) > 0 else None
+        # Compare W dimension. None (from null in YAML) means dynamic — always compatible.
+        out_w = _shape_dim(output_shape, 0)
+        in_w = _shape_dim(input_shape, 0)
+        if out_w is not None and in_w is not None and out_w != in_w:
+            return False, (f"Dimension mismatch: {name_a} output W={out_w} "
+                           f"!= {name_b} input W={in_w}")
 
-        if out_w is not None and in_w is not None:
-            if out_w != in_w:
-                return False, (f"Dimension mismatch: {name_a} output W={out_w} "
-                               f"!= {name_b} input W={in_w}")
-
-        # Compare second dimension (C). 'null' means dynamic.
-        out_c = output_shape[1] if isinstance(output_shape, list) and len(output_shape) > 1 else None
-        in_c = input_shape[1] if isinstance(input_shape, list) and len(input_shape) > 1 else None
-
-        if out_c is not None and in_c is not None:
-            if out_c != in_c:
-                return False, (f"Channel mismatch: {name_a} output C={out_c} "
-                               f"!= {name_b} input C={in_c}")
+        # Compare C dimension
+        out_c = _shape_dim(output_shape, 1)
+        in_c = _shape_dim(input_shape, 1)
+        if out_c is not None and in_c is not None and out_c != in_c:
+            return False, (f"Channel mismatch: {name_a} output C={out_c} "
+                           f"!= {name_b} input C={in_c}")
 
     return True, None
 

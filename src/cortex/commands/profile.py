@@ -8,7 +8,6 @@ Runs the full 3-step latency analysis workflow sequentially:
 import argparse
 from pathlib import Path
 
-from cortex.utils.decomposition import load_device_spec
 from cortex.utils.device import resolve_device, validate_capabilities
 from cortex.utils.paths import generate_run_name, get_analysis_dir
 
@@ -98,7 +97,7 @@ def execute(args):
     print("=" * 80)
 
     # Step 0: Resolve device
-    device_path = getattr(args, 'device', None)
+    device_path = args.device
     device_spec = resolve_device(device_path)
     if device_spec is None:
         if device_path:
@@ -111,7 +110,7 @@ def execute(args):
     print(f"Device: {dev.get('name', 'Unknown')}")
 
     # Generate run name
-    if hasattr(args, 'run_name') and args.run_name:
+    if args.run_name:
         try:
             run_name = generate_run_name(args.run_name)
         except ValueError as e:
@@ -133,8 +132,8 @@ def execute(args):
 
     predict_args = argparse.Namespace(
         device=device_path,
-        kernel=getattr(args, 'kernel', None),
-        chain=getattr(args, 'chain', None),
+        kernel=args.kernel,
+        chain=args.chain,
         config=False,
         output=None,
         format='table',
@@ -154,7 +153,6 @@ def execute(args):
     print("STEP 2: RUN (Benchmark)")
     print("=" * 80)
 
-    from cortex.commands import run as run_cmd
     from cortex.utils.runner import HarnessRunner
     from cortex.core import (
         ConsoleLogger, RealFileSystemService, SubprocessExecutor,
@@ -173,12 +171,9 @@ def execute(args):
         logger=ConsoleLogger(),
     )
 
-    # Determine kernel selection for run
-    kernel_arg = getattr(args, 'kernel', None)
-    chain_arg = getattr(args, 'chain', None)
-    run_all = getattr(args, 'run_all', False)
-
     # Build kernel list for runner
+    kernel_arg = args.kernel
+    chain_arg = args.chain
     chain_kernels = None
     if chain_arg:
         chain_kernels = [k.strip() for k in chain_arg.split(',') if k.strip()]
@@ -187,29 +182,27 @@ def execute(args):
             print("Adding noop to chain for I/O baseline measurement")
             chain_kernels.append('noop')
 
-    # Resolve deploy strategy
-    deploy_string = getattr(args, 'deploy', None)
+    deploy_string = args.deploy
 
-    # Route to appropriate runner method based on kernel selection
     def _run_benchmark(transport_uri=None):
         if kernel_arg:
             return runner.run_single_kernel(
                 kernel_arg,
                 run_name=run_name,
-                duration=getattr(args, 'duration', None),
-                repeats=getattr(args, 'repeats', None),
-                warmup=getattr(args, 'warmup', None),
-                verbose=getattr(args, 'verbose', False),
+                duration=args.duration,
+                repeats=args.repeats,
+                warmup=args.warmup,
+                verbose=args.verbose,
                 transport_uri=transport_uri,
                 device_spec=device_spec,
             )
         else:
             return runner.run_all_kernels(
                 run_name=run_name,
-                duration=getattr(args, 'duration', None),
-                repeats=getattr(args, 'repeats', None),
-                warmup=getattr(args, 'warmup', None),
-                verbose=getattr(args, 'verbose', False),
+                duration=args.duration,
+                repeats=args.repeats,
+                warmup=args.warmup,
+                verbose=args.verbose,
                 transport_uri=transport_uri,
                 chain_kernels=chain_kernels,
                 device_spec=device_spec,
@@ -218,7 +211,6 @@ def execute(args):
     if deploy_string is None:
         results_dir = _run_benchmark()
     else:
-        from cortex.deploy import DeployerFactory, Deployer, DeploymentError
         from cortex.commands.run import _run_with_deploy
         # _run_with_deploy returns an exit code, but we need results_dir
         # Use a mutable container to capture it
@@ -229,7 +221,7 @@ def execute(args):
             captured['results_dir'] = r
             return r
 
-        exit_code = _run_with_deploy(deploy_string, run_fn, getattr(args, 'verbose', False))
+        exit_code = _run_with_deploy(deploy_string, run_fn, args.verbose)
         if exit_code != 0:
             return exit_code
         results_dir = captured.get('results_dir')
@@ -247,7 +239,7 @@ def execute(args):
 
     from cortex.commands import decompose as decompose_cmd
 
-    output_dir = args.output if hasattr(args, 'output') and args.output else str(get_analysis_dir(run_name))
+    output_dir = args.output or str(get_analysis_dir(run_name))
 
     # Always prefer the resolved device.yaml saved by the runner into
     # the results directory — this handles short names like "m1" that

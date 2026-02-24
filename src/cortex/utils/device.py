@@ -8,7 +8,6 @@ primitives. Provides:
 import copy
 import json
 import platform
-import re
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -226,5 +225,3 @@ def _probe_osnoise() -> Optional[str]:
     if Path("/sys/kernel/tracing/osnoise").exists():
         return "osnoise"
     return None
-
-

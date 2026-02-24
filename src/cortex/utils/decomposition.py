@@ -187,7 +187,9 @@ def characterize_kernel(
         logger.warning("No latency samples for kernel %s, skipping", kernel_name)
         return None
 
-    best, typical, tail = float(np.percentile(lat_arr, 5)), float(np.percentile(lat_arr, 50)), float(np.percentile(lat_arr, 99))
+    best = float(np.percentile(lat_arr, 5))
+    typical = float(np.percentile(lat_arr, 50))
+    tail = float(np.percentile(lat_arr, 99))
     best_to_typical_gap = max(0.0, typical - best)
     tail_risk = max(0.0, tail - typical)
 
@@ -572,7 +574,6 @@ def load_prediction(path: str) -> dict:
     """Load a prediction.json file."""
     with open(path) as f:
         return json.load(f)
-
 
 
 # ---------------------------------------------------------------------------
