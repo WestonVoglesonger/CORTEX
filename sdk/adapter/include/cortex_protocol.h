@@ -198,10 +198,7 @@ int cortex_protocol_send_result_chunked(
     uint64_t tlast_tx,
     const float *samples,
     uint32_t output_length_samples,
-    uint32_t output_channels,
-    uint64_t pmu_cycle_count,
-    uint64_t pmu_instruction_count,
-    uint64_t pmu_backend_stall_cycles
+    uint32_t output_channels
 );
 
 /*
@@ -242,10 +239,7 @@ int cortex_protocol_recv_result_chunked(
     uint64_t *out_tfirst_tx,
     uint64_t *out_tlast_tx,
     uint32_t *out_length,
-    uint32_t *out_channels,
-    uint64_t *out_pmu_cycle_count,
-    uint64_t *out_pmu_instruction_count,
-    uint64_t *out_pmu_backend_stall_cycles
+    uint32_t *out_channels
 );
 
 /* Chunking error codes */

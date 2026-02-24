@@ -23,8 +23,3 @@ author: "Weston Voglesonger"
 purpose: "Harness overhead measurement"
 category: "benchmark"
 complexity: "O(1)"  # Constant time (just memory copy)
-
-computational:
-  flops_per_sample: 0          # Identity: no computation
-  memory_loads_per_sample: 1   # Read input
-  memory_stores_per_sample: 1  # Write output (memcpy)

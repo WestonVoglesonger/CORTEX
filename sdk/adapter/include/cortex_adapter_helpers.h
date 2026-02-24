@@ -136,10 +136,7 @@ int cortex_adapter_send_result(
     uint64_t tlast_tx,
     const float *output_samples,
     uint32_t output_length,
-    uint32_t output_channels,
-    uint64_t pmu_cycle_count,
-    uint64_t pmu_instruction_count,
-    uint64_t pmu_backend_stall_cycles
+    uint32_t output_channels
 );
 
 /*

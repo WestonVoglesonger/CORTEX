@@ -14,8 +14,7 @@ def main():
     """Main CLI entry point"""
     from cortex.commands import (
         build, run, analyze, pipeline,
-        list_kernels, validate, clean, check_system, calibrate, generate,
-        check_deadline, compare, predict, decompose, profile
+        list_kernels, validate, clean, check_system, calibrate, generate
     )
 
     parser = argparse.ArgumentParser(
@@ -84,26 +83,6 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     check_system_parser = subparsers.add_parser('check-system', help='Check system configuration for benchmarking')
     check_system.setup_parser(check_system_parser)
 
-    # Check-deadline command
-    check_deadline_parser = subparsers.add_parser('check-deadline', help='Check deadline compliance for CI gating')
-    check_deadline.setup_parser(check_deadline_parser)
-
-    # Compare command
-    compare_parser = subparsers.add_parser('compare', help='Compare two benchmark runs')
-    compare.setup_parser(compare_parser)
-
-    # Predict command (SE-5 Step 1: static pre-benchmark prediction)
-    predict_parser = subparsers.add_parser('predict', help='Static latency prediction (pre-benchmark)')
-    predict.setup_parser(predict_parser)
-
-    # Decompose command (SE-5 Step 3: post-benchmark decomposition)
-    decompose_parser = subparsers.add_parser('decompose', help='Decompose measured latency into components')
-    decompose.setup_parser(decompose_parser)
-
-    # Profile command (orchestrator: predict -> run -> attribute)
-    profile_parser = subparsers.add_parser('profile', help='Full latency profiling (predict + run + attribute)')
-    profile.setup_parser(profile_parser)
-
     args = parser.parse_args()
 
     if not args.command:
@@ -132,16 +111,6 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(clean.execute(args))
         elif args.command == 'check-system':
             sys.exit(check_system.execute(args))
-        elif args.command == 'check-deadline':
-            sys.exit(check_deadline.execute(args))
-        elif args.command == 'compare':
-            sys.exit(compare.execute(args))
-        elif args.command == 'predict':
-            sys.exit(predict.execute(args))
-        elif args.command == 'decompose':
-            sys.exit(decompose.execute(args))
-        elif args.command == 'profile':
-            sys.exit(profile.execute(args))
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
         sys.exit(130)

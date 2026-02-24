@@ -76,19 +76,17 @@ static void test_result_single_chunk(void) {
     /* Send */
     int ret = cortex_protocol_send_result_chunked(
         client, 1, 0, 100, 200, 300, 400, 500,
-        send_data, length, channels, 0, 0, 0
+        send_data, length, channels
     );
     assert(ret == 0);
 
     /* Receive */
     uint32_t recv_session, recv_length, recv_channels;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycles, pmu_insn, pmu_stall;
     ret = cortex_protocol_recv_result_chunked(
         server, 0, recv_data, total_samples * sizeof(float), 5000,
         &recv_session, &tin, &tstart, &tend, &tfirst_tx, &tlast_tx,
-        &recv_length, &recv_channels,
-        &pmu_cycles, &pmu_insn, &pmu_stall
+        &recv_length, &recv_channels
     );
     assert(ret == 0);
 
@@ -138,19 +136,17 @@ static void test_result_multiple_chunks_512ch(void) {
     /* Send */
     int ret = cortex_protocol_send_result_chunked(
         client, 2, 5, 1000, 2000, 3000, 4000, 5000,
-        send_data, length, channels, 0, 0, 0
+        send_data, length, channels
     );
     assert(ret == 0);
 
     /* Receive */
     uint32_t recv_session, recv_length, recv_channels;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycles, pmu_insn, pmu_stall;
     ret = cortex_protocol_recv_result_chunked(
         server, 5, recv_data, total_samples * sizeof(float), 5000,
         &recv_session, &tin, &tstart, &tend, &tfirst_tx, &tlast_tx,
-        &recv_length, &recv_channels,
-        &pmu_cycles, &pmu_insn, &pmu_stall
+        &recv_length, &recv_channels
     );
     assert(ret == 0);
 
@@ -195,19 +191,17 @@ static void test_result_very_large_1024ch(void) {
     /* Send */
     int ret = cortex_protocol_send_result_chunked(
         client, 3, 10, 10000, 20000, 30000, 40000, 50000,
-        send_data, length, channels, 0, 0, 0
+        send_data, length, channels
     );
     assert(ret == 0);
 
     /* Receive */
     uint32_t recv_session, recv_length, recv_channels;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycles, pmu_insn, pmu_stall;
     ret = cortex_protocol_recv_result_chunked(
         server, 10, recv_data, total_samples * sizeof(float), 10000,
         &recv_session, &tin, &tstart, &tend, &tfirst_tx, &tlast_tx,
-        &recv_length, &recv_channels,
-        &pmu_cycles, &pmu_insn, &pmu_stall
+        &recv_length, &recv_channels
     );
     assert(ret == 0);
 
@@ -251,19 +245,17 @@ static void test_result_exactly_one_chunk(void) {
     /* Send */
     int ret = cortex_protocol_send_result_chunked(
         client, 4, 20, 100, 200, 300, 400, 500,
-        send_data, length, channels, 0, 0, 0
+        send_data, length, channels
     );
     assert(ret == 0);
 
     /* Receive */
     uint32_t recv_session, recv_length, recv_channels;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycles, pmu_insn, pmu_stall;
     ret = cortex_protocol_recv_result_chunked(
         server, 20, recv_data, total_samples * sizeof(float), 5000,
         &recv_session, &tin, &tstart, &tend, &tfirst_tx, &tlast_tx,
-        &recv_length, &recv_channels,
-        &pmu_cycles, &pmu_insn, &pmu_stall
+        &recv_length, &recv_channels
     );
     assert(ret == 0);
 
@@ -302,19 +294,17 @@ static void test_result_sequence_mismatch(void) {
     /* Send with sequence 5 */
     int ret = cortex_protocol_send_result_chunked(
         client, 1, 5, 100, 200, 300, 400, 500,
-        send_data, length, channels, 0, 0, 0
+        send_data, length, channels
     );
     assert(ret == 0);
 
     /* Try to receive expecting sequence 10 (wrong!) */
     uint32_t recv_session, recv_length, recv_channels;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycles, pmu_insn, pmu_stall;
     ret = cortex_protocol_recv_result_chunked(
         server, 10, recv_data, total_samples * sizeof(float), 5000,
         &recv_session, &tin, &tstart, &tend, &tfirst_tx, &tlast_tx,
-        &recv_length, &recv_channels,
-        &pmu_cycles, &pmu_insn, &pmu_stall
+        &recv_length, &recv_channels
     );
 
     /* Should fail with sequence mismatch */

@@ -554,7 +554,6 @@ int device_comm_execute_window(
     /* Receive RESULT (chunked protocol) */
     uint32_t result_session_id;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
-    uint64_t pmu_cycle_count = 0, pmu_instruction_count = 0, pmu_backend_stall_cycles = 0;
     uint32_t output_length, output_channels;
 
     ret = cortex_protocol_recv_result_chunked(
@@ -570,10 +569,7 @@ int device_comm_execute_window(
         &tfirst_tx,
         &tlast_tx,
         &output_length,
-        &output_channels,
-        &pmu_cycle_count,
-        &pmu_instruction_count,
-        &pmu_backend_stall_cycles
+        &output_channels
     );
 
     if (ret < 0) {
@@ -585,16 +581,13 @@ int device_comm_execute_window(
         return CORTEX_ECHUNK_SEQUENCE_MISMATCH;
     }
 
-    /* Return timing + PMU */
+    /* Return timing */
     if (out_timing) {
         out_timing->tin = tin;
         out_timing->tstart = tstart;
         out_timing->tend = tend;
         out_timing->tfirst_tx = tfirst_tx;
         out_timing->tlast_tx = tlast_tx;
-        out_timing->pmu_cycle_count = pmu_cycle_count;
-        out_timing->pmu_instruction_count = pmu_instruction_count;
-        out_timing->pmu_backend_stall_cycles = pmu_backend_stall_cycles;
     }
 
     return 0;

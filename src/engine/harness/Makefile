@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../../sdk/kernel/include -I../../../sdk/adapter/include -I../scheduler -I../replayer -I../inscount -I../osnoise -Iapp -Iconfig -I../telemetry -Iutil -Ireport -Idevice
+CFLAGS = -Wall -Wextra -g -O2 -std=c11 -I../../../sdk/kernel/include -I../../../sdk/adapter/include -I../scheduler -I../replayer -Iapp -Iconfig -I../telemetry -Iutil -Ireport -Idevice
 
 # Platform-specific linker flags
 UNAME_S := $(shell uname -s)
@@ -33,8 +33,8 @@ ADAPTER_LIBS = ../../../sdk/adapter/lib/protocol/protocol.o \
 
 all: cortex
 
-cortex: $(OBJECTS) ../scheduler/scheduler.o ../replayer/replayer.o ../inscount/inscount.o ../osnoise/osnoise.o $(ADAPTER_LIBS)
-	$(CC) $(OBJECTS) ../scheduler/scheduler.o ../replayer/replayer.o ../inscount/inscount.o ../osnoise/osnoise.o $(ADAPTER_LIBS) -o cortex $(LDFLAGS)
+cortex: $(OBJECTS) ../scheduler/scheduler.o ../replayer/replayer.o $(ADAPTER_LIBS)
+	$(CC) $(OBJECTS) ../scheduler/scheduler.o ../replayer/replayer.o $(ADAPTER_LIBS) -o cortex $(LDFLAGS)
 
 clean:
 	rm -f $(OBJECTS) cortex

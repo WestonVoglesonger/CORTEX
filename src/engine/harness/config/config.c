@@ -652,13 +652,6 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
         }
     }
 
-    /* Chain mode (SE-8) */
-    const char *chain_mode = getenv("CORTEX_CHAIN_MODE");
-    if (chain_mode && (strcmp(chain_mode, "1") == 0 || strcmp(chain_mode, "true") == 0)) {
-        out->chain_mode = 1;
-        printf("[config] Chain mode enabled\n");
-    }
-
     const char *warmup_override = getenv("CORTEX_WARMUP_OVERRIDE");
     if (warmup_override && strlen(warmup_override) > 0) {
         char *endptr;

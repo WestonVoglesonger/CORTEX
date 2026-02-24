@@ -40,11 +40,6 @@ oracle:
   path: "oracle.py"
   dependencies: ["numpy", "scipy", "sklearn"]
 
-computational:
-  flops_per_sample: 8192       # Matrix multiply W×x: 2*C*C = 2*64*64 = 8192 per sample
-  memory_loads_per_sample: 2   # input vector + unmixing matrix row
-  memory_stores_per_sample: 1  # output component
-
 references:
   - "Hyvärinen, A., & Oja, E. (2000). Independent component analysis: algorithms and applications. Neural networks, 13(4-5), 411-430."
   - "Makeig, S., et al. (1996). Independent component analysis of electroencephalographic data. NIPS."

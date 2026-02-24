@@ -11,9 +11,7 @@ else
     LDFLAGS = -L../lib -lcortex -ldl -lpthread -lm
 endif
 
-INSCOUNT_DIR = ../../../src/engine/inscount
-
-all: cortex_calibrate cortex_validate cortex_inscount
+all: cortex_calibrate cortex_validate
 
 cortex_calibrate: calibrate.c ../lib/libcortex.a
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
@@ -21,10 +19,7 @@ cortex_calibrate: calibrate.c ../lib/libcortex.a
 cortex_validate: validate.c ../lib/libcortex.a
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
-cortex_inscount: inscount.c $(INSCOUNT_DIR)/inscount.c ../lib/libcortex.a
-	$(CC) $(CFLAGS) -I$(INSCOUNT_DIR) $< $(INSCOUNT_DIR)/inscount.c -o $@ $(LDFLAGS)
-
 clean:
-	rm -f cortex_calibrate cortex_validate cortex_inscount
+	rm -f cortex_calibrate cortex_validate
 
 .PHONY: all clean

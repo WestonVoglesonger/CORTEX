@@ -14,8 +14,6 @@
 #include "../telemetry/telemetry.h"
 #include "../harness/util/util.h"
 #include "../harness/device/device_comm.h"
-#include "../inscount/inscount.h"
-#include "../osnoise/osnoise.h"
 
 #ifdef __linux__
 #include <sched.h>
@@ -58,21 +56,16 @@ struct cortex_scheduler_t {
     /* Telemetry CSV (Week 3 basic) */
     FILE *telemetry_file;
     int telemetry_header_written;
-
+    
     /* Telemetry buffer integration */
     char run_id[32];  /* Store run_id for telemetry records */
-
-    /* PMU now measured in adapter (per-thread around kernel process()) */
-    uint8_t osnoise_initialized;
 };
 
 static int ensure_plugin_capacity(cortex_scheduler_t *scheduler);
 static int apply_realtime_attributes(cortex_scheduler_t *scheduler);
 static void normalize_timespec(struct timespec *ts);
 static void timespec_add_seconds(struct timespec *ts, double seconds);
-static uint32_t sample_cpu_freq_mhz(void);
 static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_data);
-static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_data);
 static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const cortex_scheduler_plugin_entry_t *plugin,
                                   const struct timespec *release_ts,
@@ -86,10 +79,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tfirst_tx_ns,
                                   uint64_t device_tlast_tx_ns,
                                   uint8_t window_failed,
-                                  int32_t error_code,
-                                  uint32_t cpu_freq_mhz,
-                                  cortex_pmu_counters_t pmu,
-                                  uint64_t osnoise_ns);
+                                  int32_t error_code);
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry);
 
 cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *config) {
@@ -163,9 +153,6 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
         scheduler->run_id[0] = '\0';
     }
 
-    /* Initialize osnoise (PMU now measured in adapter) */
-    scheduler->osnoise_initialized = (cortex_osnoise_init() == 0) ? 1 : 0;
-
     return scheduler;
 }
 
@@ -184,12 +171,6 @@ void cortex_scheduler_destroy(cortex_scheduler_t *scheduler) {
         fclose(scheduler->telemetry_file);
         scheduler->telemetry_file = NULL;
     }
-
-    /* Teardown osnoise (PMU now measured in adapter) */
-    if (scheduler->osnoise_initialized) {
-        cortex_osnoise_teardown();
-    }
-
     free(scheduler);
 }
 
@@ -295,11 +276,7 @@ int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
         consumed += to_copy;
 
         while (scheduler->buffer_fill >= scheduler->window_samples && scheduler->hop_samples > 0) {
-            if (scheduler->config.chain_mode && scheduler->plugin_count > 1) {
-                dispatch_chain(scheduler, scheduler->buffer);
-            } else {
-                dispatch_window(scheduler, scheduler->buffer);
-            }
+            dispatch_window(scheduler, scheduler->buffer);
             size_t remaining = scheduler->buffer_fill - scheduler->hop_samples;
             memmove(scheduler->buffer, scheduler->buffer + scheduler->hop_samples, remaining * sizeof(float));
             scheduler->buffer_fill = remaining;
@@ -315,11 +292,7 @@ int cortex_scheduler_flush(cortex_scheduler_t *scheduler) {
     }
 
     while (scheduler->buffer_fill >= scheduler->window_samples && scheduler->hop_samples > 0) {
-        if (scheduler->config.chain_mode && scheduler->plugin_count > 1) {
-            dispatch_chain(scheduler, scheduler->buffer);
-        } else {
-            dispatch_window(scheduler, scheduler->buffer);
-        }
+        dispatch_window(scheduler, scheduler->buffer);
         size_t remaining = scheduler->buffer_fill - scheduler->hop_samples;
         memmove(scheduler->buffer, scheduler->buffer + scheduler->hop_samples, remaining * sizeof(float));
         scheduler->buffer_fill = remaining;
@@ -419,23 +392,6 @@ static int apply_realtime_attributes(cortex_scheduler_t *scheduler) {
 #endif
 }
 
-/* Sample current CPU frequency in MHz (SE-4).
- * On Linux: reads sysfs (~1-5us). On macOS/other: returns 0. */
-static uint32_t sample_cpu_freq_mhz(void) {
-#ifdef __linux__
-    FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r");
-    if (f) {
-        unsigned long freq_khz = 0;
-        if (fscanf(f, "%lu", &freq_khz) == 1) {
-            fclose(f);
-            return (uint32_t)(freq_khz / 1000);
-        }
-        fclose(f);
-    }
-#endif
-    return 0;
-}
-
 static void normalize_timespec(struct timespec *ts) {
     while (ts->tv_nsec >= (long)NSEC_PER_SEC) {
         ts->tv_nsec -= (long)NSEC_PER_SEC;
@@ -456,9 +412,6 @@ static void timespec_add_seconds(struct timespec *ts, double seconds) {
 }
 
 static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_data) {
-    /* Sample CPU frequency before window execution (SE-4) */
-    uint32_t cpu_freq_mhz = sample_cpu_freq_mhz();
-
     struct timespec release_ts;
     struct timespec deadline_ts;
     clock_gettime(CLOCK_MONOTONIC, &release_ts);
@@ -486,12 +439,6 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
         /* Window failure tracking */
         uint8_t window_failed = 0;
         int32_t error_code = 0;
-
-        /* Per-window PMU (from adapter) + osnoise */
-        cortex_pmu_counters_t pmu = {0};
-        uint64_t osnoise_ns = 0;
-
-        if (scheduler->osnoise_initialized) cortex_osnoise_reset();
 
         clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
@@ -522,17 +469,9 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
             device_tend_ns = device_timing.tend;
             device_tfirst_tx_ns = device_timing.tfirst_tx;
             device_tlast_tx_ns = device_timing.tlast_tx;
-
-            /* PMU from adapter (measured around kernel process()) */
-            pmu.cycle_count = device_timing.pmu_cycle_count;
-            pmu.instruction_count = device_timing.pmu_instruction_count;
-            pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ts);
-
-        /* Collect osnoise after window */
-        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
 
         int deadline_missed = 0;
         if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
@@ -546,7 +485,7 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
 
         record_window_metrics(scheduler, entry, &release_ts, &deadline_ts, &start_ts, &end_ts, deadline_missed,
                               device_tin_ns, device_tstart_ns, device_tend_ns, device_tfirst_tx_ns, device_tlast_tx_ns,
-                              window_failed, error_code, cpu_freq_mhz, pmu, osnoise_ns);
+                              window_failed, error_code);
     }
 
     if (scheduler->warmup_windows_remaining > 0) {
@@ -568,10 +507,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   uint64_t device_tfirst_tx_ns,
                                   uint64_t device_tlast_tx_ns,
                                   uint8_t window_failed,
-                                  int32_t error_code,
-                                  uint32_t cpu_freq_mhz,
-                                  cortex_pmu_counters_t pmu,
-                                  uint64_t osnoise_ns) {
+                                  int32_t error_code) {
     uint64_t rel_ns = (uint64_t)release_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts->tv_nsec;
     uint64_t ddl_ns = (uint64_t)deadline_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts->tv_nsec;
     uint64_t sta_ns = (uint64_t)start_ts->tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts->tv_nsec;
@@ -629,18 +565,6 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         rec.window_failed = window_failed;
         rec.error_code = error_code;
 
-        /* Platform state (SE-4) */
-        rec.cpu_freq_mhz = cpu_freq_mhz;
-
-        /* Per-window PMU counters (SE-5 Tier 2) */
-        rec.pmu_cycle_count = pmu.cycle_count;
-        rec.pmu_instruction_count = pmu.instruction_count;
-        rec.pmu_backend_stall_cycles = pmu.backend_stall_cycles;
-        rec.osnoise_total_ns = osnoise_ns;
-
-        /* Chain stage (SE-8): 0xFFFFFFFF = not chained */
-        rec.stage_index = 0xFFFFFFFF;
-
         cortex_telemetry_add(buffer, &rec);
     }
 
@@ -665,135 +589,6 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
                 scheduler->config.sample_rate_hz);
         fflush(f);
     }
-}
-
-/* Chained pipeline dispatch (SE-8): Plugin A's output becomes Plugin B's input.
- * Each stage gets per-stage telemetry with stage_index set. */
-static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_data) {
-    uint32_t cpu_freq_mhz = sample_cpu_freq_mhz();
-
-    struct timespec release_ts;
-    struct timespec deadline_ts;
-    clock_gettime(CLOCK_MONOTONIC, &release_ts);
-    deadline_ts = release_ts;
-    if (scheduler->config.sample_rate_hz > 0 && scheduler->config.hop_samples > 0) {
-        double deadline_delta = (double)scheduler->config.hop_samples /
-                                (double)scheduler->config.sample_rate_hz;
-        timespec_add_seconds(&deadline_ts, deadline_delta);
-    }
-
-    const float *current_input = window_data;
-
-    for (size_t i = 0; i < scheduler->plugin_count; ++i) {
-        cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[i];
-        void *output = entry->output_buffer;
-        struct timespec start_ts, end_ts;
-
-        uint64_t device_tin_ns = 0, device_tstart_ns = 0, device_tend_ns = 0;
-        uint64_t device_tfirst_tx_ns = 0, device_tlast_tx_ns = 0;
-        uint8_t window_failed = 0;
-        int32_t error_code = 0;
-
-        /* Per-stage PMU (from adapter) + osnoise */
-        cortex_pmu_counters_t pmu = {0};
-        uint64_t osnoise_ns = 0;
-
-        if (scheduler->osnoise_initialized) cortex_osnoise_reset();
-
-        clock_gettime(CLOCK_MONOTONIC, &start_ts);
-
-        cortex_device_handle_t *device = (cortex_device_handle_t *)entry->device_handle;
-        cortex_device_timing_t device_timing;
-
-        int ret = device_comm_execute_window(
-            device,
-            (uint32_t)scheduler->window_count,
-            current_input,
-            (uint32_t)scheduler->config.window_length_samples,
-            (uint32_t)scheduler->config.channels,
-            (float *)output,
-            entry->output_bytes,
-            &device_timing
-        );
-
-        if (ret < 0) {
-            fprintf(stderr, "[scheduler] chain stage %zu failed: %d (plugin=%s)\n",
-                    i, ret, entry->plugin_name);
-            window_failed = 1;
-            error_code = ret;
-            /* On failure, stop chain for this window */
-            break;
-        } else {
-            device_tin_ns = device_timing.tin;
-            device_tstart_ns = device_timing.tstart;
-            device_tend_ns = device_timing.tend;
-            device_tfirst_tx_ns = device_timing.tfirst_tx;
-            device_tlast_tx_ns = device_timing.tlast_tx;
-
-            /* PMU from adapter (measured around kernel process()) */
-            pmu.cycle_count = device_timing.pmu_cycle_count;
-            pmu.instruction_count = device_timing.pmu_instruction_count;
-            pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
-        }
-
-        clock_gettime(CLOCK_MONOTONIC, &end_ts);
-
-        /* Collect osnoise after stage */
-        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
-
-        int deadline_missed = 0;
-        if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
-            (end_ts.tv_sec == deadline_ts.tv_sec && end_ts.tv_nsec > deadline_ts.tv_nsec)) {
-            deadline_missed = 1;
-        }
-
-        /* Record per-stage telemetry */
-        if (scheduler->warmup_windows_remaining == 0 && scheduler->config.telemetry_buffer) {
-            cortex_telemetry_buffer_t *buffer = (cortex_telemetry_buffer_t *)scheduler->config.telemetry_buffer;
-            cortex_telemetry_record_t rec = {0};
-            strncpy(rec.run_id, scheduler->run_id, sizeof(rec.run_id)-1);
-            strncpy(rec.plugin_name, entry->plugin_name ? entry->plugin_name : "(unnamed)", sizeof(rec.plugin_name)-1);
-            rec.window_index = scheduler->window_count;
-            rec.release_ts_ns = (uint64_t)release_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)release_ts.tv_nsec;
-            rec.deadline_ts_ns = (uint64_t)deadline_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)deadline_ts.tv_nsec;
-            rec.start_ts_ns = (uint64_t)start_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts.tv_nsec;
-            rec.end_ts_ns = (uint64_t)end_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)end_ts.tv_nsec;
-            rec.deadline_missed = deadline_missed;
-            rec.W = scheduler->config.window_length_samples;
-            rec.H = scheduler->config.hop_samples;
-            rec.C = scheduler->config.channels;
-            rec.Fs = scheduler->config.sample_rate_hz;
-            rec.warmup = 0;
-            rec.repeat = scheduler->config.current_repeat;
-            rec.device_tin_ns = device_tin_ns;
-            rec.device_tstart_ns = device_tstart_ns;
-            rec.device_tend_ns = device_tend_ns;
-            rec.device_tfirst_tx_ns = device_tfirst_tx_ns;
-            rec.device_tlast_tx_ns = device_tlast_tx_ns;
-            strncpy(rec.adapter_name, entry->adapter_name, sizeof(rec.adapter_name)-1);
-            rec.window_failed = window_failed;
-            rec.error_code = error_code;
-            rec.cpu_freq_mhz = cpu_freq_mhz;
-
-            /* Per-stage PMU counters (SE-5 Tier 2) */
-            rec.pmu_cycle_count = pmu.cycle_count;
-            rec.pmu_instruction_count = pmu.instruction_count;
-            rec.pmu_backend_stall_cycles = pmu.backend_stall_cycles;
-            rec.osnoise_total_ns = osnoise_ns;
-
-            rec.stage_index = (uint32_t)i;
-
-            cortex_telemetry_add(buffer, &rec);
-        }
-
-        /* Chain output -> next input */
-        current_input = (const float *)output;
-    }
-
-    if (scheduler->warmup_windows_remaining > 0) {
-        scheduler->warmup_windows_remaining -= 1;
-    }
-    scheduler->window_count += 1;
 }
 
 static void teardown_plugin(cortex_scheduler_plugin_entry_t *entry) {
