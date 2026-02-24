@@ -221,15 +221,14 @@ def execute(args):
 
     # Resolve device primitive (--device = what hardware)
     device_arg = resolve_device_arg(args, config_dict)
-    device_spec = None
-    if device_arg:
-        device_spec = resolve_device(device_arg)
-        if device_spec is None:
-            print(f"Error: Device not found: {device_arg}")
-            return 1
+    device_spec = resolve_device(device_arg)
+    if device_spec is not None:
         device_spec = validate_capabilities(device_spec)
         dev = device_spec.get('device', device_spec)
         print(f"Device: {dev.get('name', 'Unknown')}")
+    elif device_arg:
+        print(f"Error: Device not found: {device_arg}")
+        return 1
 
     # Resolve deploy strategy (--deploy = how to reach it)
     deploy_string = resolve_deploy_arg(args, config_dict)

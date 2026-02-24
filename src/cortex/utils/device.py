@@ -156,13 +156,19 @@ def validate_capabilities(device_spec: dict) -> dict:
     if pmu.get("instruction_count", False):
         probe_result = _probe_pmu()
         pmu_available = probe_result.get("pmu_available", False)
+        if not pmu_available:
+            pmu["instruction_count"] = False
+            pmu["cycle_count"] = False
+            pmu["backend_stall_cycles"] = False
+        else:
+            pmu["cycle_count"] = probe_result.get("cycle_count_available", False)
+            pmu["backend_stall_cycles"] = probe_result.get("backend_stall_available", False)
 
     # Probe osnoise tracer
-    osnoise_tracer = os_noise.get("tracer")
-    if osnoise_tracer is not None:
+    if os_noise.get("tracer") is not None:
         actual_tracer = _probe_osnoise()
         if actual_tracer is None:
-            osnoise_tracer = None
+            os_noise["tracer"] = None
 
     return validated
 

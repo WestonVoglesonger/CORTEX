@@ -184,6 +184,7 @@ def execute(args):
         # Ensure noop is included for I/O baseline
         if 'noop' not in chain_kernels:
             print("Adding noop to chain for I/O baseline measurement")
+            chain_kernels.append('noop')
 
     results_dir = runner.run_all_kernels(
         run_name=run_name,
