@@ -66,8 +66,11 @@ def execute(args):
         if device_arg:
             print(f"Error: Device not found: {device_arg}")
         else:
-            print("Error: Could not auto-detect device. No matching YAML in primitives/devices/.")
-            print("Use --device <path-or-name> to specify a device YAML file.")
+            print("Error: --device is required.")
+            print("Available: " + ", ".join(
+                p.stem for p in sorted(Path("primitives/devices").glob("*.yaml"))
+            ) if Path("primitives/devices").exists() else "")
+            print("See SDK docs for creating a device spec for your hardware.")
         return 1
     device_spec = validate_capabilities(device_spec)
     dev = device_spec.get('device', device_spec)

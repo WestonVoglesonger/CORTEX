@@ -103,7 +103,11 @@ def execute(args):
         if device_path:
             print(f"Error: Device spec not found: {device_path}")
         else:
-            print("Error: Could not auto-detect device. Use --device <path>.")
+            print("Error: --device is required.")
+            print("Available: " + ", ".join(
+                p.stem for p in sorted(Path("primitives/devices").glob("*.yaml"))
+            ) if Path("primitives/devices").exists() else "")
+            print("See SDK docs for creating a device spec for your hardware.")
         return 1
     device_spec = validate_capabilities(device_spec)
     dev = device_spec.get('device', device_spec)

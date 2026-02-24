@@ -259,20 +259,11 @@ class TestResolveDevice:
         assert spec is not None
         assert spec["device"]["name"] == "Apple M1 (macOS)"
 
-    def test_resolve_auto_match(self):
-        """No arg → query OS CPU name → match against device YAMLs."""
+    def test_resolve_none_returns_none(self):
+        """No device arg returns None (device spec is required)."""
         from cortex.utils.device import resolve_device
-        with patch('cortex.utils.device._query_cpu_name', return_value="Apple M1"):
-            spec = resolve_device()
-        assert spec is not None
-        assert "Apple M1" in spec["device"]["name"]
-
-    def test_resolve_unknown_cpu_returns_none(self):
-        """Unknown CPU name with no matching YAML returns None."""
-        from cortex.utils.device import resolve_device
-        with patch('cortex.utils.device._query_cpu_name', return_value="Unknown CPU 9000"):
-            spec = resolve_device()
-        assert spec is None
+        assert resolve_device(None) is None
+        assert resolve_device() is None
 
     def test_resolve_nonexistent_path_returns_none(self):
         """Non-existent YAML path returns None."""
