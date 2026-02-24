@@ -48,6 +48,11 @@ oracle = [
     "scikit-learn>=1.0.0",  # ICA: FastICA implementation
 ]
 
+# Statistical comparison (cortex compare)
+stats = [
+    "scipy>=1.7.0",
+]
+
 # Development dependencies
 dev = [
     "pytest>=7.0.0",

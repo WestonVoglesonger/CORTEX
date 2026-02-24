@@ -73,6 +73,7 @@ typedef struct cortex_run_config {
     cortex_plugin_entry_cfg_t plugins[CORTEX_MAX_PLUGINS];
     size_t plugin_count;
     int auto_detect_kernels;  /* 1 if no plugins: section in YAML, 0 otherwise */
+    int chain_mode;           /* 1 = chained pipeline (SE-8), 0 = independent */
 } cortex_run_config_t;
 
 /* Load kernel spec from spec.yaml. Returns 0 on success. */

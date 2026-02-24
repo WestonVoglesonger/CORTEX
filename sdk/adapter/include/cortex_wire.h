@@ -21,7 +21,7 @@
 
 /* Protocol constants */
 #define CORTEX_PROTOCOL_MAGIC   0x43525458  /* "CRTX" */
-#define CORTEX_PROTOCOL_VERSION 1
+#define CORTEX_PROTOCOL_VERSION 2
 
 /* Frame size limits */
 /* REMOVED: No hardcoded limits - protocol supports unlimited data sizes (constrained only by available RAM)
@@ -71,7 +71,7 @@ typedef enum {
  */
 typedef struct __attribute__((packed)) {
     uint32_t magic;           /* Always CORTEX_PROTOCOL_MAGIC (0x43525458, "CRTX") */
-    uint8_t  version;         /* Protocol version (1) */
+    uint8_t  version;         /* Protocol version (2) */
     uint8_t  frame_type;      /* cortex_frame_type_t */
     uint16_t flags;           /* Reserved (0 for Phase 1) */
     uint32_t payload_length;  /* Bytes following this header */
@@ -178,6 +178,9 @@ typedef struct __attribute__((packed)) {
     uint64_t tlast_tx;                /* Last result byte tx */
     uint32_t output_length_samples;
     uint32_t output_channels;
+    uint64_t pmu_cycle_count;           /* CPU cycles during kernel execution (0 if unavailable) */
+    uint64_t pmu_instruction_count;     /* Retired instructions during kernel execution (0 if unavailable) */
+    uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
 } cortex_wire_result_t;
 
 /*
@@ -209,6 +212,10 @@ typedef struct __attribute__((packed)) {
     uint64_t tlast_tx;
     uint32_t output_length_samples;
     uint32_t output_channels;
+    /* PMU counters (measured around kernel process() in adapter) */
+    uint64_t pmu_cycle_count;
+    uint64_t pmu_instruction_count;
+    uint64_t pmu_backend_stall_cycles;
     /* WINDOW_CHUNK pattern (chunking control) */
     uint32_t total_bytes;
     uint32_t offset_bytes;
