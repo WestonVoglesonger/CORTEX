@@ -183,6 +183,10 @@ def characterize_kernel(
         lat_arr = np.array(outer_latencies_us, dtype=float)
         timing_prov = "measured/timing"
 
+    if len(lat_arr) == 0:
+        logger.warning("No latency samples for kernel %s, skipping", kernel_name)
+        return None
+
     best, typical, tail = float(np.percentile(lat_arr, 5)), float(np.percentile(lat_arr, 50)), float(np.percentile(lat_arr, 99))
     best_to_typical_gap = max(0.0, typical - best)
     tail_risk = max(0.0, tail - typical)

@@ -186,15 +186,27 @@ def execute(args):
             print("Adding noop to chain for I/O baseline measurement")
             chain_kernels.append('noop')
 
-    results_dir = runner.run_all_kernels(
-        run_name=run_name,
-        duration=getattr(args, 'duration', None),
-        repeats=getattr(args, 'repeats', None),
-        warmup=getattr(args, 'warmup', None),
-        verbose=getattr(args, 'verbose', False),
-        chain_kernels=chain_kernels,
-        device_spec=device_spec,
-    )
+    # Route to appropriate runner method based on kernel selection
+    if kernel_arg:
+        results_dir = runner.run_single_kernel(
+            kernel_arg,
+            run_name=run_name,
+            duration=getattr(args, 'duration', None),
+            repeats=getattr(args, 'repeats', None),
+            warmup=getattr(args, 'warmup', None),
+            verbose=getattr(args, 'verbose', False),
+            device_spec=device_spec,
+        )
+    else:
+        results_dir = runner.run_all_kernels(
+            run_name=run_name,
+            duration=getattr(args, 'duration', None),
+            repeats=getattr(args, 'repeats', None),
+            warmup=getattr(args, 'warmup', None),
+            verbose=getattr(args, 'verbose', False),
+            chain_kernels=chain_kernels,
+            device_spec=device_spec,
+        )
 
     if not results_dir:
         print("\nBenchmark execution failed")

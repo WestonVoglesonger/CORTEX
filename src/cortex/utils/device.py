@@ -122,6 +122,9 @@ def _match_device_yaml(cpu_name: str) -> Optional[dict]:
         except Exception:
             continue
 
+        if spec is None:
+            continue
+
         device_name = spec.get("device", {}).get("name", "")
         if not device_name:
             continue

@@ -328,7 +328,11 @@ class HarnessRunner:
             # Stop background caffeinate if we spawned one
             if caffeinate_proc is not None:
                 caffeinate_proc.terminate()
-                caffeinate_proc.wait()
+                try:
+                    caffeinate_proc.wait(timeout=5)
+                except Exception:
+                    caffeinate_proc.kill()
+                    caffeinate_proc.wait()
             # Clean up temporary files (generated dataset + modified config)
             if temp_files:
                 cleanup_temp_files(temp_files)

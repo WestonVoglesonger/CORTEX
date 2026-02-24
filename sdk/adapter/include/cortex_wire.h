@@ -21,7 +21,7 @@
 
 /* Protocol constants */
 #define CORTEX_PROTOCOL_MAGIC   0x43525458  /* "CRTX" */
-#define CORTEX_PROTOCOL_VERSION 1
+#define CORTEX_PROTOCOL_VERSION 2
 
 /* Frame size limits */
 /* REMOVED: No hardcoded limits - protocol supports unlimited data sizes (constrained only by available RAM)

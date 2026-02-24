@@ -31,6 +31,7 @@
 static int fd_instructions = -1;
 static int fd_cycles = -1;
 static int fd_backend_stall = -1;
+static int pinned_cpu = -1;  /* CPU we pinned to for PMU (used for freq query) */
 
 static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
                             int cpu, int group_fd, unsigned long flags)
@@ -90,9 +91,9 @@ int cortex_inscount_init(void)
 
     /* On ARM big.LITTLE, pin to a PMU-capable core */
 #if defined(__aarch64__)
-    int pmu_cpu = pin_to_pmu_capable_core();
-    if (pmu_cpu >= 0) {
-        fprintf(stderr, "inscount: pinned to cpu%d for PMU\n", pmu_cpu);
+    pinned_cpu = pin_to_pmu_capable_core();
+    if (pinned_cpu >= 0) {
+        fprintf(stderr, "inscount: pinned to cpu%d for PMU\n", pinned_cpu);
     }
 #endif
 
@@ -214,8 +215,14 @@ int cortex_inscount_available(void)
 
 uint64_t cortex_inscount_cpu_freq_hz(void)
 {
-    /* Linux: read max freq from sysfs (returns kHz) */
-    FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", "r");
+    /* Linux: read max freq from sysfs (returns kHz).
+     * Use pinned CPU if available (on big.LITTLE, cpu0 may be an E-core
+     * with a much lower max freq than the P-core we're actually running on). */
+    int cpu = (pinned_cpu >= 0) ? pinned_cpu : 0;
+    char path[128];
+    snprintf(path, sizeof(path),
+             "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+    FILE *f = fopen(path, "r");
     if (f) {
         uint64_t khz = 0;
         if (fscanf(f, "%llu", (unsigned long long *)&khz) == 1) {

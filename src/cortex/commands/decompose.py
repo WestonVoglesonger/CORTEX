@@ -96,6 +96,10 @@ def execute(args):
                  and 'pmu_backend_stall_cycles' in df_real.columns
                  and df_real['pmu_backend_stall_cycles'].sum() > 0)
 
+    # Extract benchmark parameters from telemetry
+    window_length = int(df_real['W'].iloc[0]) if 'W' in df_real.columns and not df_real.empty else 160
+    channels = int(df_real['C'].iloc[0]) if 'C' in df_real.columns and not df_real.empty else 64
+
     # Discover kernel names (exclude noop)
     kernel_names = [name for name in df_real['plugin'].unique() if name != 'noop']
 
@@ -103,6 +107,9 @@ def execute(args):
     results = []
     for plugin_name in kernel_names:
         kernel_df = df_real[df_real['plugin'] == plugin_name]
+
+        if kernel_df.empty:
+            continue
 
         device_lats = (kernel_df['device_latency_us'].tolist()
                        if has_device_ts else None)
@@ -113,6 +120,8 @@ def execute(args):
             device_latencies_us=device_lats,
             device_spec=device_spec,
             kernel_specs=kernel_specs,
+            window_length=window_length,
+            channels=channels,
             noop_latencies_us=noop_latencies,
             per_window_cycle_counts=(kernel_df['pmu_cycle_count'].tolist()
                                      if has_pmu else None),
