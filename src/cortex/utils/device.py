@@ -61,7 +61,7 @@ def resolve_device(device_arg: Optional[str] = None) -> Optional[dict]:
     Args:
         device_arg: One of:
             - Path ending in .yaml → load directly
-            - Short name (e.g. "m1") → primitives/devices/{name}.yaml
+            - Short name (e.g. "m1-macos") → primitives/devices/{name}.yaml
             - None → auto-detect from OS CPU name
 
     Returns:
@@ -102,8 +102,12 @@ def _match_device_yaml(cpu_name: str) -> Optional[dict]:
     """Match a CPU name against available device YAMLs.
 
     Globs primitives/devices/*.yaml, loads each, checks if the YAML's
-    device.name is a case-insensitive substring of cpu_name.
-    Longest match wins (e.g. "Apple M1 Pro" beats "Apple M1").
+    device.name (base part, ignoring any parenthetical OS qualifier) is
+    a case-insensitive substring of cpu_name.
+
+    When multiple files match the same base name (e.g. m1-macos.yaml and
+    m1-asahi.yaml both have "Apple M1"), the OS-specific variant for the
+    current platform wins.
 
     Returns:
         Best-matching device spec dict, or None.
@@ -111,8 +115,10 @@ def _match_device_yaml(cpu_name: str) -> Optional[dict]:
     if not DEVICES_DIR.exists():
         return None
 
+    current_os = platform.system().lower()  # "darwin" or "linux"
     best_match = None
     best_match_len = 0
+    best_match_os_specific = False
 
     for yaml_path in DEVICES_DIR.glob("*.yaml"):
         try:
@@ -128,10 +134,23 @@ def _match_device_yaml(cpu_name: str) -> Optional[dict]:
         if not device_name:
             continue
 
-        if device_name.lower() in cpu_name.lower():
-            if len(device_name) > best_match_len:
+        # Strip parenthetical OS qualifier for matching: "Apple M1 (macOS)" → "Apple M1"
+        base_name = device_name.split("(")[0].strip()
+
+        if base_name.lower() in cpu_name.lower():
+            # Check if this variant matches the current OS
+            name_lower = device_name.lower()
+            os_match = (
+                (current_os == "darwin" and "macos" in name_lower) or
+                (current_os == "linux" and ("linux" in name_lower or "asahi" in name_lower))
+            )
+
+            # Prefer: longer base name match, then OS-specific over generic
+            if (len(base_name) > best_match_len or
+                    (len(base_name) == best_match_len and os_match and not best_match_os_specific)):
                 best_match = spec
-                best_match_len = len(device_name)
+                best_match_len = len(base_name)
+                best_match_os_specific = os_match
 
     return best_match
 

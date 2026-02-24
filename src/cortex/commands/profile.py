@@ -242,7 +242,7 @@ def execute(args):
     output_dir = args.output or str(get_analysis_dir(run_name))
 
     # Always prefer the resolved device.yaml saved by the runner into
-    # the results directory — this handles short names like "m1" that
+    # the results directory — this handles short names like "m1-macos" that
     # resolve_device() understands but open() does not.
     saved_device_yaml = f"{results_dir}/device.yaml"
     device_yaml = saved_device_yaml if Path(saved_device_yaml).exists() else device_path

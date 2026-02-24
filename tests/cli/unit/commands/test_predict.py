@@ -113,10 +113,10 @@ class TestPredictCommand:
         setup_parser(parser)
 
         args = parser.parse_args([
-            '--device', 'primitives/devices/m1.yaml',
+            '--device', 'primitives/devices/m1-macos.yaml',
             '--kernel', 'goertzel',
         ])
-        assert args.device == 'primitives/devices/m1.yaml'
+        assert args.device == 'primitives/devices/m1-macos.yaml'
         assert args.kernel == 'goertzel'
         assert args.format == 'table'
         assert args.channels == 64
@@ -247,17 +247,17 @@ class TestResolveDevice:
     def test_resolve_by_yaml_path(self):
         """Explicit path loads YAML directly."""
         from cortex.utils.device import resolve_device
-        spec = resolve_device("primitives/devices/m1.yaml")
+        spec = resolve_device("primitives/devices/m1-macos.yaml")
         assert spec is not None
-        assert spec["device"]["name"] == "Apple M1"
+        assert spec["device"]["name"] == "Apple M1 (macOS)"
         assert spec["device"]["cpu_peak_gflops"] == 100.0
 
     def test_resolve_by_short_name(self):
         """Short name maps to primitives/devices/{name}.yaml."""
         from cortex.utils.device import resolve_device
-        spec = resolve_device("m1")
+        spec = resolve_device("m1-macos")
         assert spec is not None
-        assert spec["device"]["name"] == "Apple M1"
+        assert spec["device"]["name"] == "Apple M1 (macOS)"
 
     def test_resolve_auto_match(self):
         """No arg → query OS CPU name → match against device YAMLs."""
