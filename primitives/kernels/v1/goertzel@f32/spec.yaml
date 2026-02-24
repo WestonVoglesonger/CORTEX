@@ -17,11 +17,6 @@ numerical:
       rtol: 1.0e-3
       atol: 1.0e-3
 
-computational:
-  flops_per_sample: 12         # Goertzel: 2 target freqs × (3 multiply + 3 add) per channel
-  memory_loads_per_sample: 1   # input sample
-  memory_stores_per_sample: 1  # accumulated state (registers)
-
 oracle:
   path: "oracle.py"
   function: "goertzel_bandpower_ref"

@@ -161,13 +161,6 @@ def _output_characterization(results, dev, fmt):
         _output_table(results, dev)
 
 
-def _fmt_val(val, fmt_str=".1f", na="N/A"):
-    """Format a value, returning N/A for None."""
-    if val is None:
-        return na
-    return f"{val:{fmt_str}}"
-
-
 def _output_table(results, dev):
     """Print characterization as formatted table."""
     device_name = dev.get('name', 'Unknown Device')

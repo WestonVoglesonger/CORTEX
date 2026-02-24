@@ -89,7 +89,6 @@ def execute(args):
 
     # Load both runs
     df_baseline = analyzer.load_telemetry(str(baseline_dir), prefer_format=args.telemetry_format)
-    baseline_info = dict(analyzer.system_info)
     analyzer.system_info = {}  # Reset for candidate
 
     df_candidate = analyzer.load_telemetry(str(candidate_dir), prefer_format=args.telemetry_format)

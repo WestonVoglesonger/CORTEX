@@ -186,27 +186,52 @@ def execute(args):
             print("Adding noop to chain for I/O baseline measurement")
             chain_kernels.append('noop')
 
+    # Resolve deploy strategy
+    deploy_string = getattr(args, 'deploy', None)
+
     # Route to appropriate runner method based on kernel selection
-    if kernel_arg:
-        results_dir = runner.run_single_kernel(
-            kernel_arg,
-            run_name=run_name,
-            duration=getattr(args, 'duration', None),
-            repeats=getattr(args, 'repeats', None),
-            warmup=getattr(args, 'warmup', None),
-            verbose=getattr(args, 'verbose', False),
-            device_spec=device_spec,
-        )
+    def _run_benchmark(transport_uri=None):
+        if kernel_arg:
+            return runner.run_single_kernel(
+                kernel_arg,
+                run_name=run_name,
+                duration=getattr(args, 'duration', None),
+                repeats=getattr(args, 'repeats', None),
+                warmup=getattr(args, 'warmup', None),
+                verbose=getattr(args, 'verbose', False),
+                transport_uri=transport_uri,
+                device_spec=device_spec,
+            )
+        else:
+            return runner.run_all_kernels(
+                run_name=run_name,
+                duration=getattr(args, 'duration', None),
+                repeats=getattr(args, 'repeats', None),
+                warmup=getattr(args, 'warmup', None),
+                verbose=getattr(args, 'verbose', False),
+                transport_uri=transport_uri,
+                chain_kernels=chain_kernels,
+                device_spec=device_spec,
+            )
+
+    if deploy_string is None:
+        results_dir = _run_benchmark()
     else:
-        results_dir = runner.run_all_kernels(
-            run_name=run_name,
-            duration=getattr(args, 'duration', None),
-            repeats=getattr(args, 'repeats', None),
-            warmup=getattr(args, 'warmup', None),
-            verbose=getattr(args, 'verbose', False),
-            chain_kernels=chain_kernels,
-            device_spec=device_spec,
-        )
+        from cortex.deploy import DeployerFactory, Deployer, DeploymentError
+        from cortex.commands.run import _run_with_deploy
+        # _run_with_deploy returns an exit code, but we need results_dir
+        # Use a mutable container to capture it
+        captured = {}
+
+        def run_fn(transport_uri):
+            r = _run_benchmark(transport_uri=transport_uri)
+            captured['results_dir'] = r
+            return r
+
+        exit_code = _run_with_deploy(deploy_string, run_fn, getattr(args, 'verbose', False))
+        if exit_code != 0:
+            return exit_code
+        results_dir = captured.get('results_dir')
 
     if not results_dir:
         print("\nBenchmark execution failed")

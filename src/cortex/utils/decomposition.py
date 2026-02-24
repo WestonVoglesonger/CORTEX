@@ -586,7 +586,12 @@ def load_device_spec(device_path: str) -> dict:
 
 
 def load_kernel_specs(kernels_dir: str = "primitives/kernels") -> Dict[str, dict]:
-    """Load all kernel spec.yaml files and return dict keyed by kernel name."""
+    """Load all kernel spec.yaml files and return dict keyed by kernel name.
+
+    Computational annotations (flops_per_sample, etc.) are loaded from
+    primitives/kernels/computational.yaml and merged into each spec,
+    keeping immutable v1 spec.yaml files untouched.
+    """
     specs = {}
     kernels_path = Path(kernels_dir)
     for spec_file in kernels_path.glob("v*/*/spec.yaml"):
@@ -596,4 +601,14 @@ def load_kernel_specs(kernels_dir: str = "primitives/kernels") -> Dict[str, dict
         name = kernel_section.get('name', spec.get('name'))
         if name:
             specs[name] = spec
+
+    # Merge computational annotations from the standalone file
+    comp_file = kernels_path / "computational.yaml"
+    if comp_file.exists():
+        with open(comp_file) as f:
+            comp_data = yaml.safe_load(f) or {}
+        for name, comp in comp_data.items():
+            if name in specs and isinstance(comp, dict):
+                specs[name]['computational'] = comp
+
     return specs
