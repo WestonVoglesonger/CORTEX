@@ -3,6 +3,7 @@ CFLAGS = -Wall -Wextra -g -O0 -std=c11
 INCLUDES = -I../../src/engine/scheduler \
            -I../../src/engine/replayer \
            -I../../src/engine/telemetry \
+           -I../../src/engine/osnoise \
            -I../../src/engine/harness/util \
            -I../../src/engine/harness/config \
            -I../../src/engine/harness/device \
@@ -23,6 +24,7 @@ ALL_TESTS := $(UNIT_TESTS) $(INTEGRATION_TESTS)
 
 REPLAYER_SRC = ../../src/engine/replayer/replayer.c
 SCHEDULER_SRC = ../../src/engine/scheduler/scheduler.c
+OSNOISE_SRC = ../../src/engine/osnoise/osnoise.c
 TELEMETRY_SRC = ../../src/engine/telemetry/telemetry.c
 UTIL_SRC = ../../src/engine/harness/util/util.c
 SIGNAL_HANDLER_SRC = ../../src/engine/harness/util/signal_handler.c
@@ -63,7 +65,7 @@ tests: $(ALL_TESTS)
 build/test_replayer: unit/test_replayer.c $(REPLAYER_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-build/test_scheduler: unit/test_scheduler.c $(SCHEDULER_SRC) $(TELEMETRY_SRC) $(UTIL_SRC) $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
+build/test_scheduler: unit/test_scheduler.c $(SCHEDULER_SRC) $(OSNOISE_SRC) $(TELEMETRY_SRC) $(UTIL_SRC) $(DEVICE_COMM_SRC) $(PROTOCOL_SRC) $(TRANSPORT_SRC) $(ADAPTER_HELPERS_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 build/test_telemetry: unit/test_telemetry.c $(TELEMETRY_SRC) $(UTIL_SRC)

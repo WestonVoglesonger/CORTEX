@@ -7,6 +7,11 @@
  *   Other:                 Stubs returning -1 (unavailable)
  */
 
+/* Feature test macro: expose pid_t, syscall() etc. under -std=c11 on Linux */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "inscount.h"
 
 #include <stdio.h>
@@ -18,6 +23,7 @@
 #if defined(__linux__)
 
 #include <unistd.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <linux/perf_event.h>
@@ -32,9 +38,63 @@ static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
     return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
 }
 
+/* On big.LITTLE ARM (e.g. Apple Silicon under Asahi Linux), efficiency cores
+ * may not support PERF_TYPE_HARDWARE counters. Probe each CPU and pin to
+ * the first one where perf_event_open + a test read returns non-zero. */
+static int pin_to_pmu_capable_core(void)
+{
+    int ncpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpus <= 0) ncpus = 8;
+
+    for (int cpu = ncpus - 1; cpu >= 0; cpu--) {  /* P-cores typically last */
+        cpu_set_t mask;
+        CPU_ZERO(&mask);
+        CPU_SET(cpu, &mask);
+        if (sched_setaffinity(0, sizeof(mask), &mask) != 0)
+            continue;
+
+        struct perf_event_attr pe;
+        memset(&pe, 0, sizeof(pe));
+        pe.type           = PERF_TYPE_HARDWARE;
+        pe.size           = sizeof(pe);
+        pe.config         = PERF_COUNT_HW_INSTRUCTIONS;
+        pe.disabled       = 1;
+        pe.exclude_kernel = 1;
+        pe.exclude_hv     = 1;
+
+        int fd = (int)perf_event_open(&pe, 0, -1, -1, 0);
+        if (fd < 0) continue;
+
+        ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+        ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+        /* Burn a few instructions */
+        volatile int dummy = 0;
+        for (int i = 0; i < 1000; i++) dummy += i;
+        ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+
+        uint64_t count = 0;
+        read(fd, &count, sizeof(count));
+        close(fd);
+
+        if (count > 0) {
+            (void)dummy;
+            return cpu;
+        }
+    }
+    return -1;  /* no capable core found */
+}
+
 int cortex_inscount_init(void)
 {
     struct perf_event_attr pe;
+
+    /* On ARM big.LITTLE, pin to a PMU-capable core */
+#if defined(__aarch64__)
+    int pmu_cpu = pin_to_pmu_capable_core();
+    if (pmu_cpu >= 0) {
+        fprintf(stderr, "inscount: pinned to cpu%d for PMU\n", pmu_cpu);
+    }
+#endif
 
     /* Instructions (group leader) */
     memset(&pe, 0, sizeof(pe));
