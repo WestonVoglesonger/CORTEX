@@ -111,7 +111,7 @@ cat results/run-*/analysis/SUMMARY.md
 ```
 
 **Prerequisites:**
-- Python 3.8+
+- Python 3.10+
 - C11 compiler (GCC 7+, Clang 10+, Apple Clang 12+)
 - pthread library (built-in on macOS/Linux)
 - macOS: Xcode Command Line Tools (`xcode-select --install`)
@@ -123,25 +123,38 @@ cat results/run-*/analysis/SUMMARY.md
 
 ```bash
 make all              # Build harness + all kernel plugins
-make tests            # Build and run unit tests (21+ tests across 7 suites)
+make tests            # Build and run C unit tests
 make clean            # Clean build artifacts
 
+# Core workflow
 cortex pipeline       # Full: build → validate → benchmark → analyze
-                      #   1. make all (build harness + plugins)
-                      #   2. Validate kernels vs Python oracles
-                      #   3. Run benchmarks with primitives/configs/cortex.yaml
-                      #   4. Generate plots/reports in results/run-<timestamp>/
+cortex run --config <yaml>  # Run benchmarks (single kernel or pipeline mode)
+cortex analyze --run-name <name>  # Generate reports from existing telemetry
+cortex validate --kernel <name>   # Oracle validation (--kernel is REQUIRED)
 
-cortex validate       # Run oracle validation only (no benchmarking)
-cortex run <config>   # Run benchmarks with custom config
-cortex analyze <dir>  # Generate reports from existing telemetry
+# Analysis & prediction
+cortex predict        # Static pre-benchmark latency prediction
+cortex decompose      # Post-benchmark latency decomposition
+cortex compare        # Compare benchmark runs across kernels or devices
+cortex profile        # Kernel profiling with PMU instruction counts
+cortex check-deadline # CI gating for real-time deadline compliance
+
+# Utilities
+cortex build          # Build engine and kernels
+cortex calibrate      # Train/calibrate trainable kernels (ICA, CSP)
+cortex generate       # Generate synthetic datasets
+cortex list           # List available kernels
+cortex check-system   # Pre-benchmark system readiness validation
+cortex clean          # Clean build artifacts and results
+cortex plot           # Generate latency distribution visualizations
 ```
 
 **Verification after changes:**
 1. `make clean && make all` — Rebuild everything
 2. `make tests` — All C unit tests pass
-3. `cortex validate` — Oracle validation passes
-4. `cortex pipeline` — End-to-end integration test
+3. `python -m pytest tests/cli/` — All Python tests pass (49+ tests)
+4. `cortex validate --kernel <name>` — Oracle validation passes
+5. `cortex pipeline` — End-to-end integration test
 
 ---
 
@@ -163,8 +176,8 @@ cortex run --kernel car --transport local://
 # Remote TCP (Jetson, x86 server, etc.)
 cortex run --kernel goertzel --transport tcp://192.168.1.100:9000
 
-# Serial/UART (embedded devices)
-cortex run --kernel noop --transport serial:///dev/ttyUSB0?baud=115200
+# Serial/UART (planned, not yet implemented)
+# cortex run --kernel noop --transport serial:///dev/ttyUSB0?baud=115200
 ```
 
 ### Remote Adapter Setup (Jetson Example)
@@ -194,39 +207,53 @@ cat results/run-*/kernel-data/car/telemetry.ndjson
 - `local://` — Socketpair (default, spawns adapter as child process)
 - `tcp://host:port` — TCP client (connect to remote adapter)
 - `tcp://:port` — TCP server (adapter listens for harness connection)
-- `serial:///dev/ttyUSB0?baud=115200` — UART (embedded devices)
+- `serial://` — UART (planned, not yet implemented)
 
 ---
 
 ## Directory Structure
 
 ```
-src/engine/
-├── harness/          # Orchestrator (app/, config/, loader/, report/, util/)
-├── scheduler/        # Window dispatch, deadlines, RT priority
-├── replayer/         # Dataset streaming at real-time cadence
-└── telemetry/        # Per-window timing collection (CSV/NDJSON)
+src/
+├── engine/                # C harness and low-level benchmark executor
+│   ├── harness/           # Orchestrator (app/, config/, loader/, report/, util/)
+│   ├── scheduler/         # Window dispatch, chain execution, deadlines, RT priority
+│   ├── replayer/          # Dataset streaming at real-time cadence
+│   ├── telemetry/         # Per-window timing collection (CSV/NDJSON)
+│   ├── inscount/          # PMU instruction counting
+│   └── osnoise/           # OS noise measurement
+└── cortex/                # Python CLI and analysis tools
+    ├── commands/          # CLI subcommands (run, analyze, predict, plot, etc.)
+    ├── core/              # DI protocols (ProcessHandle, FileSystemService, etc.)
+    │   ├── protocols.py   # Abstract interfaces
+    │   └── implementations.py  # Production implementations
+    ├── deploy/            # SSH remote deployment
+    ├── generators/        # Synthetic data generation integration
+    ├── ui/                # Terminal UI (progress bar, spinner)
+    └── utils/             # runner.py (HarnessRunner), analyzer.py (TelemetryAnalyzer), config.py
 
 primitives/
-├── kernels/v1/       # Immutable kernel implementations (8 kernels)
-│   ├── car@f32/
-│   ├── notch_iir@f32/
-│   ├── bandpass_fir@f32/
-│   ├── goertzel@f32/
-│   ├── welch_psd@f32/
-│   └── noop@f32/     # Harness overhead measurement baseline
-├── datasets/v1/      # Immutable dataset primitives
-│   ├── physionet-motor-imagery/
-│   │   ├── spec.yaml
-│   │   └── converted/*.float32
-│   └── fake/
-│       └── synthetic.float32
-└── configs/          # YAML execution parameters
+├── kernels/v1/            # Immutable kernel implementations (8 kernels)
+│   ├── bandpass_fir@f32/  ├── car@f32/  ├── csp@f32/  ├── goertzel@f32/
+│   ├── ica@f32/  ├── noop@f32/  ├── notch_iir@f32/  └── welch_psd@f32/
+├── datasets/v1/           # Immutable dataset primitives
+├── configs/               # YAML execution parameters
+├── devices/               # Device profiles (rpi4, jetson-nano, m1-macos, m1-asahi)
+└── adapters/              # Hardware adapter primitives
 
-tests/                # Unit tests (test_*.c)
-experiments/          # Timestamped validation studies (DVFS, Idle Paradox)
-datasets/             # EEG data (PhysioNet format → .float32)
-results/              # Generated benchmark outputs (gitignored)
+sdk/
+├── kernel/                # Headers and libs for writing new kernels
+└── adapter/               # Headers and libs for writing new adapters
+
+tests/
+├── cli/                   # Python CLI tests (unit + integration, 49+ tests)
+├── engine/                # C engine tests (scheduler, replayer, signal handler, clock)
+├── kernel/                # Kernel validation tests
+├── adapter/               # Adapter protocol tests
+└── fixtures/              # Shared test data
+
+docs/                      # Architecture, reference, guides, research, validation
+results/                   # Generated benchmark outputs (gitignored)
 ```
 
 ---
@@ -248,9 +275,31 @@ results/              # Generated benchmark outputs (gitignored)
 - Linux: x86_64, arm64 (Ubuntu, Fedora, Alpine tested)
 
 **Test Coverage:**
-- 21+ C unit tests (scheduler, telemetry, signal handling, replayer)
+- 49+ Python tests (analyzer unit, runner unit/integration, chain stats)
+- 21+ C unit tests (scheduler, telemetry, signal handling, replayer, clock resolution)
 - Oracle validation: All kernels match SciPy reference (tolerance 1e-5)
-- Idle Paradox validation: Completed on macOS + Linux (see experiments/)
+- CI pipeline: GitHub Actions with C unit tests + Python test jobs
+- Validation studies: DVFS, no-op overhead, Linux governor, high-channel scalability
+
+**Pipeline Orchestration (SE-8):**
+- Multi-kernel chain execution (e.g., bandpass → CAR → CSP → classifier)
+- `pipelines:` YAML config spawns concurrent harness processes per pipeline
+- Per-stage telemetry via `stage_index` field (CORTEX_STAGE_NOT_CHAINED sentinel for non-chain)
+- Chain statistics: per-stage latency breakdown, contribution %, end-to-end P50/P95/P99
+- Automatic per-pipeline analysis in `cortex run` and `cortex analyze`
+
+**Latency Analysis (SE-5):**
+- Device profiles in `primitives/devices/` (rpi4, jetson-nano, m1-macos, m1-asahi)
+- `cortex predict` — static pre-benchmark latency prediction
+- `cortex decompose` — compute/memory/overhead breakdown with PMU data
+- `cortex compare` — cross-run comparison
+- `cortex profile` — kernel profiling with PMU instruction counts
+- `cortex check-deadline` — CI gating for real-time deadline compliance
+
+**Dependency Injection (CRIT-004):**
+- Protocol-based DI: Logger, FileSystemService, ProcessExecutor, ProcessHandle, ConfigLoader
+- Class-based HarnessRunner and TelemetryAnalyzer with full DI
+- All CLI commands use DI infrastructure for testability
 
 **Kernel Parameter Support:**
 - ✅ Runtime configuration via accessor API (`cortex_param_float`, `cortex_param_int`, `cortex_param_string`, `cortex_param_bool`)
@@ -288,7 +337,11 @@ results/              # Generated benchmark outputs (gitignored)
 | **Sequential execution** | Kernels run one-at-a-time for measurement isolation in benchmark mode. Pipeline mode runs concurrently to match production conditions. |
 | **Dataset primitive** | Versioned, immutable dataset with spec.yaml metadata (e.g., `primitives/datasets/v1/physionet-motor-imagery/`) |
 | **Generator primitive** | Dataset defined as parametric function producing data on-demand (vs static pre-recorded files). Returns (path, params) → data. Example: `primitives/datasets/v1/synthetic` |
-| **Device adapter** | Abstraction for running kernels on different hardware targets (future: STM32, Jetson) |
+| **Chain execution** | Multi-kernel pipeline where output feeds forward (e.g., bandpass → CAR → CSP). Each stage gets a `stage_index` in telemetry. |
+| **Pipeline mode** | `pipelines:` YAML config spawns concurrent harness processes. Reflects production conditions where multiple chains share hardware. |
+| **CORTEX_STAGE_NOT_CHAINED** | Sentinel value (0xFFFFFFFF) in `stage_index` indicating a non-chain telemetry record |
+| **Device adapter** | Abstraction for running kernels on different hardware targets (RPi4, Jetson, embedded) |
+| **Device primitive** | Hardware profile in `primitives/devices/` (e.g., `m1-asahi.yaml`) describing target platform characteristics |
 | **Run-config** | YAML specifying dataset, deadlines, load profile, sample rate |
 | **NDJSON** | Newline-Delimited JSON (streaming-friendly telemetry format) |
 | **W, H, C** | Window length (160 samples), hop (80 samples), channels (64) |
@@ -344,13 +397,30 @@ Each kernel runs in isolation with dedicated resources to prevent:
 Pipelines run concurrently because production BCI systems process multiple
 chains simultaneously. Resource contention is the signal, not noise.
 
-**Data flow:**
+**Data flow (single kernel):**
 ```
 Dataset → Replayer (H-sized chunks @ Fs cadence)
        → Scheduler (buffers into W-sized windows)
        → Plugin (cortex_process)
        → Telemetry (latency, deadlines, jitter)
        → Results (NDJSON files)
+```
+
+**Data flow (chain execution):**
+```
+Dataset → Replayer → Scheduler
+       → Plugin 0 (stage_index=0) → output feeds →
+       → Plugin 1 (stage_index=1) → output feeds →
+       → Plugin N (stage_index=N)
+       → Telemetry (per-stage latency + e2e)
+       → Results (NDJSON with stage_index field)
+```
+
+**Python CLI architecture:**
+```
+CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLoader)
+            → TelemetryAnalyzer (DI: Logger, FileSystemService)
+            → Results (SUMMARY.md, plots, chain breakdown)
 ```
 
 ---
@@ -363,6 +433,13 @@ Dataset → Replayer (H-sized chunks @ Fs cadence)
 - **Platform detection**: `#ifdef __APPLE__` for macOS-specific code
 - **Makefiles**: Handle `.dylib` (macOS) vs `.so` (Linux) automatically via `$(LIBEXT)`
 - **ABI functions**: Exact names are `cortex_init`, `cortex_process`, `cortex_teardown` (NO variations)
+
+**Python conventions:**
+- **DI pattern**: Use protocol-based dependency injection (`src/cortex/core/protocols.py`). Never use raw `open()` in classes that have `self.fs` — use `self.fs.read_file()` / `self.fs.write_file()` / `self.fs.open()`
+- **Class-based services**: `HarnessRunner` (runner.py), `TelemetryAnalyzer` (analyzer.py) — accept DI dependencies in constructor
+- **Tests**: `tests/cli/unit/` for unit tests, `tests/cli/integration/` for integration tests. Use `pytest`.
+- **Config loading**: Use `YamlConfigLoader` (via DI), never raw `yaml.safe_load()` in service classes
+- **Process handles**: Use `ProcessHandle` protocol (poll, wait, terminate, kill) — never raw `subprocess.Popen`
 
 **File extensions:**
 | Extension | Purpose | Example |
@@ -456,28 +533,51 @@ Dataset → Replayer (H-sized chunks @ Fs cadence)
 
 ---
 
-## Active Development (December 2025)
+## Development Workflow
 
-**Current Focus:**
-- ✅ ABI v3 implementation complete (offline calibration support)
-- ✅ ICA kernel (trainable) validated end-to-end
-- ✅ Synthetic dataset generation (validated up to 2048 channels)
-- 📝 Documentation: Migration guide, changelog, release notes
+**Project tracking lives in Asana** ("CORTEX - Real-Time BCI Signal Processing Framework"). This is the long-term source of truth for what's done, in progress, and planned. The Asana board is actively maintained and should be consulted and updated as part of every feature cycle.
 
-**Known Limitations:**
-- Oracle validation for v2 kernels requires CLI argument support in oracle.py files
-- ICA oracle has full CLI support (reference implementation)
-- Future: Rewrite validation system in pure Python (no subprocess overhead)
+**Standard feature development cycle:**
 
-**Near-term (Q1 2026):**
-- Additional trainable kernels: CSP (motor imagery), LDA (classification)
-- Energy measurement integration (RAPL on x86, INA226 on embedded)
+1. **Grab ticket** — Pick a task from the Asana board (Next Phase Development section)
+2. **Create plan** — Write an implementation plan (spec, file changes, test strategy)
+3. **Iterate on plan** — Refine with feedback, identify edge cases and architectural concerns
+4. **Interrogate plan/spec** — Challenge assumptions, verify against codebase, check for conflicts with sacred constraints
+5. **Implement** — Write code following the plan
+6. **Simplify** — Review implementation for unnecessary complexity, remove dead code
+7. **Create PR** — Push branch, open PR with summary and test plan
+8. **Multi-agent review cycles** — PR gets reviewed by multiple LLM agents (Claude, Cursor, Codex, Copilot). Fix legitimate issues iteratively across review rounds. Push back on noise.
+9. **Merge** — Once CI green and review issues addressed
+10. **Update Asana board** — Mark task complete, create follow-up tasks if needed
 
-**Future (Q2+ 2026):**
-- Fixed-point quantization (Q15, Q7 data types)
-- Hardware-in-the-loop testing (STM32H7, Jetson Orin Nano)
-- Multi-platform stress testing (Raspberry Pi, BeagleBone)
-- Expanded oracle suite (MNE-Python, EEGLAB compatibility)
+**When to deviate from this workflow:**
+- Research-heavy tasks (e.g., latency decomposition methodology) may need exploration phases before step 2
+- Trivial fixes (typos, one-line bugs) can skip steps 2-4
+- The workflow is a guide, not a straitjacket — adapt to the task
+
+---
+
+## Active Development (February 2026)
+
+**Recently Completed:**
+- ✅ SE-8: Pipeline orchestration and chain execution (PR #48, merged)
+- ✅ SE-5: 3-step latency analysis with device primitives (PR #47)
+- ✅ CSP kernel (trainable, ABI v3)
+- ✅ CRIT-001 through CRIT-004: Critical reliability improvements
+- ✅ Device adapter infrastructure (transport API, protocol, universal adapter model)
+- ✅ Full CLI command suite (16 subcommands)
+- ✅ Repository reorganization (14→7 directories)
+
+**Next Up:**
+- Generator dataset support in pipeline mode (SE-8 follow-up)
+- Documentation updates (5 undocumented CLI commands, FAQ fixes)
+- C engine hardening (chain failure telemetry, cleanup paths)
+
+**Future:**
+- Q15/Q7 quantized data type support (Spring 2026)
+- Energy measurement integration (RAPL/power rail)
+- Serial transport for embedded devices
+- CORTEX Web Companion (separate project — LLM-powered config builder + telemetry dashboard)
 
 ---
 
@@ -486,11 +586,12 @@ Dataset → Replayer (H-sized chunks @ Fs cadence)
 - **Kernel Plugin API**: `sdk/kernel/include/cortex_plugin.h` (ABI v3 spec)
 - **Device Adapter API**: `sdk/adapter/include/` (ABI v1 spec)
 - **Architecture**: `docs/architecture/overview.md` (system design)
-- **Idle Paradox**: `experiments/linux-governor-validation-2025-12-05/README.md`
 - **Configuration**: `docs/reference/configuration.md` (YAML schema)
 - **Telemetry**: `docs/reference/telemetry.md` (output format)
 - **Synthetic Datasets**: `docs/guides/synthetic-datasets.md` (generator primitives guide)
-- **High-Channel Scalability**: `experiments/high-channel-scalability-2026-01-12/README.md` (2048ch validation)
+- **Validation Studies**: `docs/validation/` (DVFS, no-op overhead, governor, high-channel)
+- **DI Protocols**: `src/cortex/core/protocols.py` (ProcessHandle, FileSystemService, etc.)
+- **Asana Board**: "CORTEX - Real-Time BCI Signal Processing Framework" (long-term tracking)
 
 ---
 
