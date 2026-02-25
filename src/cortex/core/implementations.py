@@ -94,9 +94,17 @@ class SubprocessHandle:
         """Check if process has terminated."""
         return self._handle.poll()
 
-    def wait(self) -> int:
+    def wait(self, timeout=None) -> int:
         """Wait for process to terminate."""
-        return self._handle.wait()
+        return self._handle.wait(timeout=timeout)
+
+    def terminate(self) -> None:
+        """Send SIGTERM to the process."""
+        self._handle.terminate()
+
+    def kill(self) -> None:
+        """Send SIGKILL to the process."""
+        self._handle.kill()
 
 
 class CompletedProcessResult:

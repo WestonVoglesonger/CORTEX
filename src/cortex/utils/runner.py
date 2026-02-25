@@ -567,6 +567,9 @@ class HarnessRunner:
         config = self.config.load_yaml(config_path)
 
         pipelines = config.get('pipelines', [])
+        if not isinstance(pipelines, list):
+            self.log.error("Config 'pipelines' must be a list of pipeline definitions")
+            return None
         if not pipelines:
             self.log.error("Config has no 'pipelines' section or it is empty")
             return None
