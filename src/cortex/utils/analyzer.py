@@ -890,12 +890,30 @@ class TelemetryAnalyzer:
             b_lat = b[b['plugin'] == kernel]['latency_us'].values
             c_lat = c[c['plugin'] == kernel]['latency_us'].values
 
+            # Strip NaN values (corrupted telemetry, partial writes)
+            b_nan = int(np.isnan(b_lat).sum())
+            c_nan = int(np.isnan(c_lat).sum())
+            if b_nan > 0 or c_nan > 0:
+                self.log.warning(
+                    f"{kernel}: Dropped {b_nan} baseline + {c_nan} candidate "
+                    f"NaN latency values (corrupted telemetry?)"
+                )
+                b_lat = b_lat[~np.isnan(b_lat)]
+                c_lat = c_lat[~np.isnan(c_lat)]
+                if len(b_lat) == 0 or len(c_lat) == 0:
+                    self.log.warning(f"{kernel}: No valid data after NaN removal, skipping")
+                    continue
+
             b_mean = float(np.mean(b_lat))
             c_mean = float(np.mean(c_lat))
             b_std = float(np.std(b_lat, ddof=1)) if len(b_lat) > 1 else 0.0
             c_std = float(np.std(c_lat, ddof=1)) if len(c_lat) > 1 else 0.0
 
-            relative_change = ((c_mean - b_mean) / b_mean * 100) if b_mean > 0 else 0.0
+            # Percentiles (no scipy needed, computed early for P50-based change)
+            b_p50, b_p95, b_p99 = (float(np.percentile(b_lat, p)) for p in (50, 95, 99))
+            c_p50, c_p95, c_p99 = (float(np.percentile(c_lat, p)) for p in (50, 95, 99))
+
+            relative_change = ((c_p50 - b_p50) / b_p50 * 100) if b_p50 > 0 else 0.0
 
             p_value = None
             cohens_d = None
@@ -909,10 +927,9 @@ class TelemetryAnalyzer:
                 pooled_std = np.sqrt((b_std**2 + c_std**2) / 2)
                 if pooled_std > 0:
                     cohens_d = float((c_mean - b_mean) / pooled_std)
-
-            # Percentiles (no scipy needed)
-            b_p50, b_p95, b_p99 = (float(np.percentile(b_lat, p)) for p in (50, 95, 99))
-            c_p50, c_p95, c_p99 = (float(np.percentile(c_lat, p)) for p in (50, 95, 99))
+                elif c_mean != b_mean:
+                    # Zero variance but different means = infinite effect size
+                    cohens_d = float('inf') if c_mean > b_mean else float('-inf')
 
             # Effect size label from |d|
             abs_d = abs(cohens_d) if cohens_d is not None else None
