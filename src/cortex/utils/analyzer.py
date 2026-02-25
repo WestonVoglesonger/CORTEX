@@ -962,8 +962,11 @@ class TelemetryAnalyzer:
                 verdict = "NEGLIGIBLE"
             elif c_p50 < b_p50:
                 verdict = "IMPROVED"
-            else:
+            elif c_p50 > b_p50:
                 verdict = "REGRESSED"
+            else:
+                # P50s equal but means diverged — typical latency unchanged
+                verdict = "NEGLIGIBLE"
 
             rows.append({
                 'kernel': kernel,
