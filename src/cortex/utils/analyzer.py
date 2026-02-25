@@ -890,12 +890,30 @@ class TelemetryAnalyzer:
             b_lat = b[b['plugin'] == kernel]['latency_us'].values
             c_lat = c[c['plugin'] == kernel]['latency_us'].values
 
+            # Strip NaN values (corrupted telemetry, partial writes)
+            b_nan = int(np.isnan(b_lat).sum())
+            c_nan = int(np.isnan(c_lat).sum())
+            if b_nan > 0 or c_nan > 0:
+                self.log.warning(
+                    f"{kernel}: Dropped {b_nan} baseline + {c_nan} candidate "
+                    f"NaN latency values (corrupted telemetry?)"
+                )
+                b_lat = b_lat[~np.isnan(b_lat)]
+                c_lat = c_lat[~np.isnan(c_lat)]
+                if len(b_lat) == 0 or len(c_lat) == 0:
+                    self.log.warning(f"{kernel}: No valid data after NaN removal, skipping")
+                    continue
+
             b_mean = float(np.mean(b_lat))
             c_mean = float(np.mean(c_lat))
             b_std = float(np.std(b_lat, ddof=1)) if len(b_lat) > 1 else 0.0
             c_std = float(np.std(c_lat, ddof=1)) if len(c_lat) > 1 else 0.0
 
-            relative_change = ((c_mean - b_mean) / b_mean * 100) if b_mean > 0 else 0.0
+            # Percentiles (no scipy needed, computed early for P50-based change)
+            b_p50, b_p95, b_p99 = (float(np.percentile(b_lat, p)) for p in (50, 95, 99))
+            c_p50, c_p95, c_p99 = (float(np.percentile(c_lat, p)) for p in (50, 95, 99))
+
+            relative_change = ((c_p50 - b_p50) / b_p50 * 100) if b_p50 > 0 else 0.0
 
             p_value = None
             cohens_d = None
@@ -909,19 +927,67 @@ class TelemetryAnalyzer:
                 pooled_std = np.sqrt((b_std**2 + c_std**2) / 2)
                 if pooled_std > 0:
                     cohens_d = float((c_mean - b_mean) / pooled_std)
+                elif c_mean != b_mean:
+                    # Zero variance but different means = infinite effect size
+                    cohens_d = float('inf') if c_mean > b_mean else float('-inf')
+
+            # Effect size label from |d|
+            abs_d = abs(cohens_d) if cohens_d is not None else None
+            if abs_d is None:
+                effect_size_label = "N/A"
+            elif abs_d < 0.2:
+                effect_size_label = "negligible"
+            elif abs_d < 0.5:
+                effect_size_label = "small"
+            elif abs_d < 0.8:
+                effect_size_label = "medium"
+            else:
+                effect_size_label = "large"
+
+            # Practical significance verdict
+            # LOW_N when either run < 30 samples: t-test lacks power and
+            # Cohen's d has wide confidence bounds at small n. The threshold
+            # of 30 follows the CLT heuristic; latency data is typically
+            # right-skewed but t-test is robust to moderate non-normality
+            # at n >= 30.
+            baseline_n = len(b_lat)
+            candidate_n = len(c_lat)
+            if baseline_n < 30 or candidate_n < 30:
+                verdict = "LOW_N"
+            elif not has_scipy:
+                verdict = "N/A"
+            elif not significant:
+                verdict = "NOISE"
+            elif abs_d is not None and abs_d < 0.2:
+                verdict = "NEGLIGIBLE"
+            elif c_p50 < b_p50:
+                verdict = "IMPROVED"
+            elif c_p50 > b_p50:
+                verdict = "REGRESSED"
+            else:
+                # P50s equal but means diverged — typical latency unchanged
+                verdict = "NEGLIGIBLE"
 
             rows.append({
                 'kernel': kernel,
                 'baseline_mean': b_mean,
                 'baseline_std': b_std,
-                'baseline_n': len(b_lat),
+                'baseline_n': baseline_n,
                 'candidate_mean': c_mean,
                 'candidate_std': c_std,
-                'candidate_n': len(c_lat),
+                'candidate_n': candidate_n,
                 'relative_change_pct': relative_change,
                 'p_value': p_value,
                 'cohens_d': cohens_d,
                 'significant': significant,
+                'baseline_p50': b_p50,
+                'baseline_p95': b_p95,
+                'baseline_p99': b_p99,
+                'candidate_p50': c_p50,
+                'candidate_p95': c_p95,
+                'candidate_p99': c_p99,
+                'effect_size_label': effect_size_label,
+                'verdict': verdict,
             })
 
         return pd.DataFrame(rows)
