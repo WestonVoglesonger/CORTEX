@@ -282,6 +282,8 @@ def execute(args):
                 results_dir = runner.run_pipelines(
                     args.config, run_name=run_name, verbose=args.verbose,
                     transport_uri=transport_uri, device_spec=device_spec,
+                    duration=args.duration, repeats=args.repeats,
+                    warmup=args.warmup,
                 )
                 captured['results_dir'] = results_dir
                 return results_dir

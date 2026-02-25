@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Sentinel value for stage_index: record is not part of a chain */
+#define CORTEX_STAGE_NOT_CHAINED 0xFFFFFFFFU
+
 typedef struct cortex_telemetry_record {
     char run_id[32];
     char plugin_name[64];

@@ -11,7 +11,7 @@ from unittest.mock import Mock, MagicMock, call, ANY
 from pathlib import Path
 from typing import List
 
-from cortex.utils.analyzer import TelemetryAnalyzer
+from cortex.utils.analyzer import TelemetryAnalyzer, STAGE_INDEX_NOT_CHAINED
 from cortex.core.protocols import FileSystemService, Logger
 
 
@@ -618,12 +618,12 @@ class TestChainStatistics:
         assert result is None
 
     def test_chain_stats_returns_none_all_non_chain(self):
-        """All stage_index == 0xFFFFFFFF → returns None."""
+        """All stage_index == STAGE_INDEX_NOT_CHAINED → returns None."""
         df = pd.DataFrame({
             'plugin': ['k1', 'k1'],
             'latency_us': [100, 200],
             'warmup': [0, 0],
-            'stage_index': [0xFFFFFFFF, 0xFFFFFFFF],
+            'stage_index': [STAGE_INDEX_NOT_CHAINED, STAGE_INDEX_NOT_CHAINED],
             'window_index': [0, 1],
         })
         result = self.analyzer.calculate_chain_statistics(df)

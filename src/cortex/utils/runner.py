@@ -74,6 +74,45 @@ class HarnessRunner:
         self.tools = tool_locator
         self.log = logger
 
+    def _start_sleep_prevention(self):
+        """Start platform-specific sleep prevention.
+
+        Returns:
+            A background caffeinate process handle (macOS under sudo),
+            or None if not applicable. Caller must call _stop_sleep_prevention().
+        """
+        no_inhibit = self.env.get_environ().get('CORTEX_NO_INHIBIT', '0') == '1'
+        if no_inhibit:
+            return None
+
+        system = self.env.get_system_type()
+        if system == 'Darwin' and self.tools.has_tool('caffeinate'):
+            env_vars = self.env.get_environ()
+            sudo_user = env_vars.get('SUDO_USER')
+            target_cmd = ['caffeinate', '-dims', '-w', str(os.getpid())]
+            if sudo_user:
+                target_cmd = ['sudo', '-u', sudo_user] + target_cmd
+            proc = subprocess.Popen(
+                target_cmd,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            self.log.info("[cortex] Sleep prevention active (caffeinate) for benchmark consistency")
+            return proc
+
+        return None
+
+    @staticmethod
+    def _stop_sleep_prevention(proc):
+        """Stop a background sleep prevention process."""
+        if proc is None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+            proc.wait()
+
     def _cleanup_partial_run(self, run_dir: Path) -> None:
         """Clean up a partial run directory on failure.
 
@@ -492,7 +531,10 @@ class HarnessRunner:
         run_name: str,
         verbose: bool = False,
         transport_uri: Optional[str] = None,
-        device_spec: Optional[dict] = None
+        device_spec: Optional[dict] = None,
+        duration: Optional[int] = None,
+        repeats: Optional[int] = None,
+        warmup: Optional[int] = None,
     ) -> Optional[str]:
         """Run multiple pipelines defined in a config's 'pipelines' section.
 
@@ -505,12 +547,24 @@ class HarnessRunner:
             verbose: Show verbose output
             transport_uri: Optional device transport URI
             device_spec: Optional device specification
+            duration: Override benchmark duration (seconds)
+            repeats: Override number of repeats
+            warmup: Override warmup duration (seconds)
 
         Returns:
             Run directory path if at least one pipeline succeeded, None otherwise
         """
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        # Validate harness binary (same check as run())
+        if not self.fs.exists(HARNESS_BINARY_PATH):
+            self.log.error(f"Harness binary not found at {HARNESS_BINARY_PATH}")
+            self.log.info("Run 'cortex build' first")
+            return None
+
+        if not self.fs.is_file(HARNESS_BINARY_PATH):
+            self.log.error(f"{HARNESS_BINARY_PATH} exists but is not a file")
+            return None
+
+        config = self.config.load_yaml(config_path)
 
         pipelines = config.get('pipelines', [])
         if not pipelines:
@@ -523,8 +577,8 @@ class HarnessRunner:
         # Save device spec once at run level
         if device_spec is not None:
             device_yaml_path = f"{run_dir}/device.yaml"
-            with open(device_yaml_path, 'w') as f:
-                yaml.safe_dump(device_spec, f, sort_keys=False)
+            device_yaml_content = yaml.safe_dump(device_spec, sort_keys=False)
+            self.fs.write_file(device_yaml_path, device_yaml_content)
 
         self.log.info(f"Pipeline mode: {len(pipelines)} pipeline(s) to run")
         self.log.info(f"Results directory: {run_dir}")
@@ -533,11 +587,22 @@ class HarnessRunner:
         # Build per-pipeline temp configs and launch concurrently
         temp_configs: List[str] = []
         processes: List[Dict] = []
+        caffeinate_proc = self._start_sleep_prevention()
+
+        # Track used names to prevent output directory collisions
+        used_names: Dict[str, int] = {}
 
         try:
             for pipe_def in pipelines:
                 pipe_name = pipe_def.get('name', 'unnamed')
                 kernels = pipe_def.get('kernels', [])
+
+                # Deduplicate names to prevent output directory collisions
+                if pipe_name in used_names:
+                    used_names[pipe_name] += 1
+                    pipe_name = f"{pipe_name}-{used_names[pipe_name]}"
+                else:
+                    used_names[pipe_name] = 0
 
                 if not kernels:
                     self.log.warning(f"Pipeline '{pipe_name}' has no kernels, skipping")
@@ -549,6 +614,9 @@ class HarnessRunner:
                 temp_config = generate_temp_config(
                     base_config_path=config_path,
                     kernel_filter=kernels,
+                    duration=duration,
+                    repeats=repeats,
+                    warmup=warmup,
                 )
                 temp_configs.append(temp_config)
 
@@ -580,13 +648,17 @@ class HarnessRunner:
                 log_path = str(pipe_dir / HARNESS_LOG_FILE)
                 log_handle = self.fs.open(log_path, 'w', buffering=1)
 
-                proc = self.process.popen(
-                    cmd,
-                    stdout=log_handle,
-                    stderr=log_handle,
-                    cwd='.',
-                    env=base_env,
-                )
+                try:
+                    proc = self.process.popen(
+                        cmd,
+                        stdout=log_handle,
+                        stderr=log_handle,
+                        cwd='.',
+                        env=base_env,
+                    )
+                except Exception:
+                    log_handle.close()
+                    raise
 
                 processes.append({
                     'name': pipe_name,
@@ -674,6 +746,9 @@ class HarnessRunner:
                     os.unlink(tc)
                 except Exception:
                     pass
+
+            # Stop sleep prevention
+            self._stop_sleep_prevention(caffeinate_proc)
 
     def _write_pipeline_summary(self, run_dir: str, results: List[Dict]) -> None:
         """Write PIPELINE_SUMMARY.md to the run directory."""

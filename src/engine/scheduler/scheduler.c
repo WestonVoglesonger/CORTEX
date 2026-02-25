@@ -638,8 +638,8 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         rec.pmu_backend_stall_cycles = pmu.backend_stall_cycles;
         rec.osnoise_total_ns = osnoise_ns;
 
-        /* Chain stage (SE-8): 0xFFFFFFFF = not chained */
-        rec.stage_index = 0xFFFFFFFF;
+        /* Chain stage (SE-8): not part of a chain */
+        rec.stage_index = CORTEX_STAGE_NOT_CHAINED;
 
         cortex_telemetry_add(buffer, &rec);
     }

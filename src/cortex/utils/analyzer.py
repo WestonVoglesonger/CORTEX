@@ -14,6 +14,9 @@ from typing import List, Optional
 
 from cortex.core.protocols import FileSystemService, Logger
 
+# Sentinel matching CORTEX_STAGE_NOT_CHAINED in telemetry.h
+STAGE_INDEX_NOT_CHAINED = 0xFFFFFFFF
+
 # Set style
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
@@ -267,8 +270,8 @@ class TelemetryAnalyzer:
             self.log.info("No stage_index column; not a chain run")
             return None
 
-        # Filter warmup and non-chain records (0xFFFFFFFF = not chained)
-        df_chain = df[(df['warmup'] == 0) & (df['stage_index'] != 0xFFFFFFFF)].copy()
+        # Filter warmup and non-chain records
+        df_chain = df[(df['warmup'] == 0) & (df['stage_index'] != STAGE_INDEX_NOT_CHAINED)].copy()
         if df_chain.empty:
             self.log.info("No chained telemetry records found")
             return None
@@ -296,7 +299,13 @@ class TelemetryAnalyzer:
         stage_stats.columns = flat_names
 
         # Calculate end-to-end latency per window (sum of all stages)
-        e2e = df_chain.groupby('window_index')['latency_us'].sum()
+        # Filter to complete windows only (all stages present) to avoid
+        # partial windows from failed stages skewing the distribution.
+        n_stages = df_chain['stage_index'].nunique()
+        stages_per_window = df_chain.groupby('window_index')['stage_index'].nunique()
+        complete_windows = stages_per_window[stages_per_window == n_stages].index
+        df_complete = df_chain[df_chain['window_index'].isin(complete_windows)]
+        e2e = df_complete.groupby('window_index')['latency_us'].sum()
         e2e_stats = {
             'e2e_mean': float(e2e.mean()),
             'e2e_p50': float(e2e.median()),
