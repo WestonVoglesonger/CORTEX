@@ -82,7 +82,7 @@ cortex validate --kernel goertzel --verbose  # With verbose output
 - Compares C implementation against SciPy/MNE reference
 - Validates output within tolerance bounds (rtol=1e-5, atol=1e-6)
 
-**Note**: Run without `--kernel` flag to validate all kernels at once.
+**Note**: The `--kernel` flag is required. Validate one kernel at a time.
 
 ---
 
@@ -122,6 +122,83 @@ cortex run --config my_custom_config.yaml
   - Telemetry: `telemetry.{csv,ndjson}` (NDJSON format by default)
   - HTML report: `report.html`
 - Analysis: `results/<run-name>/analysis/`
+
+#### Pipeline mode (multi-kernel chains):
+```bash
+cortex run --config pipeline.yaml
+cortex run --config pipeline.yaml --duration 60 --repeats 3
+```
+
+When a config contains a `pipelines:` section, CORTEX spawns one harness process per pipeline concurrently. Each pipeline runs its kernels as a chain (output of kernel N feeds into kernel N+1).
+
+**Pipeline config example:**
+```yaml
+pipelines:
+  - name: motor-imagery
+    kernels: [bandpass_fir, car, csp]
+  - name: spectral
+    kernels: [bandpass_fir, welch_psd]
+```
+
+**Pipeline output:**
+- Per-pipeline directories: `results/<run>/pipeline-motor-imagery/`, `results/<run>/pipeline-spectral/`
+- Each pipeline directory contains its own telemetry and analysis
+- Chain statistics in SUMMARY.md show per-stage latency breakdown and end-to-end P50/P95/P99
+- `PIPELINE_SUMMARY.md` at the run level
+
+**Notes:**
+- Pipelines run concurrently (reflects production BCI conditions)
+- CLI `--duration`, `--repeats`, `--warmup` flags are forwarded to all pipelines
+- `cortex analyze --run-name <name>` auto-detects and analyzes pipeline subdirectories
+
+---
+
+### `cortex predict`
+Static pre-benchmark latency prediction from kernel profiles and device constraints.
+
+```bash
+cortex predict --kernel goertzel --device m1-asahi
+cortex predict --kernel car --device rpi4
+```
+
+---
+
+### `cortex decompose`
+Post-benchmark latency decomposition into compute, memory, and overhead components.
+
+```bash
+cortex decompose --run-name run-2026-02-24-001
+cortex decompose --run-name my-experiment --kernel car
+```
+
+---
+
+### `cortex compare`
+Compare benchmark runs across kernels or devices.
+
+```bash
+cortex compare --runs run-2026-02-24-001 run-2026-02-24-002
+cortex compare --runs baseline optimized --metric p99
+```
+
+---
+
+### `cortex profile`
+Kernel profiling with PMU instruction counts for performance analysis.
+
+```bash
+cortex profile --kernel goertzel --device m1-asahi
+cortex profile --kernel car --duration 30
+```
+
+---
+
+### `cortex check-deadline`
+CI gating command for real-time deadline compliance. Returns non-zero exit code if deadline miss rate exceeds threshold.
+
+```bash
+cortex check-deadline --run-name my-experiment --threshold 0.01
+```
 
 ---
 

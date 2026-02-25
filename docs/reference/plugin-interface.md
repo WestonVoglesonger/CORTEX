@@ -1,7 +1,7 @@
 # Plugin Interface (C ABI v3)
 
 **ABI Version**: 3
-**Last Updated**: 2025-12-27
+**Last Updated**: 2026-01-15
 
 This document describes the **CORTEX kernel plugin interface** (ABI v3) and how run-time configuration is passed from the harness to each plugin. It is intended for developers implementing kernels such as **Common Average Reference (CAR)**, **ICA (Independent Component Analysis)**, **Notch IIR filters**, **FIR band-pass filters**, **Goertzel bandpower**, and future extensions.
 
@@ -631,5 +631,5 @@ Current kernel implementations use:
 ---
 
 **Document Version**: 3.0.0
-**Last Updated**: 2025-12-27
+**Last Updated**: 2026-01-15
 **Status**: Current
