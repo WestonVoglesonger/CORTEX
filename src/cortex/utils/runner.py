@@ -352,8 +352,7 @@ class HarnessRunner:
             if device_spec is not None:
                 import yaml
                 device_yaml_path = f"{run_dir}/device.yaml"
-                with open(device_yaml_path, 'w') as f:
-                    yaml.safe_dump(device_spec, f, sort_keys=False)
+                self.fs.write_file(device_yaml_path, yaml.safe_dump(device_spec, sort_keys=False))
 
             # Return the run directory path
             if self.fs.exists(run_dir):
@@ -597,6 +596,9 @@ class HarnessRunner:
 
         try:
             for pipe_def in pipelines:
+                if not isinstance(pipe_def, dict):
+                    self.log.warning(f"Skipping invalid pipeline entry (expected mapping, got {type(pipe_def).__name__})")
+                    continue
                 pipe_name = pipe_def.get('name', 'unnamed')
                 # Sanitize name for safe directory creation
                 pipe_name = pipe_name.replace('/', '_').replace(' ', '_')

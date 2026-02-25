@@ -229,6 +229,9 @@ class YamlConfigLoader:
         """
         try:
             content = self.fs.read_file(path)
-            return yaml.safe_load(content)
+            data = yaml.safe_load(content)
+            if data is None:
+                raise ValueError(f"YAML file '{path}' is empty")
+            return data
         except yaml.YAMLError as e:
             raise ValueError(f"Failed to parse YAML file '{path}': {e}") from e
