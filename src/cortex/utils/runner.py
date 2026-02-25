@@ -576,25 +576,44 @@ class HarnessRunner:
         run_dir = get_run_directory(run_name)
         self.fs.mkdir(run_dir, parents=True, exist_ok=True)
 
-        # Save device spec once at run level
-        if device_spec is not None:
-            device_yaml_path = f"{run_dir}/device.yaml"
-            device_yaml_content = yaml.safe_dump(device_spec, sort_keys=False)
-            self.fs.write_file(device_yaml_path, device_yaml_content)
+        # Resolve generator-based datasets (shared across all pipelines)
+        from cortex.generators import process_config_with_generators, save_generation_manifest, cleanup_temp_files
 
-        self.log.info(f"Pipeline mode: {len(pipelines)} pipeline(s) to run")
-        self.log.info(f"Results directory: {run_dir}")
-        self.log.info("")
+        manifest = None
+        gen_temp_files = []
+        try:
+            actual_config_path, manifest, gen_temp_files = process_config_with_generators(
+                config_path, str(run_dir)
+            )
+            if manifest:
+                self.log.info(f"Generator resolved: {manifest['output']['channels']}ch, "
+                              f"{manifest['output']['duration_s']}s")
+        except Exception as e:
+            self.log.error(f"Generator execution failed ({type(e).__name__}): {e}")
+            try:
+                cleanup_temp_files(gen_temp_files)
+            except Exception:
+                pass
+            return None
 
-        # Build per-pipeline temp configs and launch concurrently
+        # Initialize before outer try so finally can always reference them
         temp_configs: List[str] = []
         processes: List[Dict] = []
-        caffeinate_proc = self._start_sleep_prevention()
-
-        # Track used names to prevent output directory collisions
+        caffeinate_proc = None
         used_names: Dict[str, int] = {}
 
         try:
+            # Save device spec once at run level
+            if device_spec is not None:
+                device_yaml_path = f"{run_dir}/device.yaml"
+                device_yaml_content = yaml.safe_dump(device_spec, sort_keys=False)
+                self.fs.write_file(device_yaml_path, device_yaml_content)
+
+            self.log.info(f"Pipeline mode: {len(pipelines)} pipeline(s) to run")
+            self.log.info(f"Results directory: {run_dir}")
+            self.log.info("")
+
+            caffeinate_proc = self._start_sleep_prevention()
             for pipe_def in pipelines:
                 if not isinstance(pipe_def, dict):
                     self.log.warning(f"Skipping invalid pipeline entry (expected mapping, got {type(pipe_def).__name__})")
@@ -619,7 +638,7 @@ class HarnessRunner:
 
                 # Generate temp config with this pipeline's kernel list
                 temp_config = generate_temp_config(
-                    base_config_path=config_path,
+                    base_config_path=actual_config_path,
                     kernel_filter=kernels,
                     duration=duration,
                     repeats=repeats,
@@ -753,6 +772,17 @@ class HarnessRunner:
                     os.unlink(tc)
                 except Exception:
                     pass
+
+            # Save generation manifest before cleanup
+            if manifest:
+                try:
+                    save_generation_manifest(manifest, str(run_dir))
+                except Exception as e:
+                    self.log.warning(f"Failed to save generation manifest: {e}")
+
+            # Clean up generator temp files
+            if gen_temp_files:
+                cleanup_temp_files(gen_temp_files)
 
             # Stop sleep prevention
             self._stop_sleep_prevention(caffeinate_proc)

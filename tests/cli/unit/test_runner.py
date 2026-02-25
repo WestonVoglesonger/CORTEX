@@ -540,6 +540,153 @@ class TestHarnessRunnerDeviceSpec:
         mock_yaml_dump.assert_not_called()
 
 
+class TestRunPipelinesGeneratorResolution:
+    """Test that run_pipelines() resolves generator datasets."""
+
+    def setup_method(self):
+        self.fs = Mock(spec=FileSystemService)
+        self.process = Mock(spec=ProcessExecutor)
+        self.config = Mock(spec=ConfigLoader)
+        self.time = Mock(spec=TimeProvider)
+        self.env = Mock(spec=EnvironmentProvider)
+        self.tools = Mock(spec=ToolLocator)
+        self.logger = Mock(spec=Logger)
+
+        self.runner = HarnessRunner(
+            filesystem=self.fs,
+            process_executor=self.process,
+            config_loader=self.config,
+            time_provider=self.time,
+            env_provider=self.env,
+            tool_locator=self.tools,
+            logger=self.logger
+        )
+
+    def _setup_pipeline_mocks(self, pipelines):
+        """Common mock setup for pipeline tests."""
+        self.fs.exists.return_value = True
+        self.fs.is_file.return_value = True
+        self.config.load_yaml.return_value = {'pipelines': pipelines}
+        self.env.get_environ.return_value = {}
+        self.env.get_system_type.return_value = 'Linux'
+        self.tools.has_tool.return_value = False
+        self.time.current_time.return_value = 100.0
+        self.fs.open.return_value = MagicMock()
+
+        mock_handle = Mock(spec=ProcessHandle)
+        mock_handle.poll.return_value = 0
+        self.process.popen.return_value = mock_handle
+
+    @patch('cortex.generators.cleanup_temp_files')
+    @patch('cortex.generators.save_generation_manifest')
+    @patch('cortex.generators.process_config_with_generators')
+    @patch('cortex.utils.runner.generate_temp_config')
+    def test_run_pipelines_resolves_generators(
+        self, mock_gen_temp, mock_process_gen, mock_save_manifest, mock_cleanup
+    ):
+        """Pipeline mode should resolve generators and pass resolved path to generate_temp_config."""
+        self._setup_pipeline_mocks([
+            {'name': 'eeg-filter', 'kernels': ['bandpass', 'notch']}
+        ])
+
+        resolved_path = '/tmp/cortex_gen_abc123.yaml'
+        test_manifest = {
+            'output': {'channels': 8, 'duration_s': 10.0, 'path': '/tmp/gen.float32'}
+        }
+        mock_process_gen.return_value = (resolved_path, test_manifest, ['/tmp/gen.float32'])
+        mock_gen_temp.return_value = '/tmp/cortex_tmp_pipe.yaml'
+
+        result = self.runner.run_pipelines(
+            config_path='pipeline.yaml', run_name='gen-test',
+        )
+
+        # generate_temp_config called with resolved path, not original
+        mock_gen_temp.assert_called_once()
+        assert mock_gen_temp.call_args[1]['base_config_path'] == resolved_path
+
+        # Manifest saved with correct args
+        mock_save_manifest.assert_called_once()
+        assert mock_save_manifest.call_args[0][0] == test_manifest
+        assert 'gen-test' in mock_save_manifest.call_args[0][1]
+
+        # Temp files cleaned up
+        mock_cleanup.assert_called_once_with(['/tmp/gen.float32'])
+        assert result is not None
+
+    @patch('cortex.generators.cleanup_temp_files')
+    @patch('cortex.generators.save_generation_manifest')
+    @patch('cortex.generators.process_config_with_generators')
+    @patch('cortex.utils.runner.generate_temp_config')
+    def test_run_pipelines_no_generator_passes_original_path(
+        self, mock_gen_temp, mock_process_gen, mock_save_manifest, mock_cleanup
+    ):
+        """When config has no generator, original path is passed through."""
+        self._setup_pipeline_mocks([{'name': 'basic', 'kernels': ['noop']}])
+
+        mock_process_gen.return_value = ('pipeline.yaml', None, [])
+        mock_gen_temp.return_value = '/tmp/cortex_tmp.yaml'
+
+        result = self.runner.run_pipelines(
+            config_path='pipeline.yaml', run_name='no-gen',
+        )
+
+        mock_gen_temp.assert_called_once()
+        assert mock_gen_temp.call_args[1]['base_config_path'] == 'pipeline.yaml'
+        mock_save_manifest.assert_not_called()
+        assert result is not None
+
+    @patch('cortex.generators.cleanup_temp_files')
+    @patch('cortex.generators.process_config_with_generators')
+    def test_run_pipelines_generator_failure_returns_none(
+        self, mock_process_gen, mock_cleanup
+    ):
+        """Pipeline mode should return None and clean up if generator fails."""
+        self.fs.exists.return_value = True
+        self.fs.is_file.return_value = True
+        self.config.load_yaml.return_value = {
+            'pipelines': [{'name': 'eeg-filter', 'kernels': ['bandpass']}]
+        }
+
+        mock_process_gen.side_effect = RuntimeError("Generator script failed")
+
+        result = self.runner.run_pipelines(
+            config_path='pipeline.yaml', run_name='gen-fail-test',
+        )
+
+        assert result is None
+        self.logger.error.assert_called()
+        assert "Generator execution failed" in self.logger.error.call_args[0][0]
+        assert "RuntimeError" in self.logger.error.call_args[0][0]
+        mock_cleanup.assert_called_once_with([])
+
+    @patch('cortex.generators.cleanup_temp_files')
+    @patch('cortex.generators.save_generation_manifest')
+    @patch('cortex.generators.process_config_with_generators')
+    @patch('cortex.utils.runner.generate_temp_config')
+    def test_run_pipelines_manifest_save_failure_does_not_abort(
+        self, mock_gen_temp, mock_process_gen, mock_save_manifest, mock_cleanup
+    ):
+        """Manifest save failure should warn but not prevent returning results."""
+        self._setup_pipeline_mocks([{'name': 'eeg', 'kernels': ['bandpass']}])
+
+        mock_process_gen.return_value = (
+            '/tmp/resolved.yaml',
+            {'output': {'channels': 8, 'duration_s': 5.0}},
+            ['/tmp/gen.f32'],
+        )
+        mock_gen_temp.return_value = '/tmp/cortex_tmp.yaml'
+        mock_save_manifest.side_effect = OSError("Permission denied")
+
+        result = self.runner.run_pipelines(
+            config_path='pipeline.yaml', run_name='manifest-fail',
+        )
+
+        assert result is not None
+        self.logger.warning.assert_called()
+        assert "Failed to save generation manifest" in self.logger.warning.call_args[0][0]
+        mock_cleanup.assert_called_once_with(['/tmp/gen.f32'])
+
+
 # Test discovery for pytest
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
