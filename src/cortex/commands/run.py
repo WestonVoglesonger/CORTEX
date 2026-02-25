@@ -2,7 +2,6 @@
 
 CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
 """
-import platform
 import sys
 import argparse
 from pathlib import Path
@@ -174,7 +173,7 @@ def _run_with_deploy(deploy_string, run_fn, verbose):
             print(f"Cleanup issues: {cleanup_result.errors}")
 
 
-def _check_preflight(filesystem, process_executor):
+def _check_preflight(filesystem, process_executor, env_provider):
     """Print pre-flight tips: build status and PMU availability.
 
     Non-blocking, silent on success. Runs before benchmark dispatch.
@@ -187,7 +186,7 @@ def _check_preflight(filesystem, process_executor):
 
     # PMU warning
     if not probe_pmu_available(filesystem, process_executor):
-        system = platform.system()
+        system = env_provider.get_system_type()
         if system == 'Darwin':
             print("Note: PMU counters unavailable. Run with `sudo` "
                   "for instruction/cycle data. Latency benchmarks are valid without PMU.")
@@ -300,7 +299,8 @@ def execute(args):
     )
 
     # Pre-flight checks (non-blocking tips)
-    _check_preflight(filesystem, process_executor)
+    env_provider = SystemEnvironmentProvider()
+    _check_preflight(filesystem, process_executor, env_provider)
 
     # Custom config mode
     if args.config:

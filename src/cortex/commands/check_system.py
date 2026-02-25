@@ -12,6 +12,7 @@ from cortex.core import (
     ToolLocator,
     Logger
 )
+from cortex.utils.device import probe_pmu_available
 
 
 class SystemCheck:
@@ -426,8 +427,6 @@ class SystemChecker:
         Probes by running cortex_inscount on the noop kernel. Always non-critical
         since latency benchmarks are valid without PMU data.
         """
-        from cortex.utils.device import probe_pmu_available
-
         # Pre-probe existence checks for granular messaging
         inscount_path = 'sdk/kernel/tools/cortex_inscount'
         if not self.fs.exists(inscount_path):
