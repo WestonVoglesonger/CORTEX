@@ -347,6 +347,203 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
     return 0;
 }
 
+/* Chain execution: register all plugins on a single scheduler, use dispatch_chain */
+static int run_chain(harness_context_t *ctx) {
+    /* Use first plugin's runtime config for scheduler dimensions (stage 0 input) */
+    const cortex_plugin_entry_cfg_t *first_plugin = NULL;
+    for (size_t i = 0; i < ctx->run_cfg.plugin_count; i++) {
+        if (strcmp(ctx->run_cfg.plugins[i].status, "ready") == 0) {
+            first_plugin = &ctx->run_cfg.plugins[i];
+            break;
+        }
+    }
+    if (!first_plugin) {
+        fprintf(stderr, "[harness] chain: no ready plugins found\n");
+        return -1;
+    }
+
+    printf("[harness] Chain mode: registering %zu plugin(s) on single scheduler\n",
+           ctx->run_cfg.plugin_count);
+
+    /* Create scheduler with chain_mode=1 and first plugin's dimensions */
+    cortex_scheduler_config_t sc = {0};
+    sc.sample_rate_hz = ctx->run_cfg.dataset.sample_rate_hz;
+    sc.window_length_samples = first_plugin->runtime.window_length_samples;
+    sc.hop_samples = first_plugin->runtime.hop_samples;
+    sc.channels = first_plugin->runtime.channels;
+    sc.dtype = first_plugin->runtime.dtype;
+    sc.warmup_seconds = ctx->run_cfg.benchmark.parameters.warmup_seconds;
+    sc.realtime_priority = (uint32_t)(ctx->run_cfg.realtime.priority >= 0 ? ctx->run_cfg.realtime.priority : 0);
+    sc.cpu_affinity_mask = ctx->run_cfg.realtime.cpu_affinity_mask;
+    sc.scheduler_policy = ctx->run_cfg.realtime.scheduler[0] ? ctx->run_cfg.realtime.scheduler : NULL;
+    sc.telemetry_path = NULL;  /* No per-plugin CSV in chain mode */
+    sc.telemetry_buffer = NULL;
+    sc.run_id = NULL;
+    sc.current_repeat = 0;
+    sc.chain_mode = 1;
+
+    cortex_scheduler_t *scheduler = cortex_scheduler_create(&sc);
+    if (!scheduler) {
+        fprintf(stderr, "[harness] chain: failed to create scheduler\n");
+        return -1;
+    }
+
+    cortex_scheduler_set_telemetry_buffer(scheduler, &ctx->telemetry);
+    cortex_scheduler_set_run_id(scheduler, ctx->run_id);
+    ctx->scheduler = scheduler;
+
+    /* Track starting telemetry count */
+    size_t telemetry_start_count = ctx->telemetry.count;
+
+    /* Spawn adapters for all plugins and register on the shared scheduler */
+    cortex_device_init_result_t device_results[64];
+    void *calibration_states[64];
+    size_t registered_count = 0;
+
+    for (size_t i = 0; i < ctx->run_cfg.plugin_count && i < 64; i++) {
+        cortex_plugin_entry_cfg_t *plugin_cfg = &ctx->run_cfg.plugins[i];
+        if (strcmp(plugin_cfg->status, "ready") != 0) continue;
+
+        const char *pname = plugin_cfg->name;
+        calibration_states[registered_count] = NULL;
+
+        /* Create per-plugin output directory */
+        char plugin_output_dir[1024];
+        snprintf(plugin_output_dir, sizeof(plugin_output_dir),
+                 "%s/kernel-data/%s", ctx->run_cfg.output.directory, pname);
+        cortex_create_directories(plugin_output_dir);
+
+        if (spawn_adapter(pname, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz,
+                          &device_results[registered_count],
+                          &calibration_states[registered_count]) != 0) {
+            fprintf(stderr, "[harness] chain: failed to spawn adapter for '%s'\n", pname);
+            goto chain_cleanup;
+        }
+
+        cortex_scheduler_device_info_t device_info = {0};
+        device_info.device_handle = device_results[registered_count].handle;
+        device_info.output_window_length_samples = device_results[registered_count].output_window_length_samples;
+        device_info.output_channels = device_results[registered_count].output_channels;
+        strncpy(device_info.adapter_name, device_results[registered_count].adapter_name,
+                sizeof(device_info.adapter_name) - 1);
+        strncpy(device_info.plugin_name, pname, sizeof(device_info.plugin_name) - 1);
+
+        if (cortex_scheduler_register_device(scheduler, &device_info,
+                plugin_cfg->runtime.window_length_samples,
+                plugin_cfg->runtime.channels) != 0) {
+            fprintf(stderr, "[harness] chain: failed to register device for '%s'\n", pname);
+            device_comm_teardown(device_results[registered_count].handle);
+            free(calibration_states[registered_count]);
+            goto chain_cleanup;
+        }
+
+        printf("[harness] Chain stage %zu: %s (output: %ux%u)\n",
+               registered_count, pname,
+               device_results[registered_count].output_window_length_samples,
+               device_results[registered_count].output_channels);
+        registered_count++;
+    }
+
+    if (registered_count < 2) {
+        fprintf(stderr, "[harness] chain: need at least 2 plugins, got %zu\n", registered_count);
+        goto chain_cleanup;
+    }
+
+    printf("[harness] Chain pipeline ready: %zu stages\n", registered_count);
+
+    /* Warmup phase */
+    if (ctx->run_cfg.benchmark.parameters.warmup_seconds > 0) {
+        printf("[harness] Chain warmup (%u seconds)\n",
+               ctx->run_cfg.benchmark.parameters.warmup_seconds);
+        cortex_scheduler_set_current_repeat(scheduler, 0);
+        if (run_once(ctx, ctx->run_cfg.benchmark.parameters.warmup_seconds, first_plugin) != 0) {
+            fprintf(stderr, "[harness] chain: warmup failed\n");
+            goto chain_cleanup;
+        }
+    }
+
+    /* Measurement repeats */
+    for (uint32_t r = 1; r <= ctx->run_cfg.benchmark.parameters.repeats; r++) {
+        printf("[harness] Chain repeat %u/%u\n", r, ctx->run_cfg.benchmark.parameters.repeats);
+        fflush(stdout);
+        cortex_scheduler_set_current_repeat(scheduler, r);
+        if (run_once(ctx, ctx->run_cfg.benchmark.parameters.duration_seconds, first_plugin) != 0) {
+            if (cortex_should_shutdown()) {
+                fprintf(stderr, "[harness] Chain interrupted, preserving telemetry\n");
+                break;
+            }
+            fprintf(stderr, "[harness] chain: repeat %u failed\n", r);
+            goto chain_cleanup;
+        }
+    }
+
+    /* Write per-plugin telemetry (filter by plugin_name from the shared buffer) */
+    {
+        size_t telemetry_end_count = ctx->telemetry.count;
+        if (telemetry_end_count > telemetry_start_count) {
+            cortex_system_info_t sysinfo;
+            if (cortex_collect_system_info(&sysinfo) != 0)
+                memset(&sysinfo, 0, sizeof(sysinfo));
+            if (registered_count > 0) {
+                strncpy(sysinfo.device_hostname, device_results[0].device_hostname,
+                        sizeof(sysinfo.device_hostname) - 1);
+                strncpy(sysinfo.device_cpu, device_results[0].device_cpu,
+                        sizeof(sysinfo.device_cpu) - 1);
+                strncpy(sysinfo.device_os, device_results[0].device_os,
+                        sizeof(sysinfo.device_os) - 1);
+            }
+
+            const char *format = ctx->run_cfg.output.format;
+            const char *ext = (strcmp(format, "ndjson") == 0) ? "ndjson" : "csv";
+
+            /* Write per-plugin filtered telemetry */
+            for (size_t i = 0; i < ctx->run_cfg.plugin_count; i++) {
+                if (strcmp(ctx->run_cfg.plugins[i].status, "ready") != 0) continue;
+                const char *pname = ctx->run_cfg.plugins[i].name;
+
+                char plugin_output_dir[1024];
+                snprintf(plugin_output_dir, sizeof(plugin_output_dir),
+                         "%s/kernel-data/%s", ctx->run_cfg.output.directory, pname);
+
+                char tpath[1024];
+                snprintf(tpath, sizeof(tpath), "%s/telemetry.%s", plugin_output_dir, ext);
+
+                /* Filter records by plugin name */
+                cortex_telemetry_buffer_t filtered = {0};
+                if (cortex_telemetry_init(&filtered, 1024) != 0) continue;
+
+                for (size_t r = telemetry_start_count; r < telemetry_end_count; r++) {
+                    if (strcmp(ctx->telemetry.records[r].plugin_name, pname) == 0) {
+                        cortex_telemetry_add(&filtered, &ctx->telemetry.records[r]);
+                    }
+                }
+
+                if (filtered.count > 0) {
+                    printf("[harness] Writing telemetry: %s (%zu records)\n", tpath, filtered.count);
+                    fflush(stdout);
+                    if (strcmp(format, "ndjson") == 0) {
+                        cortex_telemetry_write_ndjson(tpath, &filtered, &sysinfo);
+                    } else {
+                        cortex_telemetry_write_csv(tpath, &filtered, &sysinfo);
+                    }
+                }
+                cortex_telemetry_free(&filtered);
+            }
+        }
+    }
+
+    /* Cleanup */
+chain_cleanup:
+    cortex_scheduler_destroy(scheduler);
+    ctx->scheduler = NULL;
+    for (size_t i = 0; i < registered_count; i++) {
+        free(calibration_states[i]);
+        device_comm_teardown(device_results[i].handle);
+    }
+
+    return 0;
+}
+
 static void print_usage(const char *argv0) {
     fprintf(stderr, "Usage: %s run <config.yaml>\n", argv0);
 }
@@ -444,7 +641,16 @@ int main(int argc, char **argv) {
         printf("[harness] Filtered to %zu kernel(s)\n", ctx.run_cfg.plugin_count);
     }
 
-    /* Sequential plugin execution */
+    /* Chain mode: all plugins on one scheduler, dispatch_chain handles data flow */
+    if (ctx.run_cfg.chain_mode && ctx.run_cfg.plugin_count > 1) {
+        printf("[harness] Entering chain execution mode (%zu plugins)\n", ctx.run_cfg.plugin_count);
+        if (run_chain(&ctx) != 0) {
+            was_interrupted = 1;
+        }
+        goto post_execution;
+    }
+
+    /* Sequential plugin execution (default) */
     for (size_t i = 0; i < ctx.run_cfg.plugin_count; i++) {
         /* Check for shutdown signal before starting next plugin */
         if (cortex_should_shutdown()) {
@@ -472,6 +678,7 @@ int main(int argc, char **argv) {
         }
     }
 
+post_execution:
     /* Check for shutdown one final time before report generation */
     if (cortex_should_shutdown() && !was_interrupted) {
         fprintf(stderr, "[harness] Shutdown requested before report generation\n");

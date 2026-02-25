@@ -250,6 +250,86 @@ class TelemetryAnalyzer:
 
         return stats
 
+    def calculate_chain_statistics(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Calculate per-stage latency statistics for chained pipeline runs.
+
+        Groups telemetry by stage_index (set by dispatch_chain in scheduler.c),
+        computes per-stage latency stats, percentage contribution, and
+        end-to-end latency per window.
+
+        Args:
+            df: Telemetry DataFrame with 'stage_index', 'latency_us', 'warmup' columns
+
+        Returns:
+            DataFrame with per-stage statistics, or None if not a chain run
+        """
+        if 'stage_index' not in df.columns:
+            self.log.info("No stage_index column; not a chain run")
+            return None
+
+        # Filter warmup and non-chain records (0xFFFFFFFF = not chained)
+        df_chain = df[(df['warmup'] == 0) & (df['stage_index'] != 0xFFFFFFFF)].copy()
+        if df_chain.empty:
+            self.log.info("No chained telemetry records found")
+            return None
+
+        # Per-stage statistics
+        stage_stats = df_chain.groupby('stage_index').agg({
+            'latency_us': [
+                'mean',
+                'median',
+                ('p95', lambda x: x.quantile(0.95)),
+                ('p99', lambda x: x.quantile(0.99)),
+            ],
+            'plugin': 'first',
+        })
+
+        # Flatten column names
+        stage_stats.columns = [
+            f'{col[0]}_{col[1]}' if col[1] and col[1] != 'first' else col[0]
+            for col in stage_stats.columns
+        ]
+
+        # Rename plugin column
+        if 'plugin' in stage_stats.columns:
+            stage_stats = stage_stats.rename(columns={'plugin': 'kernel'})
+
+        # Calculate end-to-end latency per window (sum of all stages)
+        e2e = df_chain.groupby('window_index')['latency_us'].sum()
+        e2e_stats = {
+            'e2e_mean': float(e2e.mean()),
+            'e2e_p50': float(e2e.median()),
+            'e2e_p95': float(e2e.quantile(0.95)),
+            'e2e_p99': float(e2e.quantile(0.99)),
+        }
+
+        # Calculate percentage contribution per stage
+        total_mean = stage_stats['latency_us_mean'].sum()
+        if total_mean > 0:
+            stage_stats['pct_contribution'] = (
+                stage_stats['latency_us_mean'] / total_mean * 100
+            )
+        else:
+            stage_stats['pct_contribution'] = 0.0
+
+        # Sort by stage index
+        stage_stats = stage_stats.sort_index()
+
+        # Log the pipeline summary
+        kernels = stage_stats['kernel'].tolist()
+        self.log.info(f"Pipeline: {' -> '.join(kernels)}")
+        self.log.info(f"End-to-end P50: {e2e_stats['e2e_p50']:.1f} us")
+        for idx, row in stage_stats.iterrows():
+            self.log.info(
+                f"  {row['kernel']:<20s} {row['latency_us_mean']:>8.1f} us  "
+                f"({row['pct_contribution']:>5.1f}%)"
+            )
+
+        # Attach e2e stats as metadata
+        stage_stats.attrs['e2e'] = e2e_stats
+
+        return stage_stats
+
     def plot_latency_comparison(self, df: pd.DataFrame, output_path: str,
                                 format: str = 'png') -> bool:
         """Generate latency comparison bar chart.

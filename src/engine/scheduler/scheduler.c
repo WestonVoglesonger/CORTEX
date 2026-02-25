@@ -684,6 +684,12 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
 
     const float *current_input = window_data;
 
+    /* Track current dimensions across chain stages (SE-8 shape propagation fix).
+     * Stage 0 uses config dimensions; subsequent stages use previous stage's
+     * output dimensions (populated from ACK at device registration). */
+    uint32_t current_W = (uint32_t)scheduler->config.window_length_samples;
+    uint32_t current_C = (uint32_t)scheduler->config.channels;
+
     for (size_t i = 0; i < scheduler->plugin_count; ++i) {
         cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[i];
         void *output = entry->output_buffer;
@@ -709,8 +715,8 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             device,
             (uint32_t)scheduler->window_count,
             current_input,
-            (uint32_t)scheduler->config.window_length_samples,
-            (uint32_t)scheduler->config.channels,
+            current_W,
+            current_C,
             (float *)output,
             entry->output_bytes,
             &device_timing
@@ -759,9 +765,9 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             rec.start_ts_ns = (uint64_t)start_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)start_ts.tv_nsec;
             rec.end_ts_ns = (uint64_t)end_ts.tv_sec * (uint64_t)NSEC_PER_SEC + (uint64_t)end_ts.tv_nsec;
             rec.deadline_missed = deadline_missed;
-            rec.W = scheduler->config.window_length_samples;
+            rec.W = current_W;
             rec.H = scheduler->config.hop_samples;
-            rec.C = scheduler->config.channels;
+            rec.C = current_C;
             rec.Fs = scheduler->config.sample_rate_hz;
             rec.warmup = 0;
             rec.repeat = scheduler->config.current_repeat;
@@ -786,8 +792,10 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             cortex_telemetry_add(buffer, &rec);
         }
 
-        /* Chain output -> next input */
+        /* Chain output -> next input (propagate shape for next stage) */
         current_input = (const float *)output;
+        current_W = entry->output_window_length_samples;
+        current_C = entry->output_channels;
     }
 
     if (scheduler->warmup_windows_remaining > 0) {

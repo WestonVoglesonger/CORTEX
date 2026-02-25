@@ -246,6 +246,16 @@ def execute(args):
 
     # Custom config mode
     if args.config:
+        # Pipeline mode: config with 'pipelines' section triggers concurrent pipeline execution
+        if config_dict and 'pipelines' in config_dict:
+            def run_fn(transport_uri):
+                create_run_structure(run_name)
+                return runner.run_pipelines(
+                    args.config, run_name=run_name, verbose=args.verbose,
+                    transport_uri=transport_uri, device_spec=device_spec,
+                )
+            return _run_with_deploy(deploy_string, run_fn, args.verbose)
+
         def run_fn(transport_uri):
             create_run_structure(run_name)
             return runner.run(
