@@ -101,7 +101,7 @@ def probe_pmu_available(fs, process_executor) -> bool:
     try:
         result = process_executor.run(
             [inscount_path, '--plugin', noop_dir, '--repeats', '1'],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=5,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout.strip())
