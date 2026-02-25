@@ -1,4 +1,5 @@
 """Analyze results command"""
+from pathlib import Path
 from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import get_most_recent_run, get_run_directory, get_analysis_dir
 from cortex.core import ConsoleLogger, RealFileSystemService
@@ -85,14 +86,45 @@ def execute(args):
         telemetry_format=args.telemetry_format
     )
 
-    if success:
+    # Detect and analyze pipeline subdirectories
+    pipe_dirs = sorted(Path(run_dir).glob("pipeline-*"))
+    pipe_success = False
+    if pipe_dirs:
+        print(f"\nDetected {len(pipe_dirs)} pipeline subdirectory(ies)")
+        for pipe_dir in pipe_dirs:
+            if not pipe_dir.is_dir():
+                continue
+            pipe_analyzer = TelemetryAnalyzer(
+                filesystem=filesystem,
+                logger=ConsoleLogger()
+            )
+            pipe_output = str(pipe_dir / "analysis")
+            ok = pipe_analyzer.run_full_analysis(
+                str(pipe_dir),
+                output_dir=pipe_output,
+                plots=args.plots,
+                format=args.format,
+                telemetry_format=args.telemetry_format
+            )
+            status = "OK" if ok else "no data"
+            print(f"  {pipe_dir.name}: {status}")
+            if ok:
+                pipe_success = True
+
+    if success or pipe_success:
         print("\n" + "=" * 80)
         print("Analysis Summary")
         print("=" * 80)
-        print(f"Plots saved to: {output_dir}/")
-        print(f"Summary table: {output_dir}/SUMMARY.md")
-        print("\nView summary:")
-        print(f"  cat {output_dir}/SUMMARY.md")
+        if success:
+            print(f"Plots saved to: {output_dir}/")
+            print(f"Summary table: {output_dir}/SUMMARY.md")
+            print("\nView summary:")
+            print(f"  cat {output_dir}/SUMMARY.md")
+        if pipe_success:
+            for pipe_dir in pipe_dirs:
+                pipe_analysis = pipe_dir / "analysis"
+                if (pipe_analysis / "SUMMARY.md").exists():
+                    print(f"\nPipeline summary: {pipe_analysis}/SUMMARY.md")
         print("=" * 80)
         return 0
     else:

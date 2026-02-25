@@ -555,12 +555,14 @@ class TelemetryAnalyzer:
         finally:
             plt.close('all')
 
-    def generate_summary_table(self, df: pd.DataFrame, output_path: str) -> bool:
+    def generate_summary_table(self, df: pd.DataFrame, output_path: str,
+                               chain_stats: Optional[pd.DataFrame] = None) -> bool:
         """Generate markdown summary table.
 
         Args:
             df: Telemetry DataFrame (raw data with 'warmup' column)
             output_path: Path to save markdown file
+            chain_stats: Per-stage chain statistics from calculate_chain_statistics(), or None
 
         Returns:
             True if table saved successfully, False otherwise
@@ -646,6 +648,33 @@ class TelemetryAnalyzer:
                         f"| {row.get('miss_rate', 'N/A')} "
                         f"| {row.get('total_samples', 'N/A')} "
                         f"| {row.get('deadline_misses', 'N/A')} |\n"
+                    )
+
+            # Add pipeline chain breakdown if available
+            if chain_stats is not None:
+                markdown_lines.append("\n## Pipeline Chain Breakdown\n\n")
+                markdown_lines.append("| Stage | Kernel | Mean | Median | P95 | P99 | Contribution % |\n")
+                markdown_lines.append("|-------|--------|------|--------|-----|-----|----------------|\n")
+
+                for stage_idx, row in chain_stats.iterrows():
+                    markdown_lines.append(
+                        f"| {stage_idx} "
+                        f"| {row['kernel']} "
+                        f"| {row['latency_us_mean']:.2f} "
+                        f"| {row['latency_us_median']:.2f} "
+                        f"| {row['latency_us_p95']:.2f} "
+                        f"| {row['latency_us_p99']:.2f} "
+                        f"| {row['pct_contribution']:.1f} |\n"
+                    )
+
+                e2e = chain_stats.attrs.get('e2e', {})
+                if e2e:
+                    markdown_lines.append(
+                        f"\n**End-to-end latency:** "
+                        f"Mean {e2e['e2e_mean']:.2f} μs | "
+                        f"P50 {e2e['e2e_p50']:.2f} μs | "
+                        f"P95 {e2e['e2e_p95']:.2f} μs | "
+                        f"P99 {e2e['e2e_p99']:.2f} μs\n"
                     )
 
             # Write using DI abstraction
@@ -920,6 +949,7 @@ class TelemetryAnalyzer:
 
         # Calculate statistics
         stats = self.calculate_statistics(df)
+        chain_stats = self.calculate_chain_statistics(df)
 
         # Generate plots
         plot_results = {}
@@ -961,7 +991,7 @@ class TelemetryAnalyzer:
 
         # Generate summary table
         summary_path = f"{output_dir}/SUMMARY.md"
-        summary_success = self.generate_summary_table(df, summary_path)
+        summary_success = self.generate_summary_table(df, summary_path, chain_stats=chain_stats)
 
         # Print summary
         successful_plots = sum(1 for v in plot_results.values() if v)
