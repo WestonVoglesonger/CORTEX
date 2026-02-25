@@ -2,13 +2,14 @@
 
 CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
 """
+import platform
 import sys
 import argparse
 from pathlib import Path
 from cortex.utils.runner import HarnessRunner
 from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import generate_run_name, create_run_structure
-from cortex.utils.device import resolve_device, validate_capabilities
+from cortex.utils.device import resolve_device, validate_capabilities, probe_pmu_available
 from cortex.deploy import DeployerFactory, Deployer, DeploymentError
 from cortex.core import (
     ConsoleLogger,
@@ -173,6 +174,29 @@ def _run_with_deploy(deploy_string, run_fn, verbose):
             print(f"Cleanup issues: {cleanup_result.errors}")
 
 
+def _check_preflight(filesystem, process_executor):
+    """Print pre-flight tips: build status and PMU availability.
+
+    Non-blocking, silent on success. Runs before benchmark dispatch.
+    """
+    # Build tip
+    if not filesystem.exists('src/engine/harness/cortex'):
+        print("Tip: Harness not built. Run `make all` first, "
+              "then `cortex check-system` to verify setup.")
+        return  # No point checking PMU if not built
+
+    # PMU warning
+    if not probe_pmu_available(filesystem, process_executor):
+        system = platform.system()
+        if system == 'Darwin':
+            print("Note: PMU counters unavailable. Run with `sudo` "
+                  "for instruction/cycle data. Latency benchmarks are valid without PMU.")
+        elif system == 'Linux':
+            print("Note: PMU counters unavailable. One-time fix: "
+                  "`sudo setcap cap_perfmon=ep <adapter_path>`. "
+                  "Latency benchmarks are valid without PMU.")
+
+
 def _analyze_pipeline_run(run_dir, filesystem):
     """Run per-pipeline analysis on pipeline-* subdirectories.
 
@@ -270,6 +294,9 @@ def execute(args):
         tool_locator=SystemToolLocator(),
         logger=ConsoleLogger()
     )
+
+    # Pre-flight checks (non-blocking tips)
+    _check_preflight(filesystem, SubprocessExecutor())
 
     # Custom config mode
     if args.config:

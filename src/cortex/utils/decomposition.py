@@ -6,6 +6,7 @@ Provides:
 """
 import json
 import logging
+import platform
 import yaml
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -16,6 +17,16 @@ from cortex.utils.instruction_analyzer import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _pmu_unavailable_reason() -> str:
+    """Platform-specific guidance for missing PMU data."""
+    system = platform.system()
+    if system == 'Darwin':
+        return "no PMU data (run with sudo for instruction/cycle counts)"
+    elif system == 'Linux':
+        return "no PMU data (one-time fix: sudo setcap cap_perfmon=ep <adapter_path>)"
+    return "no PMU data"
 
 
 # ---------------------------------------------------------------------------
@@ -273,9 +284,10 @@ def characterize_kernel(
             unavailable["effective_freq_ghz"] = "no valid cycle/wall-time pairs"
             unavailable["frequency_tax_pct"] = "no valid cycle/wall-time pairs"
     else:
-        unavailable["ipc"] = "no PMU data"
-        unavailable["effective_freq_ghz"] = "no PMU data"
-        unavailable["frequency_tax_pct"] = "no PMU data"
+        reason = _pmu_unavailable_reason()
+        unavailable["ipc"] = reason
+        unavailable["effective_freq_ghz"] = reason
+        unavailable["frequency_tax_pct"] = reason
 
     # --- 9. Backend stall decomposition ---
     backend_stall_pct = None
@@ -306,7 +318,7 @@ def characterize_kernel(
     elif has_pmu:
         unavailable["backend_stall_pct"] = "no backend stall data"
     else:
-        unavailable["backend_stall_pct"] = "no PMU data"
+        unavailable["backend_stall_pct"] = _pmu_unavailable_reason()
 
     return CharacterizationResult(
         kernel_name=kernel_name,

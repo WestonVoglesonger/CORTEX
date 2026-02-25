@@ -5,6 +5,7 @@ distribution landmarks, and optional PMU enrichment. Every platform gets
 a characterization; richer platforms get richer output.
 """
 import json
+import platform
 
 from cortex.core import ConsoleLogger, RealFileSystemService, YamlConfigLoader
 from cortex.utils.analyzer import TelemetryAnalyzer
@@ -100,6 +101,17 @@ def execute(args):
     has_stall = (has_pmu
                  and 'pmu_backend_stall_cycles' in df_real.columns
                  and df_real['pmu_backend_stall_cycles'].sum() > 0)
+
+    if not has_pmu:
+        system = platform.system()
+        if system == 'Darwin':
+            hint = "Run with `sudo` for instruction/cycle counts."
+        elif system == 'Linux':
+            hint = "One-time fix: `sudo setcap cap_perfmon=ep <adapter_path>`."
+        else:
+            hint = ""
+        print(f"\nPMU data: Not available. {hint}".rstrip())
+        print("Latency characterization proceeds without compute/memory decomposition.\n")
 
     # Extract benchmark parameters from telemetry
     window_length = int(df_real['W'].iloc[0]) if 'W' in df_real.columns and not df_real.empty else 160

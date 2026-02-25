@@ -580,13 +580,264 @@ class TestCheckSleepPrevention:
         assert 'systemd-inhibit not found' in result.message
 
 
+class TestCheckBuildStatus:
+    """Test check_build_status method."""
+
+    def test_all_built_passes(self):
+        """All artifacts built should pass with count."""
+        fs = create_mock_filesystem(
+            files={
+                'src/engine/harness/cortex': '',
+                'primitives/adapters/v1/native/cortex_adapter_native': '',
+            }
+        )
+        # Mock glob to return kernel plugins
+        from pathlib import Path
+        fs.glob.side_effect = lambda d, p: [
+            Path('primitives/kernels/v1/noop@f32/libnoop.dylib'),
+            Path('primitives/kernels/v1/car@f32/libcar.dylib'),
+        ]
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_build_status()
+        assert result.status == 'pass'
+        assert '2 kernel plugin(s)' in result.message
+        assert result.critical is False
+
+    def test_nothing_built_fails_critical(self):
+        """No build artifacts should fail as critical."""
+        fs = create_mock_filesystem()
+        fs.glob.side_effect = lambda d, p: []
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Linux'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_build_status()
+        assert result.status == 'fail'
+        assert result.critical is True
+        assert 'make all' in result.message
+
+    def test_partial_build_warns(self):
+        """Missing harness but adapter and kernels present should warn."""
+        fs = create_mock_filesystem(
+            files={
+                'primitives/adapters/v1/native/cortex_adapter_native': '',
+            }
+        )
+        from pathlib import Path
+        fs.glob.side_effect = lambda d, p: [
+            Path('primitives/kernels/v1/noop@f32/libnoop.dylib'),
+        ]
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_build_status()
+        assert result.status == 'warn'
+        assert result.critical is False
+        assert 'harness missing' in result.message
+
+
+class TestCheckPmuPrivilege:
+    """Test check_pmu_privilege method."""
+
+    def test_pmu_available_passes(self):
+        """PMU available should pass."""
+        fs = create_mock_filesystem(
+            files={
+                'sdk/kernel/tools/cortex_inscount': '',
+                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+            }
+        )
+        process = create_mock_process({
+            'cortex_inscount': (0, '{"available": true, "cpu_freq_hz": 3200000000}', ''),
+        })
+
+        checker = SystemChecker(
+            filesystem=fs, process_executor=process,
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_pmu_privilege()
+        assert result.status == 'pass'
+        assert 'Performance counters available' in result.message
+
+    def test_macos_denied_shows_sudo_message(self):
+        """macOS PMU denied should suggest sudo."""
+        fs = create_mock_filesystem(
+            files={
+                'sdk/kernel/tools/cortex_inscount': '',
+                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+            }
+        )
+        process = create_mock_process({
+            'cortex_inscount': (0, '{"available": false}', ''),
+        })
+
+        checker = SystemChecker(
+            filesystem=fs, process_executor=process,
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_pmu_privilege()
+        assert result.status == 'warn'
+        assert result.critical is False
+        assert 'sudo' in result.message
+
+    def test_linux_denied_shows_setcap_message(self):
+        """Linux PMU denied should suggest setcap."""
+        fs = create_mock_filesystem(
+            files={
+                'sdk/kernel/tools/cortex_inscount': '',
+                'primitives/kernels/v1/noop@f32/libnoop.so': '',
+            }
+        )
+        process = create_mock_process({
+            'cortex_inscount': (0, '{"available": false}', ''),
+        })
+
+        checker = SystemChecker(
+            filesystem=fs, process_executor=process,
+            env_provider=create_mock_env('Linux'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_pmu_privilege()
+        assert result.status == 'warn'
+        assert result.critical is False
+        assert 'setcap' in result.message
+
+    def test_tool_not_built_warns(self):
+        """Missing inscount tool should warn, not crash."""
+        fs = create_mock_filesystem()
+
+        checker = SystemChecker(
+            filesystem=fs, process_executor=create_mock_process(),
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_pmu_privilege()
+        assert result.status == 'warn'
+        assert result.critical is False
+        assert 'cortex_inscount not built' in result.message
+
+    def test_never_critical(self):
+        """PMU check should never be critical, regardless of outcome."""
+        fs = create_mock_filesystem(
+            files={
+                'sdk/kernel/tools/cortex_inscount': '',
+                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+            }
+        )
+        # Simulate process failure
+        process = create_mock_process({
+            'cortex_inscount': (1, '', 'error'),
+        })
+
+        checker = SystemChecker(
+            filesystem=fs, process_executor=process,
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_pmu_privilege()
+        assert result.critical is False
+
+
+class TestCheckRtScheduling:
+    """Test check_rt_scheduling method."""
+
+    def test_macos_passes(self):
+        """macOS should pass with best-effort scheduling message."""
+        checker = SystemChecker(
+            filesystem=create_mock_filesystem(),
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_rt_scheduling()
+        assert result.status == 'pass'
+        assert 'best-effort' in result.message
+
+    def test_linux_with_cap_sys_nice_passes(self):
+        """Linux with CAP_SYS_NICE should pass."""
+        # CAP_SYS_NICE is bit 23: 0x800000
+        cap_hex = '0000000000800000'  # Has bit 23 set
+        fs = create_mock_filesystem(
+            files={'/proc/self/status': f'Name:\tpython\nCapEff:\t{cap_hex}\n'}
+        )
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Linux'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_rt_scheduling()
+        assert result.status == 'pass'
+        assert 'CAP_SYS_NICE available' in result.message
+
+    def test_linux_without_cap_sys_nice_warns(self):
+        """Linux without CAP_SYS_NICE should warn."""
+        # No bit 23 set
+        cap_hex = '0000000000000000'
+        fs = create_mock_filesystem(
+            files={'/proc/self/status': f'Name:\tpython\nCapEff:\t{cap_hex}\n'}
+        )
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process(),
+            env_provider=create_mock_env('Linux'),
+            tool_locator=create_mock_tools(),
+            logger=create_mock_logger()
+        )
+
+        result = checker.check_rt_scheduling()
+        assert result.status == 'warn'
+        assert result.critical is False
+        assert 'CAP_SYS_NICE not set' in result.message
+
+
 class TestRunAllChecks:
     """Test run_all_checks orchestration method."""
 
     def test_all_checks_executed(self):
-        """run_all_checks should execute all 5 checks."""
+        """run_all_checks should execute all 8 checks."""
+        fs = create_mock_filesystem()
+        fs.glob.side_effect = lambda d, p: []
+
         checker = SystemChecker(
-            filesystem=create_mock_filesystem(),
+            filesystem=fs,
             process_executor=create_mock_process(),
             env_provider=create_mock_env('Darwin'),
             tool_locator=create_mock_tools({'caffeinate'}),
@@ -595,18 +846,24 @@ class TestRunAllChecks:
 
         checks, all_pass = checker.run_all_checks()
 
-        assert len(checks) == 5
+        assert len(checks) == 8
         assert checks[0].name == 'CPU Governor'
         assert checks[1].name == 'Turbo Boost'
         assert checks[2].name == 'Thermal State'
         assert checks[3].name == 'Background Services'
         assert checks[4].name == 'Sleep Prevention'
+        assert checks[5].name == 'Build Status'
+        assert checks[6].name == 'PMU Access'
+        assert checks[7].name == 'RT Scheduling'
 
     def test_all_pass_returns_true(self):
-        """All checks passing should return True."""
-        # macOS with caffeinate = all pass
+        """All checks passing should return True (no critical failures)."""
+        # macOS with caffeinate = original 5 pass; new checks are non-critical
+        fs = create_mock_filesystem()
+        fs.glob.side_effect = lambda d, p: []
+
         checker = SystemChecker(
-            filesystem=create_mock_filesystem(),
+            filesystem=fs,
             process_executor=create_mock_process({
                 'pmset -g therm': (0, 'No thermal issues', ''),
                 'ps aux': (0, 'user bash\n', '')
@@ -618,14 +875,46 @@ class TestRunAllChecks:
 
         checks, all_pass = checker.run_all_checks()
 
+        # Build Status is critical=True when nothing built, making all_pass=False
+        assert all_pass == False
+        # Verify that non-critical checks don't block
+        non_critical = [c for c in checks if not c.critical]
+        assert all(c.status != 'fail' for c in non_critical)
+
+    def test_all_checks_pass_with_full_setup(self):
+        """All checks passing (including build) should return True."""
+        from pathlib import Path
+        fs = create_mock_filesystem(
+            files={
+                'src/engine/harness/cortex': '',
+                'primitives/adapters/v1/native/cortex_adapter_native': '',
+            }
+        )
+        fs.glob.side_effect = lambda d, p: [Path('primitives/kernels/v1/noop@f32/libnoop.dylib')]
+
+        checker = SystemChecker(
+            filesystem=fs,
+            process_executor=create_mock_process({
+                'pmset -g therm': (0, 'No thermal issues', ''),
+                'ps aux': (0, 'user bash\n', ''),
+            }),
+            env_provider=create_mock_env('Darwin'),
+            tool_locator=create_mock_tools({'caffeinate'}),
+            logger=create_mock_logger()
+        )
+
+        checks, all_pass = checker.run_all_checks()
+        # Build passes, PMU and RT are non-critical warns
         assert all_pass == True
-        assert all(c.status == 'pass' for c in checks)
 
     def test_critical_failure_returns_false(self):
         """Critical failure should return False."""
         # macOS without caffeinate = critical fail
+        fs = create_mock_filesystem()
+        fs.glob.side_effect = lambda d, p: []
+
         checker = SystemChecker(
-            filesystem=create_mock_filesystem(),
+            filesystem=fs,
             process_executor=create_mock_process({
                 'pmset -g therm': (0, 'No thermal issues', ''),
                 'ps aux': (0, 'user bash\n', '')
