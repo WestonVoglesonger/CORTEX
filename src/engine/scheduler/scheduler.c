@@ -722,13 +722,16 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             &device_timing
         );
 
+        /* Capture timing unconditionally (before checking ret) so failed
+         * stages still produce telemetry records with valid timestamps. */
+        clock_gettime(CLOCK_MONOTONIC, &end_ts);
+        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
+
         if (ret < 0) {
             fprintf(stderr, "[scheduler] chain stage %zu failed: %d (plugin=%s)\n",
                     i, ret, entry->plugin_name);
             window_failed = 1;
             error_code = ret;
-            /* On failure, stop chain for this window */
-            break;
         } else {
             device_tin_ns = device_timing.tin;
             device_tstart_ns = device_timing.tstart;
@@ -741,11 +744,6 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             pmu.instruction_count = device_timing.pmu_instruction_count;
             pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
         }
-
-        clock_gettime(CLOCK_MONOTONIC, &end_ts);
-
-        /* Collect osnoise after stage */
-        if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
 
         int deadline_missed = 0;
         if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
@@ -769,7 +767,7 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             rec.H = scheduler->config.hop_samples;
             rec.C = current_C;
             rec.Fs = scheduler->config.sample_rate_hz;
-            rec.warmup = 0;
+            rec.warmup = (scheduler->warmup_windows_remaining > 0) ? 1 : 0;
             rec.repeat = scheduler->config.current_repeat;
             rec.device_tin_ns = device_tin_ns;
             rec.device_tstart_ns = device_tstart_ns;
@@ -791,6 +789,9 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
 
             cortex_telemetry_add(buffer, &rec);
         }
+
+        /* Stop chain after recording the failure */
+        if (window_failed) break;
 
         /* Chain output -> next input (propagate shape for next stage) */
         current_input = (const float *)output;
