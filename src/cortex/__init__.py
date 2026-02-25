@@ -15,7 +15,7 @@ def main():
     from cortex.commands import (
         build, run, analyze, pipeline,
         list_kernels, validate, clean, check_system, calibrate, generate,
-        check_deadline, compare, predict, decompose, profile
+        check_deadline, compare, predict, decompose,
     )
 
     parser = argparse.ArgumentParser(
@@ -100,10 +100,6 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     decompose_parser = subparsers.add_parser('decompose', help='Decompose measured latency into components')
     decompose.setup_parser(decompose_parser)
 
-    # Profile command (orchestrator: predict -> run -> attribute)
-    profile_parser = subparsers.add_parser('profile', help='Full latency profiling (predict + run + attribute)')
-    profile.setup_parser(profile_parser)
-
     args = parser.parse_args()
 
     if not args.command:
@@ -140,8 +136,6 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(predict.execute(args))
         elif args.command == 'decompose':
             sys.exit(decompose.execute(args))
-        elif args.command == 'profile':
-            sys.exit(profile.execute(args))
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
         sys.exit(130)

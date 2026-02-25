@@ -183,16 +183,6 @@ cortex compare --runs baseline optimized --metric p99
 
 ---
 
-### `cortex profile`
-Kernel profiling with PMU instruction counts for performance analysis.
-
-```bash
-cortex profile --kernel goertzel --device m1-asahi
-cortex profile --kernel car --duration 30
-```
-
----
-
 ### `cortex check-deadline`
 CI gating command for real-time deadline compliance. Returns non-zero exit code if deadline miss rate exceeds threshold.
 

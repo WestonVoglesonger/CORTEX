@@ -136,7 +136,6 @@ cortex validate --kernel <name>   # Oracle validation (--kernel is REQUIRED)
 cortex predict        # Static pre-benchmark latency prediction
 cortex decompose      # Post-benchmark latency decomposition
 cortex compare        # Compare benchmark runs across kernels or devices
-cortex profile        # Kernel profiling with PMU instruction counts
 cortex check-deadline # CI gating for real-time deadline compliance
 
 # Utilities
@@ -293,7 +292,7 @@ results/                   # Generated benchmark outputs (gitignored)
 - `cortex predict` — static pre-benchmark latency prediction
 - `cortex decompose` — compute/memory/overhead breakdown with PMU data
 - `cortex compare` — cross-run comparison
-- `cortex profile` — kernel profiling with PMU instruction counts
+- `cortex plot` — latency distribution visualizations
 - `cortex check-deadline` — CI gating for real-time deadline compliance
 
 **Dependency Injection (CRIT-004):**
@@ -565,13 +564,16 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 - ✅ CSP kernel (trainable, ABI v3)
 - ✅ CRIT-001 through CRIT-004: Critical reliability improvements
 - ✅ Device adapter infrastructure (transport API, protocol, universal adapter model)
-- ✅ Full CLI command suite (16 subcommands)
+- ✅ Full CLI command suite (15 subcommands)
 - ✅ Repository reorganization (14→7 directories)
+- ✅ Generator dataset support in pipeline mode (SE-8 follow-up)
+- ✅ C engine hardening (chain failure telemetry, cleanup paths)
+- ✅ Removed dead `cortex profile` orchestrator command
 
 **Next Up:**
-- Generator dataset support in pipeline mode (SE-8 follow-up)
-- Documentation updates (5 undocumented CLI commands, FAQ fixes)
-- C engine hardening (chain failure telemetry, cleanup paths)
+- SE-7: Tail-latency attribution (P99/P50 platform vs algorithmic decomposition)
+- Advanced kernel optimization (SIMD, hardware-specific — due Mar 30)
+- Extended device adapter support (due Apr 15)
 
 **Future:**
 - Q15/Q7 quantized data type support (Spring 2026)
