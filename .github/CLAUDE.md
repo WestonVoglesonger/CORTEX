@@ -16,7 +16,7 @@ These rules are **inviolable**. Violating them breaks measurement validity or sy
 
 4. **Primitives are immutable**: Files in `primitives/kernels/v{version}/` and `primitives/datasets/v{version}/` are NEVER modified after release. Create new version directories instead (e.g., `v2/car@f32/`, `v2/physionet-motor-imagery/`).
 
-5. **Sequential execution only**: Run one kernel at a time. Parallel execution violates measurement isolation and produces unreproducible results.
+5. **Sequential execution for kernel benchmarks**: Run one kernel at a time in `--kernel` and `--all` modes. Parallel execution violates measurement isolation. Exception: **pipeline mode** (`pipelines:` config) runs pipelines concurrently to reflect production conditions where multiple processing chains share hardware resources.
 
 6. **ABI version enforcement**: Plugins MUST check `config->abi_version == CORTEX_ABI_VERSION (3)` in `cortex_init()` and reject mismatches. v2 kernels are backward compatible with v3 harness.
 
@@ -285,7 +285,7 @@ results/              # Generated benchmark outputs (gitignored)
 | **Calibration state** | Serialized model parameters (e.g., ICA unmixing matrix, CSP filters) stored in `.cortex_state` files |
 | **Capability flags** | Bitmask advertising kernel features (`CORTEX_CAP_OFFLINE_CALIB`, reserved for v4 online adaptation, v5 hybrid) |
 | **Parameter accessor API** | Type-safe functions for extracting runtime configuration from `kernel_params` string (cortex_param_float, _int, _string, _bool) |
-| **Sequential execution** | Kernels run one-at-a-time for measurement isolation (not parallel) |
+| **Sequential execution** | Kernels run one-at-a-time for measurement isolation in benchmark mode. Pipeline mode runs concurrently to match production conditions. |
 | **Dataset primitive** | Versioned, immutable dataset with spec.yaml metadata (e.g., `primitives/datasets/v1/physionet-motor-imagery/`) |
 | **Generator primitive** | Dataset defined as parametric function producing data on-demand (vs static pre-recorded files). Returns (path, params) → data. Example: `primitives/datasets/v1/synthetic` |
 | **Device adapter** | Abstraction for running kernels on different hardware targets (future: STM32, Jetson) |
@@ -333,12 +333,16 @@ Follow **Lampson's STEADY**: Simplicity, Timely, Dependability, Adaptability, De
 - ✗ scheduler → harness (wrong direction)
 - ✗ telemetry → scheduler (wrong direction)
 
-**Sequential execution (NOT parallel):**
+**Kernel benchmark mode: sequential execution (NOT parallel):**
 Each kernel runs in isolation with dedicated resources to prevent:
 - CPU core contention
 - Memory bandwidth competition
 - Cache invalidation
 - Non-reproducible measurements
+
+**Pipeline mode: concurrent execution (matches production):**
+Pipelines run concurrently because production BCI systems process multiple
+chains simultaneously. Resource contention is the signal, not noise.
 
 **Data flow:**
 ```
