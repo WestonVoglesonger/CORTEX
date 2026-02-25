@@ -1,6 +1,8 @@
 """Compare two benchmark runs with statistical analysis."""
 from pathlib import Path
 
+import pandas as pd
+
 from cortex.core import ConsoleLogger, RealFileSystemService
 from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import get_run_directory
@@ -132,7 +134,7 @@ def execute(args):
 
     for _, row in comparison.iterrows():
         change_str = f"{row['relative_change_pct']:+.2f}%"
-        d_str = f"{abs(row['cohens_d']):.3f}" if row.get('cohens_d') is not None else "N/A"
+        d_str = f"{abs(row['cohens_d']):.3f}" if pd.notna(row.get('cohens_d')) else "N/A"
         b_p50 = f"{row['baseline_p50']:.1f}" if 'baseline_p50' in row else "N/A"
         c_p50 = f"{row['candidate_p50']:.1f}" if 'candidate_p50' in row else "N/A"
         b_p99 = f"{row['baseline_p99']:.1f}" if 'baseline_p99' in row else "N/A"
@@ -239,8 +241,8 @@ def _generate_markdown_report(comparison, output_path, args, baseline_dir, candi
                  "|---------:|----------:|:------:|--------:|:-------:|\n")
 
     for _, row in comparison.iterrows():
-        p_str = f"{row['p_value']:.4f}" if row.get('p_value') is not None else "N/A"
-        d_str = f"{row['cohens_d']:.3f}" if row.get('cohens_d') is not None else "N/A"
+        p_str = f"{row['p_value']:.4f}" if pd.notna(row.get('p_value')) else "N/A"
+        d_str = f"{row['cohens_d']:.3f}" if pd.notna(row.get('cohens_d')) else "N/A"
         effect = row.get('effect_size_label', 'N/A')
         verdict = row.get('verdict', 'N/A')
         b_p50 = f"{row['baseline_p50']:.2f}" if 'baseline_p50' in row.index else "N/A"

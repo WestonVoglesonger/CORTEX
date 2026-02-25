@@ -943,7 +943,7 @@ class TelemetryAnalyzer:
                 verdict = "NOISE"
             elif abs_d is not None and abs_d < 0.2:
                 verdict = "NEGLIGIBLE"
-            elif c_mean < b_mean:
+            elif c_p50 < b_p50:
                 verdict = "IMPROVED"
             else:
                 verdict = "REGRESSED"

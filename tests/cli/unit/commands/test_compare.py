@@ -135,6 +135,7 @@ class TestCompareRuns:
         assert row['baseline_p99'] > row['baseline_p50']
 
     def test_compare_runs_effect_size_large(self):
+        pytest.importorskip('scipy')
         from cortex.utils.analyzer import TelemetryAnalyzer
 
         fs = Mock()
@@ -159,6 +160,7 @@ class TestCompareRuns:
         assert result.iloc[0]['effect_size_label'] == 'large'
 
     def test_compare_runs_verdict_improved(self):
+        pytest.importorskip('scipy')
         from cortex.utils.analyzer import TelemetryAnalyzer
 
         fs = Mock()
@@ -183,6 +185,7 @@ class TestCompareRuns:
         assert result.iloc[0]['verdict'] == 'IMPROVED'
 
     def test_compare_runs_verdict_regressed(self):
+        pytest.importorskip('scipy')
         from cortex.utils.analyzer import TelemetryAnalyzer
 
         fs = Mock()
@@ -207,6 +210,7 @@ class TestCompareRuns:
         assert result.iloc[0]['verdict'] == 'REGRESSED'
 
     def test_compare_runs_verdict_negligible(self):
+        pytest.importorskip('scipy')
         from cortex.utils.analyzer import TelemetryAnalyzer
 
         fs = Mock()
@@ -234,6 +238,7 @@ class TestCompareRuns:
         assert row['verdict'] == 'NEGLIGIBLE'
 
     def test_compare_runs_verdict_noise(self):
+        pytest.importorskip('scipy')
         from cortex.utils.analyzer import TelemetryAnalyzer
 
         fs = Mock()
