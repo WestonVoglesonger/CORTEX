@@ -305,13 +305,17 @@ class TelemetryAnalyzer:
         stages_per_window = df_chain.groupby('window_index')['stage_index'].nunique()
         complete_windows = stages_per_window[stages_per_window == n_stages].index
         df_complete = df_chain[df_chain['window_index'].isin(complete_windows)]
-        e2e = df_complete.groupby('window_index')['latency_us'].sum()
-        e2e_stats = {
-            'e2e_mean': float(e2e.mean()),
-            'e2e_p50': float(e2e.median()),
-            'e2e_p95': float(e2e.quantile(0.95)),
-            'e2e_p99': float(e2e.quantile(0.99)),
-        }
+        if df_complete.empty:
+            self.log.warning("No complete chain windows found; e2e stats unavailable")
+            e2e_stats = {'e2e_mean': 0.0, 'e2e_p50': 0.0, 'e2e_p95': 0.0, 'e2e_p99': 0.0}
+        else:
+            e2e = df_complete.groupby('window_index')['latency_us'].sum()
+            e2e_stats = {
+                'e2e_mean': float(e2e.mean()),
+                'e2e_p50': float(e2e.median()),
+                'e2e_p95': float(e2e.quantile(0.95)),
+                'e2e_p99': float(e2e.quantile(0.99)),
+            }
 
         # Calculate percentage contribution per stage
         total_mean = stage_stats['latency_us_mean'].sum()

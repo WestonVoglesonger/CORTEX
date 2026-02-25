@@ -62,6 +62,8 @@ def generate_temp_config(
     """
     # Load base config
     config = load_base_config(base_config_path)
+    if not isinstance(config, dict):
+        raise ValueError(f"Config file {base_config_path!r} is empty or not a YAML mapping")
 
     # Apply benchmark parameter overrides
     if duration is not None:

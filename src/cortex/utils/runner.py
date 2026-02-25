@@ -595,6 +595,8 @@ class HarnessRunner:
         try:
             for pipe_def in pipelines:
                 pipe_name = pipe_def.get('name', 'unnamed')
+                # Sanitize name for safe directory creation
+                pipe_name = pipe_name.replace('/', '_').replace(' ', '_')
                 kernels = pipe_def.get('kernels', [])
 
                 # Deduplicate names to prevent output directory collisions
