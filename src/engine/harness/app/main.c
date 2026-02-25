@@ -542,8 +542,6 @@ static int run_chain(harness_context_t *ctx) {
 
     if (ret != 0) goto chain_cleanup;
 
-    ret = 0;
-
 chain_cleanup:
     cortex_scheduler_destroy(scheduler);
     ctx->scheduler = NULL;
