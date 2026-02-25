@@ -576,6 +576,26 @@ class HarnessRunner:
         run_dir = get_run_directory(run_name)
         self.fs.mkdir(run_dir, parents=True, exist_ok=True)
 
+        # Resolve generator-based datasets (shared across all pipelines)
+        from cortex.generators import process_config_with_generators, save_generation_manifest, cleanup_temp_files
+
+        manifest = None
+        gen_temp_files = []
+        try:
+            actual_config_path, manifest, gen_temp_files = process_config_with_generators(
+                config_path, str(run_dir)
+            )
+            if manifest:
+                self.log.info(f"Generator resolved: {manifest['output']['channels']}ch, "
+                              f"{manifest['output']['duration_s']}s")
+        except Exception as e:
+            self.log.error(f"Generator execution failed ({type(e).__name__}): {e}")
+            try:
+                cleanup_temp_files(gen_temp_files)
+            except Exception:
+                pass
+            return None
+
         # Save device spec once at run level
         if device_spec is not None:
             device_yaml_path = f"{run_dir}/device.yaml"
@@ -619,7 +639,7 @@ class HarnessRunner:
 
                 # Generate temp config with this pipeline's kernel list
                 temp_config = generate_temp_config(
-                    base_config_path=config_path,
+                    base_config_path=actual_config_path,
                     kernel_filter=kernels,
                     duration=duration,
                     repeats=repeats,
@@ -753,6 +773,17 @@ class HarnessRunner:
                     os.unlink(tc)
                 except Exception:
                     pass
+
+            # Save generation manifest before cleanup
+            if manifest:
+                try:
+                    save_generation_manifest(manifest, str(run_dir))
+                except Exception as e:
+                    self.log.warning(f"Failed to save generation manifest: {e}")
+
+            # Clean up generator temp files
+            if gen_temp_files:
+                cleanup_temp_files(gen_temp_files)
 
             # Stop sleep prevention
             self._stop_sleep_prevention(caffeinate_proc)
