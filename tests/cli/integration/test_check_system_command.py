@@ -43,8 +43,8 @@ class TestSystemCheckerIntegration:
         # Act - Run all checks with real dependencies
         checks, all_pass = self.checker.run_all_checks()
 
-        # Assert - Should return 5 checks (one for each check method)
-        assert len(checks) == 5
+        # Assert - Should return 8 checks (one for each check method)
+        assert len(checks) == 8
 
         # Verify all checks have proper structure
         for check in checks:
@@ -54,7 +54,10 @@ class TestSystemCheckerIntegration:
                 'Turbo Boost',
                 'Thermal State',
                 'Background Services',
-                'Sleep Prevention'
+                'Sleep Prevention',
+                'Build Status',
+                'PMU Access',
+                'RT Scheduling',
             ]
             assert check.status in ['pass', 'warn', 'fail']
             assert isinstance(check.message, str)

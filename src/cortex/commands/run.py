@@ -8,7 +8,7 @@ from pathlib import Path
 from cortex.utils.runner import HarnessRunner
 from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import generate_run_name, create_run_structure
-from cortex.utils.device import resolve_device, validate_capabilities
+from cortex.utils.device import resolve_device, validate_capabilities, probe_pmu_available
 from cortex.deploy import DeployerFactory, Deployer, DeploymentError
 from cortex.core import (
     ConsoleLogger,
@@ -173,6 +173,32 @@ def _run_with_deploy(deploy_string, run_fn, verbose):
             print(f"Cleanup issues: {cleanup_result.errors}")
 
 
+def _check_preflight(filesystem, process_executor, env_provider):
+    """Print pre-flight tips: build status and PMU availability.
+
+    Non-blocking, silent on success. Runs before benchmark dispatch.
+    """
+    # Build tip
+    if not filesystem.exists('src/engine/harness/cortex'):
+        print("Tip: Harness not built. Run `make all` first, "
+              "then `cortex check-system` to verify setup.")
+        return  # No point checking PMU if not built
+
+    # PMU warning
+    if not probe_pmu_available(filesystem, process_executor):
+        system = env_provider.get_system_type()
+        if system == 'Darwin':
+            print("Note: PMU counters unavailable. Run with `sudo` "
+                  "for instruction/cycle data. Latency benchmarks are valid without PMU.")
+        elif system == 'Linux':
+            print("Note: PMU counters unavailable. One-time fix: "
+                  "`sudo setcap cap_perfmon=ep <adapter_path>`. "
+                  "Latency benchmarks are valid without PMU.")
+        else:
+            print("Note: PMU counters unavailable. "
+                  "Latency benchmarks are valid without PMU.")
+
+
 def _analyze_pipeline_run(run_dir, filesystem):
     """Run per-pipeline analysis on pipeline-* subdirectories.
 
@@ -261,15 +287,20 @@ def execute(args):
     deploy_string = resolve_deploy_arg(args, config_dict)
 
     # Create production runner
+    process_executor = SubprocessExecutor()
     runner = HarnessRunner(
         filesystem=filesystem,
-        process_executor=SubprocessExecutor(),
+        process_executor=process_executor,
         config_loader=config_loader,
         time_provider=SystemTimeProvider(),
         env_provider=SystemEnvironmentProvider(),
         tool_locator=SystemToolLocator(),
         logger=ConsoleLogger()
     )
+
+    # Pre-flight checks (non-blocking tips)
+    env_provider = SystemEnvironmentProvider()
+    _check_preflight(filesystem, process_executor, env_provider)
 
     # Custom config mode
     if args.config:

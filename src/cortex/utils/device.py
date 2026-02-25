@@ -80,6 +80,41 @@ def validate_capabilities(device_spec: dict) -> dict:
     return validated
 
 
+def probe_pmu_available(fs, process_executor) -> bool:
+    """Check PMU availability using DI-compatible interfaces.
+
+    Used by check_system.check_pmu_privilege() and run._check_preflight().
+    Returns True if PMU counters are accessible, False otherwise.
+    """
+    inscount_path = 'sdk/kernel/tools/cortex_inscount'
+    if not fs.exists(inscount_path):
+        return False
+
+    noop_dir = 'primitives/kernels/v1/noop@f32'
+    noop_built = any(
+        fs.exists(f'{noop_dir}/libnoop{ext}')
+        for ext in ('.dylib', '.so')
+    )
+    if not noop_built:
+        return False
+
+    try:
+        result = process_executor.run(
+            [inscount_path, '--plugin', noop_dir, '--repeats', '1'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout.strip())
+            return data.get('available', False)
+        return False
+    except (json.JSONDecodeError, ValueError):
+        return False
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
+    except subprocess.TimeoutExpired:
+        return False
+
+
 def _probe_pmu() -> dict:
     """Probe PMU availability by running cortex_inscount.
 

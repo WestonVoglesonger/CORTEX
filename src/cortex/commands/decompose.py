@@ -11,6 +11,7 @@ from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
+    _pmu_unavailable_reason,
 )
 
 
@@ -100,6 +101,16 @@ def execute(args):
     has_stall = (has_pmu
                  and 'pmu_backend_stall_cycles' in df_real.columns
                  and df_real['pmu_backend_stall_cycles'].sum() > 0)
+
+    if not has_pmu:
+        reason = _pmu_unavailable_reason()
+        # Strip the "no PMU data" prefix — we provide our own framing
+        hint = reason.replace("no PMU data", "").strip(" ()")
+        if hint:
+            print(f"\nPMU data: Not available. {hint.capitalize()}.")
+        else:
+            print("\nPMU data: Not available.")
+        print("Latency characterization proceeds without compute/memory decomposition.\n")
 
     # Extract benchmark parameters from telemetry
     window_length = int(df_real['W'].iloc[0]) if 'W' in df_real.columns and not df_real.empty else 160

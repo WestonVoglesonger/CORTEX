@@ -12,6 +12,7 @@ from cortex.core import (
     ToolLocator,
     Logger
 )
+from cortex.utils.device import probe_pmu_available
 
 
 class SystemCheck:
@@ -381,6 +382,154 @@ class SystemChecker:
                 f'Unsupported platform: {system}'
             )
 
+    def check_build_status(self) -> SystemCheck:
+        """Check if harness, adapter, and kernel plugins are built."""
+        harness_path = 'src/engine/harness/cortex'
+        adapter_path = 'primitives/adapters/v1/native/cortex_adapter_native'
+
+        has_harness = self.fs.exists(harness_path)
+        has_adapter = self.fs.exists(adapter_path)
+        kernel_plugins = self.fs.glob('primitives/kernels/v1', '*@*/lib*.*')
+
+        if not has_harness and not has_adapter and not kernel_plugins:
+            return SystemCheck(
+                'Build Status',
+                'fail',
+                'Nothing built. Run `make all` to build harness, adapter, and kernels.',
+                critical=True,
+            )
+
+        parts = []
+        if not has_harness:
+            parts.append('harness missing')
+        if not has_adapter:
+            parts.append('adapter missing')
+        if not kernel_plugins:
+            parts.append('no kernel plugins')
+
+        if parts:
+            return SystemCheck(
+                'Build Status',
+                'warn',
+                f'Partial build: {", ".join(parts)}. Run `make all`.',
+                critical=False,
+            )
+
+        return SystemCheck(
+            'Build Status',
+            'pass',
+            f'Harness, adapter, and {len(kernel_plugins)} kernel plugin(s) built',
+        )
+
+    def check_pmu_privilege(self) -> SystemCheck:
+        """Check PMU (performance counter) access privilege.
+
+        Probes by running cortex_inscount on the noop kernel. Always non-critical
+        since latency benchmarks are valid without PMU data.
+        """
+        # Pre-probe existence checks for granular messaging
+        inscount_path = 'sdk/kernel/tools/cortex_inscount'
+        if not self.fs.exists(inscount_path):
+            return SystemCheck(
+                'PMU Access',
+                'warn',
+                'cortex_inscount not built (run `make all`). PMU data optional.',
+                critical=False,
+            )
+
+        noop_dir = 'primitives/kernels/v1/noop@f32'
+        noop_built = any(
+            self.fs.exists(f'{noop_dir}/libnoop{ext}')
+            for ext in ('.dylib', '.so')
+        )
+        if not noop_built:
+            return SystemCheck(
+                'PMU Access',
+                'warn',
+                'Noop kernel not built (run `make all`). PMU probe skipped.',
+                critical=False,
+            )
+
+        # Delegate actual probe to shared utility
+        if probe_pmu_available(self.fs, self.process):
+            return SystemCheck(
+                'PMU Access',
+                'pass',
+                'Performance counters available (instruction/cycle counting enabled)',
+            )
+
+        # PMU unavailable — platform-specific guidance
+        system = self.env.get_system_type()
+        if system == 'Darwin':
+            msg = ('PMU counters unavailable. Run with `sudo` for instruction/cycle data. '
+                   'Latency benchmarks are valid without PMU.')
+        elif system == 'Linux':
+            msg = ('PMU counters unavailable. One-time fix: '
+                   '`sudo setcap cap_perfmon=ep <adapter_path>`. '
+                   'Latency benchmarks are valid without PMU.')
+        else:
+            msg = 'PMU counters unavailable. Latency benchmarks are valid without PMU.'
+
+        return SystemCheck('PMU Access', 'warn', msg, critical=False)
+
+    def check_rt_scheduling(self) -> SystemCheck:
+        """Check real-time scheduling capability.
+
+        macOS does not support RT scheduling (expected). Linux checks for
+        CAP_SYS_NICE capability. Always non-critical.
+        """
+        system = self.env.get_system_type()
+
+        if system == 'Darwin':
+            return SystemCheck(
+                'RT Scheduling',
+                'pass',
+                'macOS uses best-effort scheduling (RT not available, expected)',
+            )
+
+        if system == 'Linux':
+            try:
+                status_path = '/proc/self/status'
+                if self.fs.exists(status_path):
+                    content = self.fs.read_file(status_path)
+                    for line in content.split('\n'):
+                        if line.startswith('CapEff:'):
+                            hex_caps = line.split(':')[1].strip()
+                            caps = int(hex_caps, 16)
+                            # Bit 23 = CAP_SYS_NICE
+                            if caps & (1 << 23):
+                                return SystemCheck(
+                                    'RT Scheduling',
+                                    'pass',
+                                    'CAP_SYS_NICE available (SCHED_FIFO/SCHED_RR supported)',
+                                )
+                            else:
+                                return SystemCheck(
+                                    'RT Scheduling',
+                                    'warn',
+                                    'CAP_SYS_NICE not set. Run with `sudo` or '
+                                    '`sudo setcap cap_sys_nice=ep <binary>` for RT scheduling.',
+                                    critical=False,
+                                )
+            except (ValueError, IndexError) as e:
+                self.log.info(f"Could not parse /proc/self/status capabilities: {e}")
+            except Exception as e:
+                self.log.info(f"RT scheduling check failed: {e}")
+
+            return SystemCheck(
+                'RT Scheduling',
+                'warn',
+                'Unable to determine RT scheduling capability',
+                critical=False,
+            )
+
+        return SystemCheck(
+            'RT Scheduling',
+            'warn',
+            f'Unsupported platform: {system}',
+            critical=False,
+        )
+
     def run_all_checks(self) -> Tuple[List[SystemCheck], bool]:
         """Run all system configuration checks.
 
@@ -393,6 +542,9 @@ class SystemChecker:
             self.check_thermal_state(),
             self.check_background_services(),
             self.check_sleep_prevention(),
+            self.check_build_status(),
+            self.check_pmu_privilege(),
+            self.check_rt_scheduling(),
         ]
 
         # Determine if all critical checks passed
