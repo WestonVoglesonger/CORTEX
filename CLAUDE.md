@@ -535,7 +535,7 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 
 ## Development Workflow
 
-**Project tracking lives in Asana** ("CORTEX - Real-Time BCI Signal Processing Framework"). This is the long-term source of truth for what's done, in progress, and planned. The Asana board is actively maintained and should be consulted and updated as part of every feature cycle.
+**Project tracking lives in Asana** (project ID: `1213428903989691`, "CORTEX - Real-Time BCI Signal Processing Framework"). This is the long-term source of truth for what's done, in progress, and planned. The Asana board is actively maintained and should be consulted and updated as part of every feature cycle.
 
 **Standard feature development cycle:**
 
@@ -591,7 +591,7 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 - **Synthetic Datasets**: `docs/guides/synthetic-datasets.md` (generator primitives guide)
 - **Validation Studies**: `docs/validation/` (DVFS, no-op overhead, governor, high-channel)
 - **DI Protocols**: `src/cortex/core/protocols.py` (ProcessHandle, FileSystemService, etc.)
-- **Asana Board**: "CORTEX - Real-Time BCI Signal Processing Framework" (long-term tracking)
+- **Asana Board**: "CORTEX - Real-Time BCI Signal Processing Framework" (project ID: `1213428903989691`)
 
 ---
 
