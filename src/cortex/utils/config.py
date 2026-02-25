@@ -1,8 +1,10 @@
 """Configuration management with temp YAML generation"""
-import yaml
+import glob as globmod
 import tempfile
 from typing import Dict, List, Optional, Union
 from pathlib import Path
+
+import yaml
 
 def load_base_config(config_path: str = "primitives/configs/cortex.yaml") -> Dict:
     """Load base configuration template"""
@@ -23,8 +25,6 @@ def _discover_kernel(name: str) -> str:
     Raises:
         ValueError: If the kernel cannot be found.
     """
-    import glob as globmod
-
     if '@' in name:
         # Fully qualified — match exact directory
         candidates = globmod.glob(f'primitives/kernels/v*/{name}')
@@ -87,40 +87,23 @@ def generate_temp_config(
 
     # Apply kernel filter (single kernel or list of kernels for pipeline)
     if kernel_filter is not None:
-        if isinstance(kernel_filter, list):
-            # Pipeline mode: build plugins list with all listed kernels (order preserved)
-            plugins = []
-            for kname in kernel_filter:
-                # Check base config first
-                existing = [p for p in config.get('plugins', []) if p.get('name') == kname]
-                if existing:
-                    plugins.append(existing[0])
-                else:
-                    kernel_path = _discover_kernel(kname)
-                    plugins.append({
-                        'name': kname,
-                        'status': 'ready',
-                        'spec_uri': kernel_path,
-                    })
-            config['plugins'] = plugins
-        else:
-            # Single kernel mode (existing behavior)
-            if 'plugins' not in config or not config['plugins']:
-                config['plugins'] = []
+        # Normalize to list so both single-kernel and pipeline paths share logic
+        kernel_names = kernel_filter if isinstance(kernel_filter, list) else [kernel_filter]
+        base_plugins = config.get('plugins', [])
 
-            # Filter to specified kernel only
-            filtered_plugins = [p for p in config['plugins'] if p.get('name') == kernel_filter]
-
-            if filtered_plugins:
-                # Kernel exists in config - use it
-                config['plugins'] = filtered_plugins
+        plugins = []
+        for kname in kernel_names:
+            existing = [p for p in base_plugins if p.get('name') == kname]
+            if existing:
+                plugins.append(existing[0])
             else:
-                kernel_path = _discover_kernel(kernel_filter)
-                config['plugins'] = [{
-                    'name': kernel_filter,
+                kernel_path = _discover_kernel(kname)
+                plugins.append({
+                    'name': kname,
                     'status': 'ready',
-                    'spec_uri': kernel_path
-                }]
+                    'spec_uri': kernel_path,
+                })
+        config['plugins'] = plugins
 
     # Apply calibration state (must be done AFTER kernel filtering)
     if calibration_state is not None:

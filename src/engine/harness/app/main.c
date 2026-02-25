@@ -349,6 +349,8 @@ static int run_plugin(harness_context_t *ctx, size_t plugin_idx) {
 
 /* Chain execution: register all plugins on a single scheduler, use dispatch_chain */
 static int run_chain(harness_context_t *ctx) {
+    int ret = -1;
+
     /* Use first plugin's runtime config for scheduler dimensions (stage 0 input) */
     const cortex_plugin_entry_cfg_t *first_plugin = NULL;
     for (size_t i = 0; i < ctx->run_cfg.plugin_count; i++) {
@@ -405,6 +407,7 @@ static int run_chain(harness_context_t *ctx) {
         if (strcmp(plugin_cfg->status, "ready") != 0) continue;
 
         const char *pname = plugin_cfg->name;
+        cortex_device_init_result_t *dr = &device_results[registered_count];
         calibration_states[registered_count] = NULL;
 
         /* Create per-plugin output directory */
@@ -414,33 +417,30 @@ static int run_chain(harness_context_t *ctx) {
         cortex_create_directories(plugin_output_dir);
 
         if (spawn_adapter(pname, plugin_cfg, ctx->run_cfg.dataset.sample_rate_hz,
-                          &device_results[registered_count],
-                          &calibration_states[registered_count]) != 0) {
+                          dr, &calibration_states[registered_count]) != 0) {
             fprintf(stderr, "[harness] chain: failed to spawn adapter for '%s'\n", pname);
             goto chain_cleanup;
         }
 
         cortex_scheduler_device_info_t device_info = {0};
-        device_info.device_handle = device_results[registered_count].handle;
-        device_info.output_window_length_samples = device_results[registered_count].output_window_length_samples;
-        device_info.output_channels = device_results[registered_count].output_channels;
-        strncpy(device_info.adapter_name, device_results[registered_count].adapter_name,
-                sizeof(device_info.adapter_name) - 1);
+        device_info.device_handle = dr->handle;
+        device_info.output_window_length_samples = dr->output_window_length_samples;
+        device_info.output_channels = dr->output_channels;
+        strncpy(device_info.adapter_name, dr->adapter_name, sizeof(device_info.adapter_name) - 1);
         strncpy(device_info.plugin_name, pname, sizeof(device_info.plugin_name) - 1);
 
         if (cortex_scheduler_register_device(scheduler, &device_info,
                 plugin_cfg->runtime.window_length_samples,
                 plugin_cfg->runtime.channels) != 0) {
             fprintf(stderr, "[harness] chain: failed to register device for '%s'\n", pname);
-            device_comm_teardown(device_results[registered_count].handle);
+            device_comm_teardown(dr->handle);
             free(calibration_states[registered_count]);
             goto chain_cleanup;
         }
 
         printf("[harness] Chain stage %zu: %s (output: %ux%u)\n",
                registered_count, pname,
-               device_results[registered_count].output_window_length_samples,
-               device_results[registered_count].output_channels);
+               dr->output_window_length_samples, dr->output_channels);
         registered_count++;
     }
 
@@ -487,10 +487,13 @@ static int run_chain(harness_context_t *ctx) {
             if (registered_count > 0) {
                 strncpy(sysinfo.device_hostname, device_results[0].device_hostname,
                         sizeof(sysinfo.device_hostname) - 1);
+                sysinfo.device_hostname[sizeof(sysinfo.device_hostname) - 1] = '\0';
                 strncpy(sysinfo.device_cpu, device_results[0].device_cpu,
                         sizeof(sysinfo.device_cpu) - 1);
+                sysinfo.device_cpu[sizeof(sysinfo.device_cpu) - 1] = '\0';
                 strncpy(sysinfo.device_os, device_results[0].device_os,
                         sizeof(sysinfo.device_os) - 1);
+                sysinfo.device_os[sizeof(sysinfo.device_os) - 1] = '\0';
             }
 
             const char *format = ctx->run_cfg.output.format;
@@ -512,9 +515,9 @@ static int run_chain(harness_context_t *ctx) {
                 cortex_telemetry_buffer_t filtered = {0};
                 if (cortex_telemetry_init(&filtered, 1024) != 0) continue;
 
-                for (size_t r = telemetry_start_count; r < telemetry_end_count; r++) {
-                    if (strcmp(ctx->telemetry.records[r].plugin_name, pname) == 0) {
-                        cortex_telemetry_add(&filtered, &ctx->telemetry.records[r]);
+                for (size_t j = telemetry_start_count; j < telemetry_end_count; j++) {
+                    if (strcmp(ctx->telemetry.records[j].plugin_name, pname) == 0) {
+                        cortex_telemetry_add(&filtered, &ctx->telemetry.records[j]);
                     }
                 }
 
@@ -532,7 +535,8 @@ static int run_chain(harness_context_t *ctx) {
         }
     }
 
-    /* Cleanup */
+    ret = 0;
+
 chain_cleanup:
     cortex_scheduler_destroy(scheduler);
     ctx->scheduler = NULL;
@@ -541,7 +545,7 @@ chain_cleanup:
         device_comm_teardown(device_results[i].handle);
     }
 
-    return 0;
+    return ret;
 }
 
 static void print_usage(const char *argv0) {

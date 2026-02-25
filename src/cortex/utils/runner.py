@@ -649,6 +649,13 @@ class HarnessRunner:
             return str(run_dir) if succeeded > 0 else None
 
         finally:
+            # Close any log handles that were not already closed
+            for p in processes:
+                try:
+                    p['log_handle'].close()
+                except Exception:
+                    pass
+
             # Clean up temp configs
             for tc in temp_configs:
                 try:
@@ -669,7 +676,7 @@ class HarnessRunner:
             kernels_str = ' -> '.join(r['kernels'])
             lines.append(f"| {r['name']} | {kernels_str} | {r['status']} |\n")
 
-        lines.append(f"\n## Output Directories\n\n")
+        lines.append("\n## Output Directories\n\n")
         for r in results:
             lines.append(f"- **{r['name']}**: `{r['pipe_dir']}`\n")
 

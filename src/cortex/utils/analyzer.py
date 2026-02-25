@@ -284,15 +284,16 @@ class TelemetryAnalyzer:
             'plugin': 'first',
         })
 
-        # Flatten column names
-        stage_stats.columns = [
-            f'{col[0]}_{col[1]}' if col[1] and col[1] != 'first' else col[0]
-            for col in stage_stats.columns
-        ]
-
-        # Rename plugin column
-        if 'plugin' in stage_stats.columns:
-            stage_stats = stage_stats.rename(columns={'plugin': 'kernel'})
+        # Flatten multi-level columns and rename 'plugin' -> 'kernel'
+        flat_names = []
+        for col in stage_stats.columns:
+            if col[1] and col[1] != 'first':
+                flat_names.append(f'{col[0]}_{col[1]}')
+            elif col[0] == 'plugin':
+                flat_names.append('kernel')
+            else:
+                flat_names.append(col[0])
+        stage_stats.columns = flat_names
 
         # Calculate end-to-end latency per window (sum of all stages)
         e2e = df_chain.groupby('window_index')['latency_us'].sum()
@@ -319,7 +320,7 @@ class TelemetryAnalyzer:
         kernels = stage_stats['kernel'].tolist()
         self.log.info(f"Pipeline: {' -> '.join(kernels)}")
         self.log.info(f"End-to-end P50: {e2e_stats['e2e_p50']:.1f} us")
-        for idx, row in stage_stats.iterrows():
+        for _idx, row in stage_stats.iterrows():
             self.log.info(
                 f"  {row['kernel']:<20s} {row['latency_us_mean']:>8.1f} us  "
                 f"({row['pct_contribution']:>5.1f}%)"
