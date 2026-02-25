@@ -723,9 +723,9 @@ class TestTailAttribution:
                  cycle_count=100000, kernel="goertzel"):
         """Create a synthetic telemetry DataFrame.
 
-        By default creates n windows with base_latency, then replaces the
-        top tail_fraction with tail_latency. Platform variables can be set
-        independently for base and tail windows to create known anomaly patterns.
+        Creates n total windows: n*(1-tail_fraction) base windows at base_latency
+        and n*tail_fraction tail windows at tail_latency. Platform variables can be
+        set independently for base and tail windows to create known anomaly patterns.
         """
         n_tail = int(n * tail_fraction)
         n_base = n - n_tail
@@ -887,3 +887,64 @@ class TestTailAttribution:
         f = freq_factors[0]
         assert f.enrichment == float('inf')
         assert result.dominant_cause == "platform"
+
+    def test_tail_attribution_mixed_verdict(self):
+        """~50% platform anomaly rate → mixed verdict."""
+        n = 200
+        n_tail = int(n * 0.10)  # 20 tail windows (P90)
+        n_base = n - n_tail
+        rows = []
+        for _ in range(n_base):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 100.0, 'cpu_freq_mhz': 3200,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        # Half tail windows with low freq (platform), half with normal freq (algorithmic)
+        for i in range(n_tail):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 500.0 + i,  # distinct to avoid ties
+                'cpu_freq_mhz': 100 if i < n_tail // 2 else 3200,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        df = pd.DataFrame(rows)
+        result = attribute_tail_latency(df, "goertzel", tail_percentile=90)
+        assert result.dominant_cause == "mixed"
+
+    def test_tail_attribution_nonexistent_kernel(self):
+        """Kernel not in DataFrame → insufficient data."""
+        df = self._make_df(n=200, kernel="goertzel")
+        result = attribute_tail_latency(df, "nonexistent_kernel")
+        assert result.dominant_cause == "insufficient data"
+        assert result.n_total_windows == 0
+        assert result.tail_factor == 0.0
+
+    def test_tail_attribution_nan_latency_filtered(self):
+        """NaN latency values are filtered out gracefully."""
+        df = self._make_df(n=200, base_latency=100.0, tail_latency=400.0,
+                           tail_fraction=0.05)
+        # Inject NaN values
+        df.loc[0:4, 'latency_us'] = float('nan')
+        result = attribute_tail_latency(df, "goertzel")
+        # Should still produce a valid result (no NaN in output)
+        assert not np.isnan(result.p50_us)
+        assert not np.isnan(result.p99_us)
+
+    def test_tail_attribution_zero_zero_enrichment(self):
+        """When both tail and base prevalence are 0, enrichment is 0 (not inf)."""
+        # All freq values identical and nonzero → no anomalies anywhere
+        df = self._make_df(
+            n=200, base_latency=100.0, tail_latency=400.0,
+            tail_fraction=0.10,
+            cpu_freq_base=3200, cpu_freq_tail=3200,
+            osnoise_base=0, osnoise_tail=0,
+            stall_cycles_base=0, stall_cycles_tail=0,
+            cycle_count=0,
+        )
+        result = attribute_tail_latency(df, "goertzel", tail_percentile=90)
+        for f in result.factors:
+            if f.tail_prevalence == 0.0 and f.base_prevalence == 0.0:
+                assert f.enrichment == 0.0

@@ -3,6 +3,7 @@
 Provides:
 1. Predict: static pre-benchmark prediction using instruction analysis
 2. Characterize: post-hoc characterization with distribution landmarks + provenance
+3. Tail-latency attribution: attributes tail latency to platform vs algorithmic causes
 """
 import json
 import logging
@@ -19,18 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Tail-latency attribution dataclasses (SE-7)
+# Tail-latency attribution dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass
 class TailFactor:
     """A single platform factor contributing to tail latency."""
     name: str              # "cpu_freq", "osnoise", "backend_stalls"
-    tail_prevalence: float
-    base_prevalence: float
-    enrichment: float
-    threshold: float
-    direction: str         # "low" or "high"
+    tail_prevalence: float   # fraction of tail windows with anomaly (0.0-1.0)
+    base_prevalence: float   # fraction of non-tail windows with anomaly (0.0-1.0)
+    enrichment: float        # tail_prevalence / base_prevalence (inf if base is 0)
+    threshold: float         # anomaly threshold (MHz for cpu_freq, ns for osnoise, % for stalls)
+    direction: str           # "low" or "high"
 
 
 @dataclass
@@ -41,14 +42,14 @@ class TailAttribution:
     tail_factor: float           # p99 / p50
     p50_us: float
     p99_us: float
-    dominant_cause: str          # "platform" | "algorithmic" | "mixed"
-    confidence: str              # "high" | "medium" | "low"
+    dominant_cause: str          # "platform" | "algorithmic" | "mixed" | "insufficient data" | "insufficient tail windows for attribution"
+    confidence: str              # "high" (freq + osnoise/PMU), "medium" (freq only), "low" (no freq data)
     n_tail_windows: int
     n_total_windows: int
     platform_explained_pct: float
     algorithmic_pct: float
-    factors: list                # list of TailFactor
-    tail_windows: object         # DataFrame (top tail windows with anomaly flags)
+    factors: List['TailFactor']
+    tail_windows: object         # pd.DataFrame of all tail windows with platform anomaly flags
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +371,50 @@ def characterize_kernel(
     )
 
 
+def _compute_enrichment(tail_prev, base_prev):
+    """Compute enrichment ratio with division-by-zero guard."""
+    if base_prev > 0:
+        return tail_prev / base_prev
+    elif tail_prev > 0:
+        return float('inf')
+    else:
+        return 0.0
+
+
+def _detect_anomaly(kdf, is_tail, col_name, anomaly_col, factor_name,
+                    percentile, direction, threshold_scale=1.0):
+    """Tag anomaly column on kdf, compute prevalence/enrichment.
+
+    Returns (TailFactor, anomaly_col_name) or (None, None) if not applicable.
+    """
+    import numpy as np
+
+    values = kdf[col_name].values
+    nonzero = values[values > 0] if direction == "low" else values
+    if len(nonzero) == 0:
+        return None, None
+
+    threshold = float(np.percentile(nonzero, percentile))
+    if threshold <= 0:
+        return None, None
+
+    if direction == "low":
+        kdf[anomaly_col] = kdf[col_name] < threshold
+    else:
+        kdf[anomaly_col] = kdf[col_name] > threshold
+
+    tail_prev = kdf.loc[is_tail, anomaly_col].mean()
+    base_prev = kdf.loc[~is_tail, anomaly_col].mean()
+    enrichment = _compute_enrichment(tail_prev, base_prev)
+
+    factor = TailFactor(
+        name=factor_name, tail_prevalence=tail_prev,
+        base_prevalence=base_prev, enrichment=enrichment,
+        threshold=threshold * threshold_scale, direction=direction,
+    )
+    return factor, anomaly_col
+
+
 def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None):
     """Attribute tail latency to platform vs algorithmic causes.
 
@@ -378,9 +423,10 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     algorithmic variance. Uses anomaly-tagging with base-rate comparison.
 
     Args:
-        df: Telemetry DataFrame with per-window records (must include 'plugin',
-            'warmup' columns; optionally 'cpu_freq_mhz', 'osnoise_total_ns',
-            'pmu_cycle_count', 'pmu_backend_stall_cycles', 'window_failed').
+        df: Telemetry DataFrame with per-window records. Required columns:
+            'plugin', and one of 'device_latency_us' or 'latency_us'.
+            Optional: 'warmup', 'window_failed', 'cpu_freq_mhz',
+            'osnoise_total_ns', 'pmu_cycle_count', 'pmu_backend_stall_cycles'.
         kernel_name: Name of the kernel to analyze.
         tail_percentile: Percentile threshold for tail windows (default: 95).
         device_spec: Device specification dict (unused currently, reserved).
@@ -396,7 +442,27 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     PLATFORM_DOMINATED_THRESHOLD = 0.70
     ALGORITHMIC_DOMINATED_THRESHOLD = 0.30
 
-    # --- 1. Filter to this kernel's valid windows ---
+    def _empty_result(cause="insufficient data"):
+        return TailAttribution(
+            kernel_name=kernel_name, tail_percentile=tail_percentile,
+            tail_factor=0.0, p50_us=0.0, p99_us=0.0,
+            dominant_cause=cause, confidence="low",
+            n_tail_windows=0, n_total_windows=0,
+            platform_explained_pct=0.0, algorithmic_pct=0.0,
+            factors=[], tail_windows=pd.DataFrame(),
+        )
+
+    # --- 1. Validate required columns and filter ---
+    if 'plugin' not in df.columns:
+        logger.warning("attribute_tail_latency: DataFrame missing 'plugin' column")
+        return _empty_result()
+
+    has_latency = 'latency_us' in df.columns
+    has_device_latency = 'device_latency_us' in df.columns
+    if not has_latency and not has_device_latency:
+        logger.warning("attribute_tail_latency: DataFrame missing latency columns")
+        return _empty_result()
+
     mask = df['plugin'] == kernel_name
     if 'warmup' in df.columns:
         mask = mask & (df['warmup'] == 0)
@@ -405,20 +471,26 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     kdf = df[mask].copy()
 
     if kdf.empty:
-        return TailAttribution(
-            kernel_name=kernel_name, tail_percentile=tail_percentile,
-            tail_factor=0.0, p50_us=0.0, p99_us=0.0,
-            dominant_cause="insufficient data", confidence="low",
-            n_tail_windows=0, n_total_windows=0,
-            platform_explained_pct=0.0, algorithmic_pct=0.0,
-            factors=[], tail_windows=pd.DataFrame(),
-        )
+        logger.warning("attribute_tail_latency: no valid windows for kernel %s", kernel_name)
+        return _empty_result()
 
     # --- 2. Compute latency column ---
-    if 'device_latency_us' in kdf.columns and (kdf['device_latency_us'] > 0).any():
+    if has_device_latency and (kdf['device_latency_us'] > 0).any():
         kdf['_latency'] = kdf['device_latency_us']
     else:
         kdf['_latency'] = kdf['latency_us']
+
+    # Filter NaN latencies
+    nan_mask = kdf['_latency'].isna()
+    if nan_mask.any():
+        n_nan = int(nan_mask.sum())
+        logger.warning(
+            "attribute_tail_latency: %d NaN latency values for kernel %s, filtering",
+            n_nan, kernel_name,
+        )
+        kdf = kdf[~nan_mask].copy()
+        if kdf.empty:
+            return _empty_result()
 
     # --- 3. Distribution landmarks ---
     lat = kdf['_latency'].values
@@ -428,14 +500,18 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     tail_factor = p99 / p50 if p50 > 0 else float('inf')
 
     # --- 4. Split into tail and non-tail ---
+    # is_tail is index-aligned with kdf; no rows are added/removed after this point
     is_tail = kdf['_latency'] > p_tail
-    tail_df = kdf[is_tail].copy()
-    base_df = kdf[~is_tail].copy()
-    n_tail = len(tail_df)
+    n_tail = int(is_tail.sum())
     n_total = len(kdf)
 
     # --- 5. Minimum sample check ---
     if n_tail < MIN_TAIL_WINDOWS:
+        logger.info(
+            "attribute_tail_latency: only %d tail windows for kernel %s "
+            "(need %d), skipping factor analysis",
+            n_tail, kernel_name, MIN_TAIL_WINDOWS,
+        )
         return TailAttribution(
             kernel_name=kernel_name, tail_percentile=tail_percentile,
             tail_factor=tail_factor, p50_us=p50, p99_us=p99,
@@ -443,7 +519,7 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
             confidence="low",
             n_tail_windows=n_tail, n_total_windows=n_total,
             platform_explained_pct=0.0, algorithmic_pct=0.0,
-            factors=[], tail_windows=tail_df,
+            factors=[], tail_windows=kdf[is_tail].copy(),
         )
 
     # --- 6. Anomaly detection per platform variable ---
@@ -452,40 +528,20 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
 
     # cpu_freq_mhz: anomaly if < P10(all_freq) — direction "low"
     if 'cpu_freq_mhz' in kdf.columns and (kdf['cpu_freq_mhz'] > 0).any():
-        all_freq = kdf['cpu_freq_mhz'].values
-        threshold = float(np.percentile(all_freq[all_freq > 0], 10))
-        if threshold > 0:
-            col = '_anomaly_cpu_freq'
-            kdf[col] = kdf['cpu_freq_mhz'] < threshold
-            tail_df = kdf[is_tail]
-            base_df = kdf[~is_tail]
-            tail_prev = tail_df[col].mean()
-            base_prev = base_df[col].mean()
-            enrichment = tail_prev / base_prev if base_prev > 0 else float('inf')
-            factors.append(TailFactor(
-                name="cpu_freq", tail_prevalence=tail_prev,
-                base_prevalence=base_prev, enrichment=enrichment,
-                threshold=threshold, direction="low",
-            ))
+        factor, col = _detect_anomaly(
+            kdf, is_tail, 'cpu_freq_mhz', '_anomaly_cpu_freq',
+            'cpu_freq', percentile=10, direction='low')
+        if factor:
+            factors.append(factor)
             anomaly_cols.append(col)
 
     # osnoise_total_ns: anomaly if > P90(all_osnoise) — direction "high"
     if 'osnoise_total_ns' in kdf.columns and (kdf['osnoise_total_ns'] > 0).any():
-        all_noise = kdf['osnoise_total_ns'].values
-        threshold = float(np.percentile(all_noise, 90))
-        if threshold > 0:
-            col = '_anomaly_osnoise'
-            kdf[col] = kdf['osnoise_total_ns'] > threshold
-            tail_df = kdf[is_tail]
-            base_df = kdf[~is_tail]
-            tail_prev = tail_df[col].mean()
-            base_prev = base_df[col].mean()
-            enrichment = tail_prev / base_prev if base_prev > 0 else float('inf')
-            factors.append(TailFactor(
-                name="osnoise", tail_prevalence=tail_prev,
-                base_prevalence=base_prev, enrichment=enrichment,
-                threshold=threshold, direction="high",
-            ))
+        factor, col = _detect_anomaly(
+            kdf, is_tail, 'osnoise_total_ns', '_anomaly_osnoise',
+            'osnoise', percentile=90, direction='high')
+        if factor:
+            factors.append(factor)
             anomaly_cols.append(col)
 
     # pmu_backend_stall_cycles as % of pmu_cycle_count: anomaly if > P90 — direction "high"
@@ -499,25 +555,15 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
         )
         kdf.loc[~valid_pmu, '_stall_pct'] = 0.0
         if (kdf['_stall_pct'] > 0).any():
-            stall_vals = kdf.loc[valid_pmu, '_stall_pct'].values
-            threshold = float(np.percentile(stall_vals, 90))
-            if threshold > 0:
-                col = '_anomaly_stalls'
-                kdf[col] = kdf['_stall_pct'] > threshold
-                tail_df = kdf[is_tail]
-                base_df = kdf[~is_tail]
-                tail_prev = tail_df[col].mean()
-                base_prev = base_df[col].mean()
-                enrichment = tail_prev / base_prev if base_prev > 0 else float('inf')
-                factors.append(TailFactor(
-                    name="backend_stalls", tail_prevalence=tail_prev,
-                    base_prevalence=base_prev, enrichment=enrichment,
-                    threshold=threshold * 100,  # store as percentage
-                    direction="high",
-                ))
+            factor, col = _detect_anomaly(
+                kdf, is_tail, '_stall_pct', '_anomaly_stalls',
+                'backend_stalls', percentile=90, direction='high',
+                threshold_scale=100)  # store as percentage
+            if factor:
+                factors.append(factor)
                 anomaly_cols.append(col)
 
-    # --- 7-8. Classify tail windows ---
+    # --- 7. Classify tail windows ---
     tail_df = kdf[is_tail].copy()
     if anomaly_cols:
         tail_df['_any_platform_anomaly'] = tail_df[anomaly_cols].any(axis=1)
@@ -525,12 +571,17 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     else:
         tail_df['_any_platform_anomaly'] = False
         n_platform = 0
+        if not factors:
+            logger.info(
+                "attribute_tail_latency: no platform data available for kernel %s, "
+                "confidence=low", kernel_name,
+            )
 
+    # --- 8. Compute percentages and verdict ---
     n_algorithmic = n_tail - n_platform
     platform_explained_pct = n_platform / n_tail if n_tail > 0 else 0.0
     algorithmic_pct = n_algorithmic / n_tail if n_tail > 0 else 0.0
 
-    # --- 9. Headline verdict ---
     if platform_explained_pct >= PLATFORM_DOMINATED_THRESHOLD:
         dominant_cause = "platform"
     elif platform_explained_pct <= ALGORITHMIC_DOMINATED_THRESHOLD:
@@ -538,7 +589,7 @@ def attribute_tail_latency(df, kernel_name, tail_percentile=95, device_spec=None
     else:
         dominant_cause = "mixed"
 
-    # --- 10. Confidence ---
+    # --- 9. Confidence ---
     has_freq = any(f.name == "cpu_freq" for f in factors)
     has_osnoise = any(f.name == "osnoise" for f in factors)
     has_pmu = any(f.name == "backend_stalls" for f in factors)

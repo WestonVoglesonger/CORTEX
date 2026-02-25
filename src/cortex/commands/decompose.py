@@ -11,7 +11,7 @@ from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
-    attribute_tail_latency, TailAttribution, TailFactor,
+    attribute_tail_latency,
 )
 
 
@@ -39,7 +39,8 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--tail-percentile', type=int, default=95,
-        help='Percentile threshold for tail windows (default: 95)'
+        choices=range(1, 100), metavar='PERCENTILE',
+        help='Percentile threshold for tail windows (1-99, default: 95)'
     )
 
 
@@ -261,15 +262,44 @@ def _output_table(results, dev, tail_attributions=None):
         print("-" * 68)
 
 
+_VERDICT_LABELS = {
+    "platform": "Platform-dominated",
+    "algorithmic": "Algorithmic-dominated",
+    "mixed": "Mixed",
+}
+
+_FACTOR_LABELS = {
+    "cpu_freq": "Low CPU freq",
+    "osnoise": "High osnoise",
+    "backend_stalls": "Backend stalls",
+}
+
+_FACTOR_UNITS = {
+    "cpu_freq": "MHz",
+    "osnoise": "ns",
+    "backend_stalls": "% cycles",
+}
+
+
+def _format_enrichment(enrichment):
+    """Format enrichment value for display."""
+    if enrichment == float('inf'):
+        return "\u221e"
+    return f"{enrichment:.1f}x"
+
+
+def _format_threshold(f):
+    """Format factor threshold with direction and unit."""
+    direction = "< " if f.direction == "low" else "> "
+    unit = _FACTOR_UNITS.get(f.name, "")
+    return f"{direction}{f.threshold:.0f} {unit}".rstrip()
+
+
 def _output_tail_attribution_table(ta):
-    """Print tail-latency attribution section in table format."""
+    """Print tail-latency attribution sub-section within a kernel's table output."""
     print(f"\n  Tail-Latency Attribution (P{ta.tail_percentile})")
     print(f"  Tail factor: {ta.tail_factor:.1f}x (P99/P50)")
-    verdict_label = {
-        "platform": "Platform-dominated",
-        "algorithmic": "Algorithmic-dominated",
-        "mixed": "Mixed",
-    }.get(ta.dominant_cause, ta.dominant_cause)
+    verdict_label = _VERDICT_LABELS.get(ta.dominant_cause, ta.dominant_cause)
     print(f"  Verdict: {verdict_label} ({ta.confidence} confidence)")
     if ta.factors:
         print(f"    {ta.platform_explained_pct:.0%} of tail windows have platform anomalies")
@@ -277,16 +307,8 @@ def _output_tail_attribution_table(ta):
         print()
         print(f"    {'Factor':<18} {'Tail prev.':<12} {'Base prev.':<12} {'Enrichment':<12} {'Threshold':<18}")
         for f in ta.factors:
-            enr = f"\u221e" if f.enrichment == float('inf') else f"{f.enrichment:.1f}x"
-            direction = "< " if f.direction == "low" else "> "
-            if f.name == "backend_stalls":
-                thr_str = f"{direction}{f.threshold:.0f}% cycles"
-            elif f.name == "cpu_freq":
-                thr_str = f"{direction}{f.threshold:.0f} MHz"
-            elif f.name == "osnoise":
-                thr_str = f"{direction}{f.threshold:.0f} ns"
-            else:
-                thr_str = f"{direction}{f.threshold}"
+            enr = _format_enrichment(f.enrichment)
+            thr_str = _format_threshold(f)
             print(f"    {f.name:<18} {f.tail_prevalence:<12.0%} {f.base_prevalence:<12.0%} {enr:<12} {thr_str:<18}")
 
 
@@ -415,19 +437,14 @@ def _generate_markdown(results, dev, tail_attributions=None):
 def _generate_tail_attribution_markdown(ta):
     """Generate markdown lines for tail-latency attribution section."""
     lines = []
-    verdict_label = {
-        "platform": "Platform-dominated",
-        "algorithmic": "Algorithmic-dominated",
-        "mixed": "Mixed",
-    }.get(ta.dominant_cause, ta.dominant_cause)
+    verdict_label = _VERDICT_LABELS.get(ta.dominant_cause, ta.dominant_cause)
 
-    lines.append(f"### Tail-Latency Attribution")
+    lines.append("### Tail-Latency Attribution")
     lines.append("")
     lines.append(f"Tail factor: {ta.tail_factor:.1f}x (P99/P50)  ")
     lines.append(f"Verdict: {verdict_label} ({ta.confidence} confidence)  ")
 
     if ta.factors:
-        base_avg = sum(f.base_prevalence for f in ta.factors) / len(ta.factors) if ta.factors else 0
         lines.append(
             f"  - {ta.platform_explained_pct:.0%} of tail windows have platform anomalies"
         )
@@ -440,18 +457,9 @@ def _generate_tail_attribution_markdown(ta):
         lines.append("| Factor | Tail prev. | Base prev. | Enrichment | Threshold |")
         lines.append("|--------|------------|------------|------------|-----------|")
         for f in ta.factors:
-            enr = "\u221e" if f.enrichment == float('inf') else f"{f.enrichment:.1f}x"
-            direction = "< " if f.direction == "low" else "> "
-            if f.name == "backend_stalls":
-                thr_str = f"{direction}{f.threshold:.0f}% cycles"
-            elif f.name == "cpu_freq":
-                thr_str = f"{direction}{f.threshold:.0f} MHz"
-            elif f.name == "osnoise":
-                thr_str = f"{direction}{f.threshold:.0f} ns"
-            else:
-                thr_str = f"{direction}{f.threshold}"
-            label = {"cpu_freq": "Low CPU freq", "osnoise": "High osnoise",
-                     "backend_stalls": "Backend stalls"}.get(f.name, f.name)
+            enr = _format_enrichment(f.enrichment)
+            thr_str = _format_threshold(f)
+            label = _FACTOR_LABELS.get(f.name, f.name)
             lines.append(
                 f"| {label} | {f.tail_prevalence:.0%} | {f.base_prevalence:.0%} | {enr} | {thr_str} |"
             )
@@ -473,5 +481,5 @@ def _write_report(results, dev, output_dir, fs, tail_attributions=None):
         with fs.open(report_path, 'w') as f:
             f.write(md)
         print(f"\nReport written to: {report_path}")
-    except Exception as e:
-        print(f"\nWarning: Could not write report: {e}")
+    except OSError as e:
+        print(f"\nWarning: Could not write report to {output_dir}: {e}")
