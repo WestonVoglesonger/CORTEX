@@ -596,25 +596,24 @@ class HarnessRunner:
                 pass
             return None
 
-        # Save device spec once at run level
-        if device_spec is not None:
-            device_yaml_path = f"{run_dir}/device.yaml"
-            device_yaml_content = yaml.safe_dump(device_spec, sort_keys=False)
-            self.fs.write_file(device_yaml_path, device_yaml_content)
-
-        self.log.info(f"Pipeline mode: {len(pipelines)} pipeline(s) to run")
-        self.log.info(f"Results directory: {run_dir}")
-        self.log.info("")
-
-        # Build per-pipeline temp configs and launch concurrently
+        # Initialize before outer try so finally can always reference them
         temp_configs: List[str] = []
         processes: List[Dict] = []
-        caffeinate_proc = self._start_sleep_prevention()
-
-        # Track used names to prevent output directory collisions
+        caffeinate_proc = None
         used_names: Dict[str, int] = {}
 
         try:
+            # Save device spec once at run level
+            if device_spec is not None:
+                device_yaml_path = f"{run_dir}/device.yaml"
+                device_yaml_content = yaml.safe_dump(device_spec, sort_keys=False)
+                self.fs.write_file(device_yaml_path, device_yaml_content)
+
+            self.log.info(f"Pipeline mode: {len(pipelines)} pipeline(s) to run")
+            self.log.info(f"Results directory: {run_dir}")
+            self.log.info("")
+
+            caffeinate_proc = self._start_sleep_prevention()
             for pipe_def in pipelines:
                 if not isinstance(pipe_def, dict):
                     self.log.warning(f"Skipping invalid pipeline entry (expected mapping, got {type(pipe_def).__name__})")
