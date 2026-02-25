@@ -474,8 +474,9 @@ static int run_chain(harness_context_t *ctx) {
             }
             fprintf(stderr, "[harness] chain: repeat %u failed\n", r);
             ret = -1;
-            break;  /* Fall through to telemetry write block */
+            break;  /* Exit loop; telemetry write block still runs below */
         }
+        ret = 0;  /* Mark success after each completed repeat */
     }
 
     /* Write per-plugin telemetry (filter by plugin_name from the shared buffer) */
