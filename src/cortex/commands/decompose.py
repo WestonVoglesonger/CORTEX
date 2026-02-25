@@ -349,7 +349,7 @@ def _output_json(results, dev, tail_attributions=None):
         if ta:
             entry['tail_attribution'] = {
                 'tail_percentile': ta.tail_percentile,
-                'tail_factor': round(ta.tail_factor, 3),
+                'tail_factor': None if ta.tail_factor == float('inf') else round(ta.tail_factor, 3),
                 'p50_us': round(ta.p50_us, 2),
                 'p99_us': round(ta.p99_us, 2),
                 'dominant_cause': ta.dominant_cause,
