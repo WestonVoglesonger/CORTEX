@@ -11,6 +11,7 @@ from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
+    attribute_tail_latency, TailAttribution, TailFactor,
 )
 
 
@@ -35,6 +36,10 @@ def setup_parser(parser):
         choices=['table', 'json', 'markdown'],
         default='table',
         help='Output format (default: table)'
+    )
+    parser.add_argument(
+        '--tail-percentile', type=int, default=95,
+        help='Percentile threshold for tail windows (default: 95)'
     )
 
 
@@ -104,6 +109,8 @@ def execute(args):
 
     # Single characterization path
     results = []
+    tail_attributions = {}
+    tail_percentile = getattr(args, 'tail_percentile', 95)
     for plugin_name in kernel_names:
         kernel_df = df_real[df_real['plugin'] == plugin_name]
 
@@ -132,16 +139,24 @@ def execute(args):
         if result:
             results.append(result)
 
+        # Tail-latency attribution (SE-7)
+        tail_attr = attribute_tail_latency(
+            df_real, plugin_name,
+            tail_percentile=tail_percentile,
+            device_spec=device_spec,
+        )
+        tail_attributions[plugin_name] = tail_attr
+
     if not results:
         print("Error: No kernels could be characterized (missing specs?)")
         return 1
 
     dev = device_spec.get('device', device_spec)
-    _output_characterization(results, dev, args.format)
+    _output_characterization(results, dev, args.format, tail_attributions)
 
     # Write report if output dir specified
     if args.output:
-        _write_report(results, dev, args.output, fs)
+        _write_report(results, dev, args.output, fs, tail_attributions)
 
     return 0
 
@@ -150,18 +165,20 @@ def execute(args):
 # Output formatters
 # ---------------------------------------------------------------------------
 
-def _output_characterization(results, dev, fmt):
+def _output_characterization(results, dev, fmt, tail_attributions=None):
     """Dispatch to table/json/markdown formatter."""
+    tail_attributions = tail_attributions or {}
     if fmt == 'json':
-        _output_json(results, dev)
+        _output_json(results, dev, tail_attributions)
     elif fmt == 'markdown':
-        print(_generate_markdown(results, dev))
+        print(_generate_markdown(results, dev, tail_attributions))
     else:
-        _output_table(results, dev)
+        _output_table(results, dev, tail_attributions)
 
 
-def _output_table(results, dev):
+def _output_table(results, dev, tail_attributions=None):
     """Print characterization as formatted table."""
+    tail_attributions = tail_attributions or {}
     device_name = dev.get('name', 'Unknown Device')
     print(f"\nLatency Characterization — {device_name}")
     print("=" * 68)
@@ -235,11 +252,47 @@ def _output_table(results, dev):
                   f"{'':>11}[{prov.get('noop_p50_us', 'measured/timing/noop')}]")
 
         print(f"\n  N windows: {r.n_windows}")
+
+        # Tail-latency attribution (SE-7)
+        ta = tail_attributions.get(r.kernel_name)
+        if ta and ta.n_total_windows > 0:
+            _output_tail_attribution_table(ta)
+
         print("-" * 68)
 
 
-def _output_json(results, dev):
+def _output_tail_attribution_table(ta):
+    """Print tail-latency attribution section in table format."""
+    print(f"\n  Tail-Latency Attribution (P{ta.tail_percentile})")
+    print(f"  Tail factor: {ta.tail_factor:.1f}x (P99/P50)")
+    verdict_label = {
+        "platform": "Platform-dominated",
+        "algorithmic": "Algorithmic-dominated",
+        "mixed": "Mixed",
+    }.get(ta.dominant_cause, ta.dominant_cause)
+    print(f"  Verdict: {verdict_label} ({ta.confidence} confidence)")
+    if ta.factors:
+        print(f"    {ta.platform_explained_pct:.0%} of tail windows have platform anomalies")
+        print(f"    {ta.algorithmic_pct:.0%} purely algorithmic")
+        print()
+        print(f"    {'Factor':<18} {'Tail prev.':<12} {'Base prev.':<12} {'Enrichment':<12} {'Threshold':<18}")
+        for f in ta.factors:
+            enr = f"\u221e" if f.enrichment == float('inf') else f"{f.enrichment:.1f}x"
+            direction = "< " if f.direction == "low" else "> "
+            if f.name == "backend_stalls":
+                thr_str = f"{direction}{f.threshold:.0f}% cycles"
+            elif f.name == "cpu_freq":
+                thr_str = f"{direction}{f.threshold:.0f} MHz"
+            elif f.name == "osnoise":
+                thr_str = f"{direction}{f.threshold:.0f} ns"
+            else:
+                thr_str = f"{direction}{f.threshold}"
+            print(f"    {f.name:<18} {f.tail_prevalence:<12.0%} {f.base_prevalence:<12.0%} {enr:<12} {thr_str:<18}")
+
+
+def _output_json(results, dev, tail_attributions=None):
     """Print characterization as JSON."""
+    tail_attributions = tail_attributions or {}
     output = {
         'device': dev.get('name', 'Unknown'),
         'characterizations': [],
@@ -270,12 +323,38 @@ def _output_json(results, dev):
             'provenance': r.provenance,
             'unavailable': r.unavailable,
         }
+        ta = tail_attributions.get(r.kernel_name)
+        if ta:
+            entry['tail_attribution'] = {
+                'tail_percentile': ta.tail_percentile,
+                'tail_factor': round(ta.tail_factor, 3),
+                'p50_us': round(ta.p50_us, 2),
+                'p99_us': round(ta.p99_us, 2),
+                'dominant_cause': ta.dominant_cause,
+                'confidence': ta.confidence,
+                'n_tail_windows': ta.n_tail_windows,
+                'n_total_windows': ta.n_total_windows,
+                'platform_explained_pct': round(ta.platform_explained_pct, 4),
+                'algorithmic_pct': round(ta.algorithmic_pct, 4),
+                'factors': [
+                    {
+                        'name': f.name,
+                        'tail_prevalence': round(f.tail_prevalence, 4),
+                        'base_prevalence': round(f.base_prevalence, 4),
+                        'enrichment': None if f.enrichment == float('inf') else round(f.enrichment, 3),
+                        'threshold': round(f.threshold, 2),
+                        'direction': f.direction,
+                    }
+                    for f in ta.factors
+                ],
+            }
         output['characterizations'].append(entry)
     print(json.dumps(output, indent=2))
 
 
-def _generate_markdown(results, dev):
+def _generate_markdown(results, dev, tail_attributions=None):
     """Generate markdown characterization report."""
+    tail_attributions = tail_attributions or {}
     lines = [
         "# Latency Characterization Report",
         "",
@@ -322,14 +401,71 @@ def _generate_markdown(results, dev):
             "",
         ])
 
+        # Tail-latency attribution (SE-7)
+        ta = tail_attributions.get(r.kernel_name)
+        if ta and ta.n_total_windows > 0:
+            lines.extend(_generate_tail_attribution_markdown(ta))
+            lines.append("")
+
     lines.append("*Generated by `cortex decompose`*")
 
     return '\n'.join(lines)
 
 
-def _write_report(results, dev, output_dir, fs):
+def _generate_tail_attribution_markdown(ta):
+    """Generate markdown lines for tail-latency attribution section."""
+    lines = []
+    verdict_label = {
+        "platform": "Platform-dominated",
+        "algorithmic": "Algorithmic-dominated",
+        "mixed": "Mixed",
+    }.get(ta.dominant_cause, ta.dominant_cause)
+
+    lines.append(f"### Tail-Latency Attribution")
+    lines.append("")
+    lines.append(f"Tail factor: {ta.tail_factor:.1f}x (P99/P50)  ")
+    lines.append(f"Verdict: {verdict_label} ({ta.confidence} confidence)  ")
+
+    if ta.factors:
+        base_avg = sum(f.base_prevalence for f in ta.factors) / len(ta.factors) if ta.factors else 0
+        lines.append(
+            f"  - {ta.platform_explained_pct:.0%} of tail windows have platform anomalies"
+        )
+        lines.append(
+            f"  - {ta.algorithmic_pct:.0%} purely algorithmic (no platform anomalies detected)"
+        )
+        lines.append("")
+        lines.append("#### Platform Factors")
+        lines.append("")
+        lines.append("| Factor | Tail prev. | Base prev. | Enrichment | Threshold |")
+        lines.append("|--------|------------|------------|------------|-----------|")
+        for f in ta.factors:
+            enr = "\u221e" if f.enrichment == float('inf') else f"{f.enrichment:.1f}x"
+            direction = "< " if f.direction == "low" else "> "
+            if f.name == "backend_stalls":
+                thr_str = f"{direction}{f.threshold:.0f}% cycles"
+            elif f.name == "cpu_freq":
+                thr_str = f"{direction}{f.threshold:.0f} MHz"
+            elif f.name == "osnoise":
+                thr_str = f"{direction}{f.threshold:.0f} ns"
+            else:
+                thr_str = f"{direction}{f.threshold}"
+            label = {"cpu_freq": "Low CPU freq", "osnoise": "High osnoise",
+                     "backend_stalls": "Backend stalls"}.get(f.name, f.name)
+            lines.append(
+                f"| {label} | {f.tail_prevalence:.0%} | {f.base_prevalence:.0%} | {enr} | {thr_str} |"
+            )
+    elif "insufficient" in ta.dominant_cause:
+        lines.append(f"  - {ta.dominant_cause}")
+    else:
+        lines.append("  - No platform data available for factor analysis")
+
+    return lines
+
+
+def _write_report(results, dev, output_dir, fs, tail_attributions=None):
     """Write CHARACTERIZATION.md report to output directory."""
-    md = _generate_markdown(results, dev)
+    md = _generate_markdown(results, dev, tail_attributions)
     try:
         if not fs.exists(output_dir):
             fs.mkdir(output_dir, parents=True, exist_ok=True)

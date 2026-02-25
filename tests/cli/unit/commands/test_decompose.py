@@ -2,10 +2,12 @@
 import argparse
 import pytest
 import numpy as np
+import pandas as pd
 from unittest.mock import patch, MagicMock
 
 from cortex.utils.decomposition import (
     CharacterizationResult, characterize_kernel,
+    attribute_tail_latency, TailAttribution, TailFactor,
 )
 
 
@@ -705,3 +707,183 @@ class TestCharacterizeOutputFormatters:
 
         assert "#" in output  # has headers
         assert "goertzel" in output
+
+
+# ===========================================================================
+# Tail-latency attribution tests (SE-7)
+# ===========================================================================
+
+class TestTailAttribution:
+    """Tests for attribute_tail_latency()."""
+
+    def _make_df(self, n=200, base_latency=100.0, tail_latency=400.0,
+                 tail_fraction=0.05, cpu_freq_base=3200, cpu_freq_tail=None,
+                 osnoise_base=1000, osnoise_tail=None,
+                 stall_cycles_base=5000, stall_cycles_tail=None,
+                 cycle_count=100000, kernel="goertzel"):
+        """Create a synthetic telemetry DataFrame.
+
+        By default creates n windows with base_latency, then replaces the
+        top tail_fraction with tail_latency. Platform variables can be set
+        independently for base and tail windows to create known anomaly patterns.
+        """
+        n_tail = int(n * tail_fraction)
+        n_base = n - n_tail
+
+        rows = []
+        for i in range(n_base):
+            rows.append({
+                'plugin': kernel, 'warmup': 0, 'window_failed': 0,
+                'latency_us': base_latency,
+                'cpu_freq_mhz': cpu_freq_base,
+                'osnoise_total_ns': osnoise_base,
+                'pmu_backend_stall_cycles': stall_cycles_base,
+                'pmu_cycle_count': cycle_count,
+            })
+        for i in range(n_tail):
+            rows.append({
+                'plugin': kernel, 'warmup': 0, 'window_failed': 0,
+                'latency_us': tail_latency,
+                'cpu_freq_mhz': cpu_freq_tail if cpu_freq_tail is not None else cpu_freq_base,
+                'osnoise_total_ns': osnoise_tail if osnoise_tail is not None else osnoise_base,
+                'pmu_backend_stall_cycles': stall_cycles_tail if stall_cycles_tail is not None else stall_cycles_base,
+                'pmu_cycle_count': cycle_count,
+            })
+        return pd.DataFrame(rows)
+
+    def test_tail_attribution_basic(self):
+        """Known freq drops causing high latency → platform-dominated."""
+        # 200 windows: 190 base at 3200 MHz, 10 tail at 800 MHz (well below P10)
+        df = self._make_df(
+            n=200, base_latency=100.0, tail_latency=400.0,
+            tail_fraction=0.05,
+            cpu_freq_base=3200, cpu_freq_tail=800,
+            osnoise_base=100, osnoise_tail=100,
+        )
+        result = attribute_tail_latency(df, "goertzel")
+
+        assert isinstance(result, TailAttribution)
+        assert result.tail_factor > 1.0
+        assert result.dominant_cause == "platform"
+        # freq factor should have enrichment > 1.0
+        freq_factors = [f for f in result.factors if f.name == "cpu_freq"]
+        assert len(freq_factors) == 1
+        assert freq_factors[0].enrichment > 1.0
+
+    def test_tail_attribution_algorithmic(self):
+        """Flat freq/osnoise but high tail variance → algorithmic-dominated."""
+        # All platform variables identical — tail latency is purely algorithmic
+        df = self._make_df(
+            n=200, base_latency=100.0, tail_latency=400.0,
+            tail_fraction=0.05,
+            cpu_freq_base=3200, cpu_freq_tail=3200,
+            osnoise_base=100, osnoise_tail=100,
+            stall_cycles_base=5000, stall_cycles_tail=5000,
+        )
+        result = attribute_tail_latency(df, "goertzel")
+
+        assert result.dominant_cause == "algorithmic"
+        assert result.algorithmic_pct == pytest.approx(1.0, abs=0.01)
+
+    def test_tail_attribution_no_platform_data(self):
+        """All-zero freq/osnoise/PMU → confidence=low, factors empty."""
+        df = self._make_df(
+            n=200, base_latency=100.0, tail_latency=400.0,
+            tail_fraction=0.05,
+            cpu_freq_base=0, cpu_freq_tail=0,
+            osnoise_base=0, osnoise_tail=0,
+            stall_cycles_base=0, stall_cycles_tail=0,
+            cycle_count=0,
+        )
+        result = attribute_tail_latency(df, "goertzel")
+
+        assert result.confidence == "low"
+        assert len(result.factors) == 0
+
+    def test_tail_attribution_custom_percentile(self):
+        """tail_percentile=99 → fewer tail windows."""
+        df = self._make_df(n=200, tail_fraction=0.05)
+        result_95 = attribute_tail_latency(df, "goertzel", tail_percentile=95)
+        result_99 = attribute_tail_latency(df, "goertzel", tail_percentile=99)
+
+        assert result_99.n_tail_windows <= result_95.n_tail_windows
+
+    def test_tail_attribution_enrichment_math(self):
+        """Verify enrichment = tail_prev / base_prev with known values."""
+        # Create data where ALL tail windows have low freq, NO base windows do
+        n = 200
+        n_tail = int(n * 0.05)
+        n_base = n - n_tail
+
+        rows = []
+        # Base windows: all at 3200 MHz (well above any P10 threshold)
+        for _ in range(n_base):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 100.0, 'cpu_freq_mhz': 3200,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        # Tail windows: at 100 MHz (well below P10)
+        for _ in range(n_tail):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 500.0, 'cpu_freq_mhz': 100,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        df = pd.DataFrame(rows)
+        result = attribute_tail_latency(df, "goertzel")
+
+        freq_factors = [f for f in result.factors if f.name == "cpu_freq"]
+        assert len(freq_factors) == 1
+        f = freq_factors[0]
+        # tail_prevalence should be 1.0 (all tail windows are anomalous)
+        assert f.tail_prevalence == pytest.approx(1.0, abs=0.01)
+        # Verify enrichment formula
+        if f.base_prevalence > 0:
+            assert f.enrichment == pytest.approx(f.tail_prevalence / f.base_prevalence, rel=1e-3)
+        else:
+            assert f.enrichment == float('inf')
+
+    def test_tail_attribution_too_few_windows(self):
+        """<10 tail windows → factors empty, verdict mentions insufficient."""
+        # Only 20 windows total, P95 → 1 tail window (< MIN_TAIL_WINDOWS=10)
+        df = self._make_df(
+            n=20, base_latency=100.0, tail_latency=400.0,
+            tail_fraction=0.05,
+        )
+        result = attribute_tail_latency(df, "goertzel")
+
+        assert len(result.factors) == 0
+        assert "insufficient" in result.dominant_cause
+
+    def test_tail_attribution_zero_base_prevalence(self):
+        """All base windows normal, all tail anomalous → enrichment=inf, handled."""
+        # Ensure no base windows are anomalous for freq
+        n = 400
+        rows = []
+        # 380 base windows: all at 3200 MHz
+        for _ in range(380):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 100.0, 'cpu_freq_mhz': 3200,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        # 20 tail windows: all at 50 MHz (guaranteed below P10)
+        for _ in range(20):
+            rows.append({
+                'plugin': 'goertzel', 'warmup': 0, 'window_failed': 0,
+                'latency_us': 800.0, 'cpu_freq_mhz': 50,
+                'osnoise_total_ns': 0, 'pmu_backend_stall_cycles': 0,
+                'pmu_cycle_count': 0,
+            })
+        df = pd.DataFrame(rows)
+        result = attribute_tail_latency(df, "goertzel")
+
+        freq_factors = [f for f in result.factors if f.name == "cpu_freq"]
+        assert len(freq_factors) == 1
+        f = freq_factors[0]
+        assert f.enrichment == float('inf')
+        assert result.dominant_cause == "platform"
