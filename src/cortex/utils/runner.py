@@ -649,6 +649,18 @@ class HarnessRunner:
             return str(run_dir) if succeeded > 0 else None
 
         finally:
+            # Terminate any still-running processes (prevents orphans on Ctrl+C)
+            for p in processes:
+                try:
+                    if p['proc'].poll() is None:
+                        p['proc'].terminate()
+                        p['proc'].wait(timeout=5)
+                except Exception:
+                    try:
+                        p['proc'].kill()
+                    except Exception:
+                        pass
+
             # Close any log handles that were not already closed
             for p in processes:
                 try:

@@ -120,6 +120,9 @@ def generate_temp_config(
         # This is by design: auto-detect runs ALL kernels, but only specific kernels
         # should use specific calibration states.
 
+    # Strip keys the C harness doesn't understand (e.g. pipeline-mode config)
+    config.pop('pipelines', None)
+
     # Write to temp file
     with tempfile.NamedTemporaryFile(
         mode='w',
