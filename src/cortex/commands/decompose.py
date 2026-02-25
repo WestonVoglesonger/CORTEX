@@ -84,8 +84,14 @@ def execute(args):
         ) / 1000.0
 
     # Noop — cross-validation only, not load-bearing
+    # Use device-side timing when available (excludes adapter protocol overhead)
     noop_df = df_real[df_real['plugin'] == 'noop']
-    noop_latencies = noop_df['latency_us'].tolist() if not noop_df.empty else None
+    if not noop_df.empty and has_device_ts:
+        noop_latencies = noop_df['device_latency_us'].tolist()
+    elif not noop_df.empty:
+        noop_latencies = noop_df['latency_us'].tolist()
+    else:
+        noop_latencies = None
 
     # PMU detection
     has_pmu = ('pmu_cycle_count' in df_real.columns
