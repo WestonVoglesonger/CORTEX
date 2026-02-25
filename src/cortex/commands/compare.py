@@ -125,18 +125,23 @@ def execute(args):
 
     # Print summary to stdout
     print("Comparison Results:")
-    print("-" * 90)
-    print(f"{'Kernel':<20} {'Baseline (us)':>14} {'Candidate (us)':>14} {'Change':>10} {'p-value':>10} {'Sig?':>6}")
-    print("-" * 90)
+    print("-" * 100)
+    print(f"{'Kernel':<18} {'Base P50':>10} {'Cand P50':>10} {'Base P99':>10} "
+          f"{'Cand P99':>10} {'Change':>10} {'|d|':>8} {'Verdict':>12}")
+    print("-" * 100)
 
     for _, row in comparison.iterrows():
-        sig = "YES" if row['significant'] else "no"
         change_str = f"{row['relative_change_pct']:+.2f}%"
-        p_str = f"{row['p_value']:.4f}" if row['p_value'] is not None else "N/A"
-        print(f"{row['kernel']:<20} {row['baseline_mean']:>14.2f} {row['candidate_mean']:>14.2f} "
-              f"{change_str:>10} {p_str:>10} {sig:>6}")
+        d_str = f"{abs(row['cohens_d']):.3f}" if row.get('cohens_d') is not None else "N/A"
+        b_p50 = f"{row['baseline_p50']:.1f}" if 'baseline_p50' in row else "N/A"
+        c_p50 = f"{row['candidate_p50']:.1f}" if 'candidate_p50' in row else "N/A"
+        b_p99 = f"{row['baseline_p99']:.1f}" if 'baseline_p99' in row else "N/A"
+        c_p99 = f"{row['candidate_p99']:.1f}" if 'candidate_p99' in row else "N/A"
+        verdict = row.get('verdict', 'N/A')
+        print(f"{row['kernel']:<18} {b_p50:>10} {c_p50:>10} {b_p99:>10} "
+              f"{c_p99:>10} {change_str:>10} {d_str:>8} {verdict:>12}")
 
-    print("-" * 90)
+    print("-" * 100)
     print(f"\nReport saved: {report_path}")
     print(f"Plots saved:  {output_dir}/")
     print("=" * 80)
@@ -228,26 +233,46 @@ def _generate_markdown_report(comparison, output_path, args, baseline_dir, candi
     lines.append(f"- **Significance level**: {args.alpha}\n\n")
 
     lines.append("## Results\n\n")
-    lines.append("| Kernel | Baseline Mean (us) | Candidate Mean (us) | Change % | Cohen's d | p-value | Significant |\n")
-    lines.append("|--------|-------------------:|--------------------:|---------:|----------:|--------:|:-----------:|\n")
+    lines.append("| Kernel | Base P50 | Cand P50 | Base P95 | Cand P95 | Base P99 | Cand P99 "
+                 "| Change % | Cohen's d | Effect | p-value | Verdict |\n")
+    lines.append("|--------|--------:|---------:|---------:|---------:|---------:|---------:"
+                 "|---------:|----------:|:------:|--------:|:-------:|\n")
 
     for _, row in comparison.iterrows():
-        sig = "**YES**" if row['significant'] else "no"
-        p_str = f"{row['p_value']:.4f}" if row['p_value'] is not None else "N/A"
-        d_str = f"{row['cohens_d']:.3f}" if row['cohens_d'] is not None else "N/A"
+        p_str = f"{row['p_value']:.4f}" if row.get('p_value') is not None else "N/A"
+        d_str = f"{row['cohens_d']:.3f}" if row.get('cohens_d') is not None else "N/A"
+        effect = row.get('effect_size_label', 'N/A')
+        verdict = row.get('verdict', 'N/A')
+        b_p50 = f"{row['baseline_p50']:.2f}" if 'baseline_p50' in row.index else "N/A"
+        b_p95 = f"{row['baseline_p95']:.2f}" if 'baseline_p95' in row.index else "N/A"
+        b_p99 = f"{row['baseline_p99']:.2f}" if 'baseline_p99' in row.index else "N/A"
+        c_p50 = f"{row['candidate_p50']:.2f}" if 'candidate_p50' in row.index else "N/A"
+        c_p95 = f"{row['candidate_p95']:.2f}" if 'candidate_p95' in row.index else "N/A"
+        c_p99 = f"{row['candidate_p99']:.2f}" if 'candidate_p99' in row.index else "N/A"
+        verdict_fmt = f"**{verdict}**" if verdict in ('IMPROVED', 'REGRESSED') else verdict
         lines.append(
             f"| {row['kernel']} "
-            f"| {row['baseline_mean']:.2f} "
-            f"| {row['candidate_mean']:.2f} "
+            f"| {b_p50} | {c_p50} "
+            f"| {b_p95} | {c_p95} "
+            f"| {b_p99} | {c_p99} "
             f"| {row['relative_change_pct']:+.2f} "
-            f"| {d_str} "
+            f"| {d_str} | {effect} "
             f"| {p_str} "
-            f"| {sig} |\n"
+            f"| {verdict_fmt} |\n"
         )
 
     lines.append("\n## Interpretation\n\n")
     lines.append("- **Change %**: Positive = candidate is slower, Negative = candidate is faster\n")
-    lines.append("- **Cohen's d**: Effect size (0.2=small, 0.5=medium, 0.8=large)\n")
-    lines.append(f"- **Significant**: p-value < {args.alpha} (Welch's t-test)\n")
+    lines.append("- **Cohen's d**: Effect size magnitude (0.2=small, 0.5=medium, 0.8=large)\n")
+    lines.append(f"- **p-value**: Welch's t-test at alpha={args.alpha}\n\n")
+    lines.append("### Verdict Definitions\n\n")
+    lines.append("| Verdict | Meaning |\n")
+    lines.append("|---------|:--------|\n")
+    lines.append("| **IMPROVED** | Statistically significant, meaningful effect (|d| >= 0.2), candidate faster |\n")
+    lines.append("| **REGRESSED** | Statistically significant, meaningful effect (|d| >= 0.2), candidate slower |\n")
+    lines.append("| NEGLIGIBLE | Statistically significant but effect too small to matter (|d| < 0.2) |\n")
+    lines.append("| NOISE | Not statistically significant — observed difference is within random variation |\n")
+    lines.append("| LOW_N | Fewer than 30 samples — increase run duration for reliable comparison |\n")
+    lines.append("| N/A | scipy not available for statistical testing |\n")
 
     filesystem.write_file(output_path, ''.join(lines))

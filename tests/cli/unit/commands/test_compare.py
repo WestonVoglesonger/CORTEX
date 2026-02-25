@@ -103,6 +103,184 @@ class TestCompareRuns:
         assert result.iloc[0]['baseline_mean'] == pytest.approx(100.0, abs=1)
         assert result.iloc[0]['baseline_n'] == 10
 
+    def test_compare_runs_includes_percentiles(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 100
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(110, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        row = result.iloc[0]
+        for col in ('baseline_p50', 'baseline_p95', 'baseline_p99',
+                     'candidate_p50', 'candidate_p95', 'candidate_p99'):
+            assert col in result.columns
+            assert isinstance(row[col], float)
+        # P50 should be near the mean
+        assert row['baseline_p50'] == pytest.approx(100, abs=5)
+        # P99 should be higher than P50
+        assert row['baseline_p99'] > row['baseline_p50']
+
+    def test_compare_runs_effect_size_large(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 100
+        # Means 10 std apart → |d| >> 0.8
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(200, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        assert result.iloc[0]['effect_size_label'] == 'large'
+
+    def test_compare_runs_verdict_improved(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 100
+        # Candidate is faster (lower latency) with large effect
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(200, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        assert result.iloc[0]['verdict'] == 'IMPROVED'
+
+    def test_compare_runs_verdict_regressed(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 100
+        # Candidate is slower with large effect
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(200, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        assert result.iloc[0]['verdict'] == 'REGRESSED'
+
+    def test_compare_runs_verdict_negligible(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 5000
+        # 1µs shift with std=10, n=5000 → d≈0.1 (significant but negligible)
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(101, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        row = result.iloc[0]
+        assert row['significant'] is np.True_ or row['significant'] is True
+        assert abs(row['cohens_d']) < 0.2
+        assert row['verdict'] == 'NEGLIGIBLE'
+
+    def test_compare_runs_verdict_noise(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 50
+        # Same distribution → not significant
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        assert result.iloc[0]['verdict'] == 'NOISE'
+
+    def test_compare_runs_verdict_low_n(self):
+        from cortex.utils.analyzer import TelemetryAnalyzer
+
+        fs = Mock()
+        logger = Mock()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
+
+        np.random.seed(42)
+        n = 10
+        # Even with huge difference, n < 30 → LOW_N
+        df_a = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(100, 10, n),
+            'warmup': [0] * n,
+        })
+        df_b = pd.DataFrame({
+            'plugin': ['car'] * n,
+            'latency_us': np.random.normal(500, 10, n),
+            'warmup': [0] * n,
+        })
+
+        result = analyzer.compare_runs(df_a, df_b)
+        assert result.iloc[0]['verdict'] == 'LOW_N'
+
 
 class TestExecute:
     def _make_args(self, **kwargs):
@@ -151,6 +329,14 @@ class TestExecute:
             'p_value': 0.02,
             'cohens_d': 0.5,
             'significant': True,
+            'baseline_p50': 99.5,
+            'baseline_p95': 116.0,
+            'baseline_p99': 123.0,
+            'candidate_p50': 104.5,
+            'candidate_p95': 121.0,
+            'candidate_p99': 128.0,
+            'effect_size_label': 'medium',
+            'verdict': 'REGRESSED',
         }])
         analyzer.compare_runs.return_value = comparison
 
