@@ -11,7 +11,7 @@ from unittest.mock import Mock, MagicMock, call, ANY
 from pathlib import Path
 from typing import List
 
-from cortex.utils.analyzer import TelemetryAnalyzer
+from cortex.utils.analyzer import TelemetryAnalyzer, STAGE_INDEX_NOT_CHAINED
 from cortex.core.protocols import FileSystemService, Logger
 
 
@@ -597,6 +597,124 @@ class TestRunFullAnalysis:
         assert (output_dir / "latency_comparison.png").exists()
         # CDF should not exist since it wasn't requested
         assert not (output_dir / "cdf_overlay.png").exists()
+
+
+class TestChainStatistics:
+    """Test calculate_chain_statistics and chain section in summary."""
+
+    def setup_method(self):
+        self.fs = Mock(spec=FileSystemService)
+        self.logger = Mock(spec=Logger)
+        self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
+
+    def test_chain_stats_returns_none_without_stage_index(self):
+        """No stage_index column → returns None."""
+        df = pd.DataFrame({
+            'plugin': ['k1', 'k1'],
+            'latency_us': [100, 200],
+            'warmup': [0, 0],
+        })
+        result = self.analyzer.calculate_chain_statistics(df)
+        assert result is None
+
+    def test_chain_stats_returns_none_all_non_chain(self):
+        """All stage_index == STAGE_INDEX_NOT_CHAINED → returns None."""
+        df = pd.DataFrame({
+            'plugin': ['k1', 'k1'],
+            'latency_us': [100, 200],
+            'warmup': [0, 0],
+            'stage_index': [STAGE_INDEX_NOT_CHAINED, STAGE_INDEX_NOT_CHAINED],
+            'window_index': [0, 1],
+        })
+        result = self.analyzer.calculate_chain_statistics(df)
+        assert result is None
+
+    def test_chain_stats_basic(self):
+        """2-stage DataFrame → correct per-stage stats, pct_contribution, e2e."""
+        n = 20
+        df = pd.DataFrame({
+            'plugin': ['fir'] * n + ['iir'] * n,
+            'latency_us': [100.0] * n + [200.0] * n,
+            'warmup': [0] * (2 * n),
+            'stage_index': [0] * n + [1] * n,
+            'window_index': list(range(n)) + list(range(n)),
+        })
+
+        result = self.analyzer.calculate_chain_statistics(df)
+
+        assert result is not None
+        assert len(result) == 2
+        assert 0 in result.index
+        assert 1 in result.index
+
+        # Stage 0: mean 100, contribution 100/(100+200)=33.3%
+        assert result.loc[0, 'latency_us_mean'] == pytest.approx(100.0)
+        assert result.loc[0, 'pct_contribution'] == pytest.approx(100 / 300 * 100, rel=0.01)
+
+        # Stage 1: mean 200, contribution 66.7%
+        assert result.loc[1, 'latency_us_mean'] == pytest.approx(200.0)
+        assert result.loc[1, 'pct_contribution'] == pytest.approx(200 / 300 * 100, rel=0.01)
+
+        # End-to-end: each window has 100+200=300
+        e2e = result.attrs['e2e']
+        assert e2e['e2e_mean'] == pytest.approx(300.0)
+        assert e2e['e2e_p50'] == pytest.approx(300.0)
+
+    def test_summary_includes_chain_section(self, tmp_path):
+        """Passing chain_stats → 'Pipeline Chain Breakdown' appears in output."""
+        from cortex.core import RealFileSystemService
+        fs = RealFileSystemService()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=self.logger)
+
+        df = pd.DataFrame({
+            'plugin': ['fir', 'fir', 'iir', 'iir'],
+            'latency_us': [100.0, 100.0, 200.0, 200.0],
+            'warmup': [0, 0, 0, 0],
+        })
+
+        # Build chain_stats manually
+        chain_stats = pd.DataFrame({
+            'kernel': ['fir', 'iir'],
+            'latency_us_mean': [100.0, 200.0],
+            'latency_us_median': [100.0, 200.0],
+            'latency_us_p95': [100.0, 200.0],
+            'latency_us_p99': [100.0, 200.0],
+            'pct_contribution': [33.33, 66.67],
+        }, index=pd.Index([0, 1], name='stage_index'))
+        chain_stats.attrs['e2e'] = {
+            'e2e_mean': 300.0, 'e2e_p50': 300.0,
+            'e2e_p95': 300.0, 'e2e_p99': 300.0,
+        }
+
+        output_path = str(tmp_path / "SUMMARY.md")
+        result = analyzer.generate_summary_table(df, output_path, chain_stats=chain_stats)
+
+        assert result is True
+        content = Path(output_path).read_text()
+        assert "Pipeline Chain Breakdown" in content
+        assert "fir" in content
+        assert "iir" in content
+        assert "Contribution %" in content
+        assert "End-to-end latency" in content
+
+    def test_summary_without_chain_stats(self, tmp_path):
+        """Passing None → no chain section (backward compat)."""
+        from cortex.core import RealFileSystemService
+        fs = RealFileSystemService()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=self.logger)
+
+        df = pd.DataFrame({
+            'plugin': ['k1', 'k1'],
+            'latency_us': [100.0, 200.0],
+            'warmup': [0, 0],
+        })
+
+        output_path = str(tmp_path / "SUMMARY.md")
+        result = analyzer.generate_summary_table(df, output_path, chain_stats=None)
+
+        assert result is True
+        content = Path(output_path).read_text()
+        assert "Pipeline Chain Breakdown" not in content
 
 
 # Test discovery for pytest

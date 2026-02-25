@@ -94,9 +94,17 @@ class SubprocessHandle:
         """Check if process has terminated."""
         return self._handle.poll()
 
-    def wait(self) -> int:
+    def wait(self, timeout=None) -> int:
         """Wait for process to terminate."""
-        return self._handle.wait()
+        return self._handle.wait(timeout=timeout)
+
+    def terminate(self) -> None:
+        """Send SIGTERM to the process."""
+        self._handle.terminate()
+
+    def kill(self) -> None:
+        """Send SIGKILL to the process."""
+        self._handle.kill()
 
 
 class CompletedProcessResult:
@@ -221,6 +229,9 @@ class YamlConfigLoader:
         """
         try:
             content = self.fs.read_file(path)
-            return yaml.safe_load(content)
+            data = yaml.safe_load(content)
+            if data is None:
+                raise ValueError(f"YAML file '{path}' is empty")
+            return data
         except yaml.YAMLError as e:
             raise ValueError(f"Failed to parse YAML file '{path}': {e}") from e

@@ -14,6 +14,9 @@ from typing import List, Optional
 
 from cortex.core.protocols import FileSystemService, Logger
 
+# Sentinel matching CORTEX_STAGE_NOT_CHAINED in telemetry.h
+STAGE_INDEX_NOT_CHAINED = 0xFFFFFFFF
+
 # Set style
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
@@ -250,6 +253,97 @@ class TelemetryAnalyzer:
 
         return stats
 
+    def calculate_chain_statistics(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Calculate per-stage latency statistics for chained pipeline runs.
+
+        Groups telemetry by stage_index (set by dispatch_chain in scheduler.c),
+        computes per-stage latency stats, percentage contribution, and
+        end-to-end latency per window.
+
+        Args:
+            df: Telemetry DataFrame with 'stage_index', 'latency_us', 'warmup' columns
+
+        Returns:
+            DataFrame with per-stage statistics, or None if not a chain run
+        """
+        if 'stage_index' not in df.columns:
+            self.log.info("No stage_index column; not a chain run")
+            return None
+
+        # Filter warmup and non-chain records
+        df_chain = df[(df['warmup'] == 0) & (df['stage_index'] != STAGE_INDEX_NOT_CHAINED)].copy()
+        if df_chain.empty:
+            self.log.info("No chained telemetry records found")
+            return None
+
+        # Per-stage statistics
+        stage_stats = df_chain.groupby('stage_index').agg({
+            'latency_us': [
+                'mean',
+                'median',
+                ('p95', lambda x: x.quantile(0.95)),
+                ('p99', lambda x: x.quantile(0.99)),
+            ],
+            'plugin': 'first',
+        })
+
+        # Flatten multi-level columns and rename 'plugin' -> 'kernel'
+        flat_names = []
+        for col in stage_stats.columns:
+            if col[1] and col[1] != 'first':
+                flat_names.append(f'{col[0]}_{col[1]}')
+            elif col[0] == 'plugin':
+                flat_names.append('kernel')
+            else:
+                flat_names.append(col[0])
+        stage_stats.columns = flat_names
+
+        # Calculate end-to-end latency per window (sum of all stages)
+        # Filter to complete windows only (all stages present) to avoid
+        # partial windows from failed stages skewing the distribution.
+        n_stages = df_chain['stage_index'].nunique()
+        stages_per_window = df_chain.groupby('window_index')['stage_index'].nunique()
+        complete_windows = stages_per_window[stages_per_window == n_stages].index
+        df_complete = df_chain[df_chain['window_index'].isin(complete_windows)]
+        if df_complete.empty:
+            self.log.warning("No complete chain windows found; e2e stats unavailable")
+            e2e_stats = {'e2e_mean': 0.0, 'e2e_p50': 0.0, 'e2e_p95': 0.0, 'e2e_p99': 0.0}
+        else:
+            e2e = df_complete.groupby('window_index')['latency_us'].sum()
+            e2e_stats = {
+                'e2e_mean': float(e2e.mean()),
+                'e2e_p50': float(e2e.median()),
+                'e2e_p95': float(e2e.quantile(0.95)),
+                'e2e_p99': float(e2e.quantile(0.99)),
+            }
+
+        # Calculate percentage contribution per stage
+        total_mean = stage_stats['latency_us_mean'].sum()
+        if total_mean > 0:
+            stage_stats['pct_contribution'] = (
+                stage_stats['latency_us_mean'] / total_mean * 100
+            )
+        else:
+            stage_stats['pct_contribution'] = 0.0
+
+        # Sort by stage index
+        stage_stats = stage_stats.sort_index()
+
+        # Log the pipeline summary
+        kernels = stage_stats['kernel'].tolist()
+        self.log.info(f"Pipeline: {' -> '.join(kernels)}")
+        self.log.info(f"End-to-end P50: {e2e_stats['e2e_p50']:.1f} us")
+        for _idx, row in stage_stats.iterrows():
+            self.log.info(
+                f"  {row['kernel']:<20s} {row['latency_us_mean']:>8.1f} us  "
+                f"({row['pct_contribution']:>5.1f}%)"
+            )
+
+        # Attach e2e stats as metadata
+        stage_stats.attrs['e2e'] = e2e_stats
+
+        return stage_stats
+
     def plot_latency_comparison(self, df: pd.DataFrame, output_path: str,
                                 format: str = 'png') -> bool:
         """Generate latency comparison bar chart.
@@ -474,12 +568,14 @@ class TelemetryAnalyzer:
         finally:
             plt.close('all')
 
-    def generate_summary_table(self, df: pd.DataFrame, output_path: str) -> bool:
+    def generate_summary_table(self, df: pd.DataFrame, output_path: str,
+                               chain_stats: Optional[pd.DataFrame] = None) -> bool:
         """Generate markdown summary table.
 
         Args:
             df: Telemetry DataFrame (raw data with 'warmup' column)
             output_path: Path to save markdown file
+            chain_stats: Per-stage chain statistics from calculate_chain_statistics(), or None
 
         Returns:
             True if table saved successfully, False otherwise
@@ -565,6 +661,33 @@ class TelemetryAnalyzer:
                         f"| {row.get('miss_rate', 'N/A')} "
                         f"| {row.get('total_samples', 'N/A')} "
                         f"| {row.get('deadline_misses', 'N/A')} |\n"
+                    )
+
+            # Add pipeline chain breakdown if available
+            if chain_stats is not None:
+                markdown_lines.append("\n## Pipeline Chain Breakdown\n\n")
+                markdown_lines.append("| Stage | Kernel | Mean | Median | P95 | P99 | Contribution % |\n")
+                markdown_lines.append("|-------|--------|------|--------|-----|-----|----------------|\n")
+
+                for stage_idx, row in chain_stats.iterrows():
+                    markdown_lines.append(
+                        f"| {stage_idx} "
+                        f"| {row['kernel']} "
+                        f"| {row['latency_us_mean']:.2f} "
+                        f"| {row['latency_us_median']:.2f} "
+                        f"| {row['latency_us_p95']:.2f} "
+                        f"| {row['latency_us_p99']:.2f} "
+                        f"| {row['pct_contribution']:.1f} |\n"
+                    )
+
+                e2e = chain_stats.attrs.get('e2e', {})
+                if e2e:
+                    markdown_lines.append(
+                        f"\n**End-to-end latency:** "
+                        f"Mean {e2e['e2e_mean']:.2f} μs | "
+                        f"P50 {e2e['e2e_p50']:.2f} μs | "
+                        f"P95 {e2e['e2e_p95']:.2f} μs | "
+                        f"P99 {e2e['e2e_p99']:.2f} μs\n"
                     )
 
             # Write using DI abstraction
@@ -839,6 +962,7 @@ class TelemetryAnalyzer:
 
         # Calculate statistics
         stats = self.calculate_statistics(df)
+        chain_stats = self.calculate_chain_statistics(df)
 
         # Generate plots
         plot_results = {}
@@ -880,7 +1004,7 @@ class TelemetryAnalyzer:
 
         # Generate summary table
         summary_path = f"{output_dir}/SUMMARY.md"
-        summary_success = self.generate_summary_table(df, summary_path)
+        summary_success = self.generate_summary_table(df, summary_path, chain_stats=chain_stats)
 
         # Print summary
         successful_plots = sum(1 for v in plot_results.values() if v)

@@ -98,8 +98,16 @@ class ProcessHandle(Protocol):
         """Check if process has terminated. Returns exit code or None."""
         ...
 
-    def wait(self) -> int:
+    def wait(self, timeout: Optional[float] = None) -> int:
         """Wait for process to terminate and return exit code."""
+        ...
+
+    def terminate(self) -> None:
+        """Send SIGTERM to the process."""
+        ...
+
+    def kill(self) -> None:
+        """Send SIGKILL to the process."""
         ...
 
 

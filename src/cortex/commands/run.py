@@ -4,7 +4,9 @@ CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
 """
 import sys
 import argparse
+from pathlib import Path
 from cortex.utils.runner import HarnessRunner
+from cortex.utils.analyzer import TelemetryAnalyzer
 from cortex.utils.paths import generate_run_name, create_run_structure
 from cortex.utils.device import resolve_device, validate_capabilities
 from cortex.deploy import DeployerFactory, Deployer, DeploymentError
@@ -171,6 +173,31 @@ def _run_with_deploy(deploy_string, run_fn, verbose):
             print(f"Cleanup issues: {cleanup_result.errors}")
 
 
+def _analyze_pipeline_run(run_dir, filesystem):
+    """Run per-pipeline analysis on pipeline-* subdirectories.
+
+    Args:
+        run_dir: Path to the run directory containing pipeline-* subdirs.
+        filesystem: FileSystemService instance.
+    """
+    run_path = Path(run_dir)
+    pipe_dirs = sorted(run_path.glob("pipeline-*"))
+    if not pipe_dirs:
+        return
+
+    logger = ConsoleLogger()
+    print(f"\nAnalyzing {len(pipe_dirs)} pipeline(s)...")
+
+    for pipe_dir in pipe_dirs:
+        if not pipe_dir.is_dir():
+            continue
+        analyzer = TelemetryAnalyzer(filesystem=filesystem, logger=logger)
+        output_dir = str(pipe_dir / "analysis")
+        success = analyzer.run_full_analysis(str(pipe_dir), output_dir=output_dir)
+        status = "OK" if success else "no data"
+        print(f"  {pipe_dir.name}: {status}")
+
+
 def execute(args):
     """Execute run command."""
     print("=" * 80)
@@ -246,6 +273,28 @@ def execute(args):
 
     # Custom config mode
     if args.config:
+        # Pipeline mode: config with 'pipelines' section triggers concurrent pipeline execution
+        if config_dict and 'pipelines' in config_dict:
+            captured = {}
+
+            def run_fn(transport_uri):
+                create_run_structure(run_name)
+                results_dir = runner.run_pipelines(
+                    args.config, run_name=run_name, verbose=args.verbose,
+                    transport_uri=transport_uri, device_spec=device_spec,
+                    duration=args.duration, repeats=args.repeats,
+                    warmup=args.warmup,
+                )
+                captured['results_dir'] = results_dir
+                return results_dir
+
+            exit_code = _run_with_deploy(deploy_string, run_fn, args.verbose)
+
+            if captured.get('results_dir'):
+                _analyze_pipeline_run(captured['results_dir'], filesystem)
+
+            return exit_code
+
         def run_fn(transport_uri):
             create_run_structure(run_name)
             return runner.run(

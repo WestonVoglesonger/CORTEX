@@ -5,6 +5,7 @@ and device Roofline model to predict latency before benchmarking. Optionally
 attaches instruction profile from objdump/otool as supplementary metadata.
 """
 import json
+from pathlib import Path
 
 from cortex.utils.decomposition import (
     RooflineDecomposer, load_device_spec, load_kernel_specs,
