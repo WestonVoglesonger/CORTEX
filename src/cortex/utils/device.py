@@ -83,9 +83,8 @@ def validate_capabilities(device_spec: dict) -> dict:
 def probe_pmu_available(fs, process_executor) -> bool:
     """Check PMU availability using DI-compatible interfaces.
 
-    Shared by check_system.check_pmu_privilege() and run._warn_pmu_status().
+    Used by check_system.check_pmu_privilege() and run._check_preflight().
     Returns True if PMU counters are accessible, False otherwise.
-    Silent on all errors — callers handle messaging.
     """
     inscount_path = 'sdk/kernel/tools/cortex_inscount'
     if not fs.exists(inscount_path):
@@ -107,9 +106,13 @@ def probe_pmu_available(fs, process_executor) -> bool:
         if result.returncode == 0:
             data = json.loads(result.stdout.strip())
             return data.get('available', False)
-    except Exception:
-        pass
-    return False
+        return False
+    except (json.JSONDecodeError, ValueError):
+        return False
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def _probe_pmu() -> dict:

@@ -856,9 +856,8 @@ class TestRunAllChecks:
         assert checks[6].name == 'PMU Access'
         assert checks[7].name == 'RT Scheduling'
 
-    def test_all_pass_returns_true(self):
-        """All checks passing should return True (no critical failures)."""
-        # macOS with caffeinate = original 5 pass; new checks are non-critical
+    def test_nothing_built_makes_all_pass_false(self):
+        """Nothing built → Build Status critical → all_pass is False."""
         fs = create_mock_filesystem()
         fs.glob.side_effect = lambda d, p: []
 
@@ -875,11 +874,10 @@ class TestRunAllChecks:
 
         checks, all_pass = checker.run_all_checks()
 
-        # Build Status is critical=True when nothing built, making all_pass=False
-        assert all_pass == False
-        # Verify that non-critical checks don't block
-        non_critical = [c for c in checks if not c.critical]
-        assert all(c.status != 'fail' for c in non_critical)
+        assert all_pass is False
+        build_check = [c for c in checks if c.name == 'Build Status'][0]
+        assert build_check.status == 'fail'
+        assert build_check.critical is True
 
     def test_all_checks_pass_with_full_setup(self):
         """All checks passing (including build) should return True."""

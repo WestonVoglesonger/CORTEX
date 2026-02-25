@@ -195,6 +195,9 @@ def _check_preflight(filesystem, process_executor):
             print("Note: PMU counters unavailable. One-time fix: "
                   "`sudo setcap cap_perfmon=ep <adapter_path>`. "
                   "Latency benchmarks are valid without PMU.")
+        else:
+            print("Note: PMU counters unavailable. "
+                  "Latency benchmarks are valid without PMU.")
 
 
 def _analyze_pipeline_run(run_dir, filesystem):
@@ -285,9 +288,10 @@ def execute(args):
     deploy_string = resolve_deploy_arg(args, config_dict)
 
     # Create production runner
+    process_executor = SubprocessExecutor()
     runner = HarnessRunner(
         filesystem=filesystem,
-        process_executor=SubprocessExecutor(),
+        process_executor=process_executor,
         config_loader=config_loader,
         time_provider=SystemTimeProvider(),
         env_provider=SystemEnvironmentProvider(),
@@ -296,7 +300,7 @@ def execute(args):
     )
 
     # Pre-flight checks (non-blocking tips)
-    _check_preflight(filesystem, SubprocessExecutor())
+    _check_preflight(filesystem, process_executor)
 
     # Custom config mode
     if args.config:

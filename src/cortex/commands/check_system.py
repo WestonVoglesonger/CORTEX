@@ -426,6 +426,9 @@ class SystemChecker:
         Probes by running cortex_inscount on the noop kernel. Always non-critical
         since latency benchmarks are valid without PMU data.
         """
+        from cortex.utils.device import probe_pmu_available
+
+        # Pre-probe existence checks for granular messaging
         inscount_path = 'sdk/kernel/tools/cortex_inscount'
         if not self.fs.exists(inscount_path):
             return SystemCheck(
@@ -435,7 +438,6 @@ class SystemChecker:
                 critical=False,
             )
 
-        # Check noop plugin exists
         noop_dir = 'primitives/kernels/v1/noop@f32'
         noop_built = any(
             self.fs.exists(f'{noop_dir}/libnoop{ext}')
@@ -449,22 +451,13 @@ class SystemChecker:
                 critical=False,
             )
 
-        try:
-            result = self.process.run(
-                [inscount_path, '--plugin', noop_dir, '--repeats', '1'],
-                capture_output=True, text=True, timeout=30,
+        # Delegate actual probe to shared utility
+        if probe_pmu_available(self.fs, self.process):
+            return SystemCheck(
+                'PMU Access',
+                'pass',
+                'Performance counters available (instruction/cycle counting enabled)',
             )
-            if result.returncode == 0:
-                import json as _json
-                data = _json.loads(result.stdout.strip())
-                if data.get('available', False):
-                    return SystemCheck(
-                        'PMU Access',
-                        'pass',
-                        'Performance counters available (instruction/cycle counting enabled)',
-                    )
-        except Exception:
-            pass
 
         # PMU unavailable — platform-specific guidance
         system = self.env.get_system_type()
@@ -519,8 +512,10 @@ class SystemChecker:
                                     '`sudo setcap cap_sys_nice=ep <binary>` for RT scheduling.',
                                     critical=False,
                                 )
-            except Exception:
-                pass
+            except (ValueError, IndexError) as e:
+                self.log.info(f"Could not parse /proc/self/status capabilities: {e}")
+            except Exception as e:
+                self.log.info(f"RT scheduling check failed: {e}")
 
             return SystemCheck(
                 'RT Scheduling',
