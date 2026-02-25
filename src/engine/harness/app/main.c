@@ -398,11 +398,11 @@ static int run_chain(harness_context_t *ctx) {
     size_t telemetry_start_count = ctx->telemetry.count;
 
     /* Spawn adapters for all plugins and register on the shared scheduler */
-    cortex_device_init_result_t device_results[64];
-    void *calibration_states[64];
+    cortex_device_init_result_t device_results[CORTEX_MAX_PLUGINS];
+    void *calibration_states[CORTEX_MAX_PLUGINS];
     size_t registered_count = 0;
 
-    for (size_t i = 0; i < ctx->run_cfg.plugin_count && i < 64; i++) {
+    for (size_t i = 0; i < ctx->run_cfg.plugin_count && i < CORTEX_MAX_PLUGINS; i++) {
         cortex_plugin_entry_cfg_t *plugin_cfg = &ctx->run_cfg.plugins[i];
         if (strcmp(plugin_cfg->status, "ready") != 0) continue;
 
@@ -473,7 +473,8 @@ static int run_chain(harness_context_t *ctx) {
                 break;
             }
             fprintf(stderr, "[harness] chain: repeat %u failed\n", r);
-            goto chain_cleanup;
+            ret = -1;
+            break;  /* Fall through to telemetry write block */
         }
     }
 
@@ -513,7 +514,10 @@ static int run_chain(harness_context_t *ctx) {
 
                 /* Filter records by plugin name */
                 cortex_telemetry_buffer_t filtered = {0};
-                if (cortex_telemetry_init(&filtered, 1024) != 0) continue;
+                if (cortex_telemetry_init(&filtered, 1024) != 0) {
+                    fprintf(stderr, "[harness] Failed to allocate telemetry filter buffer for %s\n", pname);
+                    continue;
+                }
 
                 for (size_t j = telemetry_start_count; j < telemetry_end_count; j++) {
                     if (strcmp(ctx->telemetry.records[j].plugin_name, pname) == 0) {
@@ -534,6 +538,8 @@ static int run_chain(harness_context_t *ctx) {
             }
         }
     }
+
+    if (ret != 0) goto chain_cleanup;
 
     ret = 0;
 
