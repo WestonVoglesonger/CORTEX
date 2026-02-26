@@ -65,9 +65,18 @@ def validate_chain(kernel_names: List[str], kernels_dir: str = "primitives/kerne
 
 
 def _load_kernel_spec(kernel_name: str, kernels_path: Path) -> Optional[dict]:
-    """Load a kernel's spec.yaml file."""
-    # Search versioned directories
+    """Load a kernel's spec.yaml file.
+
+    Searches both {name}/ (new layout with dtype subdirs) and {name}@{dtype}/
+    (legacy flat layout) within versioned directories.
+    """
     for version_dir in sorted(kernels_path.glob("v*")):
+        # New layout: {name}/spec.yaml (with f32/q15 subdirs)
+        spec_file = version_dir / kernel_name / "spec.yaml"
+        if spec_file.exists():
+            with open(spec_file) as f:
+                return yaml.safe_load(f)
+        # Legacy layout: {name}@{dtype}/spec.yaml
         for kernel_dir in version_dir.glob(f"{kernel_name}@*"):
             spec_file = kernel_dir / "spec.yaml"
             if spec_file.exists():

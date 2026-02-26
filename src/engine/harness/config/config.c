@@ -110,35 +110,47 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
         if (line[0] == '\0' || line[0] == '#') continue;
 
         if (starts_with(line, "input_shape:")) {
-            /* Parse [W, null] format - extract W only, ignore C (comes from dataset) */
+            /* Parse [W, null] or [160, null] format - extract W only, ignore C (comes from dataset).
+             * Symbolic values like "W" mean "use default window length". Only override
+             * the default if a literal integer is found. */
             const char *v = line + strlen("input_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
-                window_length = (uint32_t)strtoul(v, (char**)&v, 10);
+                while (*v == ' ') v++;
+                if (*v >= '0' && *v <= '9') {
+                    uint32_t parsed = (uint32_t)strtoul(v, (char**)&v, 10);
+                    if (parsed > 0) window_length = parsed;
+                }
+                /* else: symbolic (e.g., "W") — keep default */
             }
         }
         else if (starts_with(line, "output_shape:")) {
-            /* Parse [W, C] or [W, null] format */
+            /* Parse [W, C], [160, null], or symbolic [W, C] format.
+             * Symbolic values and "null" both mean "use passthrough". */
             const char *v = line + strlen("output_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
+                while (*v == ' ') v++;
                 /* Parse first dimension (W) */
                 if (strncmp(v, "null", 4) == 0) {
                     output_window = 0;  /* Signal "use input W" */
                     v += 4;
-                } else {
+                } else if (*v >= '0' && *v <= '9') {
                     output_window = (uint32_t)strtoul(v, (char**)&v, 10);
                 }
-                /* Skip comma and whitespace */
+                /* else: symbolic (e.g., "W") — keep 0 = passthrough */
+                /* Skip to second dimension */
                 while (*v == ' ' || *v == ',') v++;
+                while (*v == ' ') v++;
                 /* Parse second dimension (C) */
                 if (strncmp(v, "null", 4) == 0) {
                     output_channels = 0;  /* Signal "use dataset C" */
-                } else {
+                } else if (*v >= '0' && *v <= '9') {
                     output_channels = (uint32_t)strtoul(v, (char**)&v, 10);
                 }
+                /* else: symbolic (e.g., "C") — keep 0 = passthrough */
             }
         }
     }
