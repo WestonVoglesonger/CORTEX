@@ -326,22 +326,76 @@ static cortex_plugin_config_t build_plugin_config(uint32_t abi_version,
   return config;
 }
 
-/* Load tolerances from spec.yaml */
+/*
+ * Load tolerances from spec.yaml.
+ *
+ * All spec.yaml files use the uniform format:
+ *   numerical:
+ *     tolerances:
+ *       float32:
+ *         rtol: <value>
+ *         atol: <value>
+ *       quantized:
+ *         rtol: <value>
+ *         atol: <value>
+ *
+ * Falls back to hardcoded defaults if spec.yaml is missing or unparseable.
+ */
 static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
-  /* Q15 kernels use relaxed tolerances due to quantization error */
-  if (is_q15) {
-    tolerance_t tol = {.rtol = 1e-3, .atol = 1e-3};
-    return tol;
-  }
-
-  /* Default strict tolerances for float32 */
   tolerance_t tol = {.rtol = 1e-5, .atol = 1e-6};
-
-  /* Relaxed tolerances for Welch PSD due to float/double precision differences */
-  if (strcmp(kernel_name, "welch_psd") == 0) {
-    tol.rtol = 2e-3;
-    tol.atol = 1e-4;
+  if (is_q15) {
+    tol.rtol = 1e-3;
+    tol.atol = 1e-3;
   }
+
+  char spec_path[512];
+  snprintf(spec_path, sizeof(spec_path),
+           "primitives/kernels/v1/%s/spec.yaml", kernel_name);
+
+  FILE *f = fopen(spec_path, "r");
+  if (!f) return tol;
+
+  const char *target = is_q15 ? "quantized:" : "float32:";
+  int in_target = 0;
+  char line[256];
+
+  while (fgets(line, sizeof(line), f)) {
+    /* Count leading spaces */
+    int indent = 0;
+    while (line[indent] == ' ') indent++;
+    char *trimmed = line + indent;
+
+    /* Skip blank/comment lines */
+    if (trimmed[0] == '\n' || trimmed[0] == '\0' || trimmed[0] == '#')
+      continue;
+
+    /* Detect target dtype section */
+    if (strncmp(trimmed, target, strlen(target)) == 0) {
+      in_target = 1;
+      continue;
+    }
+
+    /* If we hit another dtype section or a less-indented key, leave target */
+    if (in_target && indent <= 6 && strstr(trimmed, ":")) {
+      if (strncmp(trimmed, "rtol:", 5) != 0 &&
+          strncmp(trimmed, "atol:", 5) != 0) {
+        in_target = 0;
+      }
+    }
+
+    if (!in_target) continue;
+
+    double val;
+    if (strncmp(trimmed, "rtol:", 5) == 0 &&
+        sscanf(trimmed + 5, " %lf", &val) == 1) {
+      tol.rtol = val;
+    } else if (strncmp(trimmed, "atol:", 5) == 0 &&
+               sscanf(trimmed + 5, " %lf", &val) == 1) {
+      tol.atol = val;
+    }
+  }
+
+  fclose(f);
   return tol;
 }
 

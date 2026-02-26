@@ -1,0 +1,29 @@
+KissFFT - Fast Fourier Transform Library
+=========================================
+
+Source: https://github.com/mborgerding/kissfft
+License: BSD-3-Clause (see LICENSE file in this directory)
+Copyright: 2003-2010 Mark Borgerding
+
+Version Information:
+- Vendored from: kissfft repository (commit: 8f47a67)
+- Date vendored: 2024
+- Files included:
+  * kiss_fft.h - Main header
+  * kiss_fft.c - Implementation
+  * _kiss_fft_guts.h - Internal definitions
+  * LICENSE - BSD-3-Clause license text
+
+Modifications:
+- None. Files are vendored as-is from upstream.
+
+Rationale for Vendoring:
+- Ensures build portability without requiring system FFT libraries (FFTW)
+- Small footprint (~600 lines) suitable for embedded/real-time contexts
+- BSD-3-Clause license is compatible with CORTEX
+- Stable API with no external dependencies
+
+Update Policy:
+- Check upstream repository periodically for bug fixes or security updates
+- Test thoroughly before updating vendored version
+- Document any updates in git commit messages

@@ -1,0 +1,25 @@
+kernel:
+  name: "fft"
+  version: "1.0.0"
+  dtype: "float32"
+
+abi:
+  input_shape: [W, C]
+  output_shape: [W/2+1, C]
+  stateful: false
+
+numerical:
+  tolerances:
+    float32:
+      rtol: 2.0e-4
+      atol: 1.0e-5
+    quantized:
+      # Relaxed: oracle approximates C_FIXDIV scaling as 1/N.
+      # Actual butterfly-by-butterfly scaling varies by factorization path.
+      rtol: 5.0e-2
+      atol: 1.0e-2
+
+oracle:
+  path: "oracle.py"
+  function: "fft_magsq_ref"
+  dependencies: ["numpy"]

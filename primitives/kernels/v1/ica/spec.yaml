@@ -30,9 +30,13 @@ algorithm:
   tolerance: 1.0e-4
 
 numerical:
-  tolerance:
-    rtol: 1.0e-4  # Looser for iterative algorithm
-    atol: 1.0e-5
+  tolerances:
+    float32:
+      rtol: 1.0e-4
+      atol: 1.0e-5
+    quantized:
+      rtol: 1.0e-3
+      atol: 1.0e-3
 
 oracle:
   calibrate_function: "calibrate_ica"
