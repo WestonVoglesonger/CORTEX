@@ -219,6 +219,9 @@ tests/test_*
 !tests/test_*.c
 !tests/test_*.py
 
+# Mock adapter binary (built from source)
+tests/fixtures/mock_adapter/mock_adapter
+
 # Adapter binaries (built from source)
 cortex_adapter_*
 !cortex_adapter_*.c
