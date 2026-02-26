@@ -1,16 +1,18 @@
-"""Decompose command - Post-benchmark latency characterization (SE-5).
+"""Decompose command - Post-benchmark latency characterization (SE-5/SE-7).
 
 Characterizes kernel latency distributions using roofline classification,
-distribution landmarks, and optional PMU enrichment. Every platform gets
-a characterization; richer platforms get richer output.
+distribution landmarks, optional PMU enrichment, and tail-latency attribution.
+Every platform gets a characterization; richer platforms get richer output.
 """
 import json
+from dataclasses import asdict
 
 from cortex.core import ConsoleLogger, RealFileSystemService, YamlConfigLoader
 from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
+    attribute_tail, TailAttribution, CovariateComparison,
     _pmu_unavailable_reason,
 )
 
@@ -102,6 +104,14 @@ def execute(args):
                  and 'pmu_backend_stall_cycles' in df_real.columns
                  and df_real['pmu_backend_stall_cycles'].sum() > 0)
 
+    # OS noise detection
+    has_osnoise = ('osnoise_total_ns' in df_real.columns
+                   and df_real['osnoise_total_ns'].sum() > 0)
+
+    # CPU frequency per window (may be all zeros on macOS)
+    has_cpu_freq = ('cpu_freq_mhz' in df_real.columns
+                    and df_real['cpu_freq_mhz'].sum() > 0)
+
     if not has_pmu:
         reason = _pmu_unavailable_reason()
         # Strip the "no PMU data" prefix — we provide our own framing
@@ -119,8 +129,8 @@ def execute(args):
     # Discover kernel names (exclude noop)
     kernel_names = [name for name in df_real['plugin'].unique() if name != 'noop']
 
-    # Single characterization path
-    results = []
+    # Characterization + tail attribution per kernel
+    results = []          # (CharacterizationResult, TailAttribution) tuples
     for plugin_name in kernel_names:
         kernel_df = df_real[df_real['plugin'] == plugin_name]
 
@@ -130,7 +140,10 @@ def execute(args):
         device_lats = (kernel_df['device_latency_us'].tolist()
                        if has_device_ts else None)
 
-        result = characterize_kernel(
+        # Best-available latency array for attribution (device > outer)
+        attr_lats = device_lats if device_lats else kernel_df['latency_us'].tolist()
+
+        char_result = characterize_kernel(
             plugin_name,
             outer_latencies_us=kernel_df['latency_us'].tolist(),
             device_latencies_us=device_lats,
@@ -146,8 +159,26 @@ def execute(args):
             per_window_backend_stall_counts=(kernel_df['pmu_backend_stall_cycles'].tolist()
                                              if has_stall else None),
         )
-        if result:
-            results.append(result)
+
+        # Tail attribution (SE-7)
+        tail_result = attribute_tail(
+            plugin_name,
+            latencies_us=attr_lats,
+            noop_latencies_us=noop_latencies,
+            per_window_cpu_freq_mhz=(kernel_df['cpu_freq_mhz'].tolist()
+                                     if has_cpu_freq else None),
+            per_window_osnoise_ns=(kernel_df['osnoise_total_ns'].tolist()
+                                   if has_osnoise else None),
+            per_window_cycle_counts=(kernel_df['pmu_cycle_count'].tolist()
+                                     if has_pmu else None),
+            per_window_instruction_counts=(kernel_df['pmu_instruction_count'].tolist()
+                                           if has_pmu else None),
+            per_window_backend_stall_counts=(kernel_df['pmu_backend_stall_cycles'].tolist()
+                                             if has_stall else None),
+        )
+
+        if char_result:
+            results.append((char_result, tail_result))
 
     if not results:
         print("Error: No kernels could be characterized (missing specs?)")
@@ -183,7 +214,7 @@ def _output_table(results, dev):
     print(f"\nLatency Characterization — {device_name}")
     print("=" * 68)
 
-    for r in results:
+    for r, ta in results:
         prov = r.provenance
         timing_src = prov.get('best_us', 'measured/timing')
 
@@ -212,6 +243,9 @@ def _output_table(results, dev):
               f"{'':>11}[{timing_src}]")
         print(f"  Tail risk:           {r.tail_risk_us:>5.1f} us"
               f"{'':>11}[{timing_src}]")
+
+        # Tail attribution (SE-7) — always show Tier 1
+        _print_tail_attribution(ta)
 
         # PMU enrichment
         if r.ipc is not None:
@@ -255,13 +289,55 @@ def _output_table(results, dev):
         print("-" * 68)
 
 
+def _print_tail_attribution(ta):
+    """Print tail attribution section for a single kernel."""
+    print(f"\n  Tail ratio (P99/P50): {ta.tail_ratio:>5.1f}x"
+          f"{'':>11}[{ta.provenance.get('tail_ratio', 'measured/timing')}]")
+    if ta.normalized_ratio is not None:
+        print(f"  Normalized (vs noop): {ta.normalized_ratio:>5.1f}x"
+              f"{'':>11}[{ta.provenance.get('normalized_ratio', 'measured/timing')}]")
+    print(f"  Verdict: {ta.verdict}"
+          f"{'':>4}[tier-{ta.tier}]")
+
+    # Tier 2: Cohort comparison
+    if ta.tier >= 2 and ta.tail_cohort_size is not None:
+        print(f"\n  Tail cohort (>P95): {ta.tail_cohort_size} windows"
+              f" vs typical (P25-P75): {ta.typical_cohort_size} windows")
+        for name, comp in sorted(ta.covariate_comparisons.items()):
+            arrow = ""
+            if comp.direction == "higher_in_tail":
+                arrow = " ^"
+            elif comp.direction == "lower_in_tail":
+                arrow = " v"
+            sig = f"p={comp.mann_whitney_p:.3g}" if comp.mann_whitney_p >= 0.001 else f"p<0.001"
+            print(f"    {name}: tail median={comp.tail_median:.1f},"
+                  f" typical median={comp.typical_median:.1f}"
+                  f"  ({sig}){arrow}")
+
+        # Frequency stratification
+        if ta.stable_freq_p99_us is not None:
+            ks_str = (f"KS p={ta.freq_ks_pvalue:.3g}"
+                      if ta.freq_ks_pvalue >= 0.001 else "KS p<0.001")
+            print(f"\n  Frequency stratification:")
+            print(f"    P99 at stable freq:      {ta.stable_freq_p99_us:>8.1f} us")
+            print(f"    P99 during transitions:  {ta.unstable_freq_p99_us:>8.1f} us"
+                  f"  ({ks_str})")
+
+    # Tier 3: Shapley decomposition
+    if ta.tier >= 3 and ta.shapley_pct is not None:
+        print(f"\n  Shapley attribution (R²={ta.model_r_squared:.2f}):")
+        for name, pct in sorted(ta.shapley_pct.items(), key=lambda x: -x[1]):
+            print(f"    {name}: {pct:>5.1f}%")
+        print(f"    algorithmic: {ta.algorithmic_residual_pct:>5.1f}%")
+
+
 def _output_json(results, dev):
     """Print characterization as JSON."""
     output = {
         'device': dev.get('name', 'Unknown'),
         'characterizations': [],
     }
-    for r in results:
+    for r, ta in results:
         entry = {
             'kernel': r.kernel_name,
             'bound': r.bound,
@@ -286,9 +362,43 @@ def _output_json(results, dev):
             'n_windows': r.n_windows,
             'provenance': r.provenance,
             'unavailable': r.unavailable,
+            'tail_attribution': _tail_attribution_to_dict(ta),
         }
         output['characterizations'].append(entry)
     print(json.dumps(output, indent=2))
+
+
+def _tail_attribution_to_dict(ta):
+    """Convert TailAttribution to a JSON-serializable dict."""
+    d = {
+        'kernel_name': ta.kernel_name,
+        'n_windows': ta.n_windows,
+        'tier': ta.tier,
+        'tail_ratio': round(ta.tail_ratio, 3),
+        'noop_tail_ratio': round(ta.noop_tail_ratio, 3) if ta.noop_tail_ratio is not None else None,
+        'normalized_ratio': round(ta.normalized_ratio, 3) if ta.normalized_ratio is not None else None,
+        'verdict': ta.verdict,
+    }
+    if ta.tier >= 2:
+        d['tail_cohort_size'] = ta.tail_cohort_size
+        d['typical_cohort_size'] = ta.typical_cohort_size
+        d['covariate_comparisons'] = {
+            name: asdict(comp) for name, comp in ta.covariate_comparisons.items()
+        }
+        if ta.stable_freq_p99_us is not None:
+            d['freq_stratification'] = {
+                'stable_p99_us': round(ta.stable_freq_p99_us, 2),
+                'unstable_p99_us': round(ta.unstable_freq_p99_us, 2),
+                'ks_pvalue': ta.freq_ks_pvalue,
+            }
+    if ta.tier >= 3:
+        d['shapley'] = {
+            'model_r_squared': round(ta.model_r_squared, 4),
+            'attribution_pct': {k: round(v, 1) for k, v in ta.shapley_pct.items()},
+            'algorithmic_residual_pct': round(ta.algorithmic_residual_pct, 1),
+        }
+    d['provenance'] = ta.provenance
+    return d
 
 
 def _generate_markdown(results, dev):
@@ -302,7 +412,7 @@ def _generate_markdown(results, dev):
         "",
     ]
 
-    for r in results:
+    for r, ta in results:
         prov = r.provenance
         timing_src = prov.get('best_us', 'measured/timing')
 
@@ -319,7 +429,11 @@ def _generate_markdown(results, dev):
             f"| Tail (p99) | {r.tail_us:.1f} us | {timing_src} |",
             f"| Best-to-typical gap | {r.best_to_typical_gap_us:.1f} us | {timing_src} |",
             f"| Tail risk | {r.tail_risk_us:.1f} us | {timing_src} |",
+            f"| Tail ratio (P99/P50) | {ta.tail_ratio:.1f}x | tier-{ta.tier} |",
         ])
+        if ta.normalized_ratio is not None:
+            lines.append(f"| Normalized ratio (vs noop) | {ta.normalized_ratio:.1f}x | tier-{ta.tier} |")
+        lines.append(f"| Tail verdict | {ta.verdict} | tier-{ta.tier} |")
 
         if r.ipc is not None:
             lines.append(f"| IPC | {r.ipc:.1f} | {prov.get('ipc', 'measured/PMU')} |")
@@ -338,6 +452,37 @@ def _generate_markdown(results, dev):
             f"| N windows | {r.n_windows} | |",
             "",
         ])
+
+        # Tier 2/3 details as sub-sections
+        if ta.tier >= 2 and ta.covariate_comparisons:
+            lines.extend([
+                f"### Tail Attribution (Tier {ta.tier})",
+                "",
+                f"Tail cohort (>P95): {ta.tail_cohort_size} windows,"
+                f" typical (P25-P75): {ta.typical_cohort_size} windows",
+                "",
+                "| Covariate | Tail Median | Typical Median | p-value | Direction |",
+                "|-----------|-------------|----------------|---------|-----------|",
+            ])
+            for name, comp in sorted(ta.covariate_comparisons.items()):
+                p_str = f"{comp.mann_whitney_p:.3g}" if comp.mann_whitney_p >= 0.001 else "<0.001"
+                lines.append(
+                    f"| {name} | {comp.tail_median:.1f} | {comp.typical_median:.1f}"
+                    f" | {p_str} | {comp.direction} |"
+                )
+            lines.append("")
+
+        if ta.tier >= 3 and ta.shapley_pct:
+            lines.extend([
+                f"**Shapley Attribution (R²={ta.model_r_squared:.2f}):**",
+                "",
+                "| Source | Attribution |",
+                "|--------|------------|",
+            ])
+            for name, pct in sorted(ta.shapley_pct.items(), key=lambda x: -x[1]):
+                lines.append(f"| {name} | {pct:.1f}% |")
+            lines.append(f"| algorithmic (residual) | {ta.algorithmic_residual_pct:.1f}% |")
+            lines.append("")
 
     lines.append("*Generated by `cortex decompose`*")
 
