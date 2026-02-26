@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from cortex.core import ConsoleLogger, RealFileSystemService
-from cortex.utils.analyzer import TelemetryAnalyzer
+from cortex.utils.analyzer import TelemetryAnalyzer, format_mean_ci
 from cortex.utils.paths import get_run_directory
 
 
@@ -136,23 +136,16 @@ def execute(args):
         change_str = f"{row['relative_change_pct']:+.2f}%"
         d_str = f"{abs(row['cohens_d']):.3f}" if pd.notna(row.get('cohens_d')) else "N/A"
 
-        # Format mean ± CI
-        b_ci_lo = row.get('baseline_mean_ci_lower', float('nan'))
-        b_ci_hi = row.get('baseline_mean_ci_upper', float('nan'))
-        c_ci_lo = row.get('candidate_mean_ci_lower', float('nan'))
-        c_ci_hi = row.get('candidate_mean_ci_upper', float('nan'))
-
-        if pd.notna(b_ci_lo) and pd.notna(b_ci_hi):
-            b_half = (b_ci_hi - b_ci_lo) / 2
-            b_mean_str = f"{row['baseline_mean']:.1f} ± {b_half:.1f}"
-        else:
-            b_mean_str = f"{row['baseline_mean']:.1f}"
-
-        if pd.notna(c_ci_lo) and pd.notna(c_ci_hi):
-            c_half = (c_ci_hi - c_ci_lo) / 2
-            c_mean_str = f"{row['candidate_mean']:.1f} ± {c_half:.1f}"
-        else:
-            c_mean_str = f"{row['candidate_mean']:.1f}"
+        b_mean_str = format_mean_ci(
+            row['baseline_mean'],
+            row.get('baseline_mean_ci_lower', float('nan')),
+            row.get('baseline_mean_ci_upper', float('nan')),
+        )
+        c_mean_str = format_mean_ci(
+            row['candidate_mean'],
+            row.get('candidate_mean_ci_lower', float('nan')),
+            row.get('candidate_mean_ci_upper', float('nan')),
+        )
 
         verdict = row.get('verdict', 'N/A')
         print(f"{row['kernel']:<18} {b_mean_str:>22} {c_mean_str:>22} "
@@ -250,9 +243,11 @@ def _generate_markdown_report(comparison, output_path, args, baseline_dir, candi
     lines.append(f"- **Significance level**: {args.alpha}\n\n")
 
     lines.append("## Results\n\n")
-    lines.append("| Kernel | Base Mean ± CI | Cand Mean ± CI | Base P50 | Cand P50 | Base P99 | Cand P99 "
+    lines.append("| Kernel | Base Mean ± CI | Cand Mean ± CI | Base P50 | Cand P50 "
+                 "| Base P95 | Cand P95 | Base P99 | Cand P99 "
                  "| Change % | Cohen's d | Effect | p-value | Verdict |\n")
-    lines.append("|--------|---------------:|---------------:|---------:|---------:|---------:|---------:"
+    lines.append("|--------|---------------:|---------------:|---------:|---------:"
+                 "|---------:|---------:|---------:|---------:"
                  "|---------:|----------:|:------:|--------:|:-------:|\n")
 
     for _, row in comparison.iterrows():
@@ -261,33 +256,32 @@ def _generate_markdown_report(comparison, output_path, args, baseline_dir, candi
         effect = row.get('effect_size_label', 'N/A')
         verdict = row.get('verdict', 'N/A')
         b_p50 = f"{row['baseline_p50']:.2f}" if 'baseline_p50' in row.index else "N/A"
+        b_p95 = f"{row['baseline_p95']:.2f}" if 'baseline_p95' in row.index else "N/A"
         b_p99 = f"{row['baseline_p99']:.2f}" if 'baseline_p99' in row.index else "N/A"
         c_p50 = f"{row['candidate_p50']:.2f}" if 'candidate_p50' in row.index else "N/A"
+        c_p95 = f"{row['candidate_p95']:.2f}" if 'candidate_p95' in row.index else "N/A"
         c_p99 = f"{row['candidate_p99']:.2f}" if 'candidate_p99' in row.index else "N/A"
 
         # Format mean ± CI
-        b_ci_lo = row.get('baseline_mean_ci_lower', float('nan'))
-        b_ci_hi = row.get('baseline_mean_ci_upper', float('nan'))
-        c_ci_lo = row.get('candidate_mean_ci_lower', float('nan'))
-        c_ci_hi = row.get('candidate_mean_ci_upper', float('nan'))
-
-        if pd.notna(b_ci_lo) and pd.notna(b_ci_hi):
-            b_half = (b_ci_hi - b_ci_lo) / 2
-            b_mean_ci = f"{row['baseline_mean']:.2f} ± {b_half:.2f}"
-        else:
-            b_mean_ci = f"{row['baseline_mean']:.2f}"
-
-        if pd.notna(c_ci_lo) and pd.notna(c_ci_hi):
-            c_half = (c_ci_hi - c_ci_lo) / 2
-            c_mean_ci = f"{row['candidate_mean']:.2f} ± {c_half:.2f}"
-        else:
-            c_mean_ci = f"{row['candidate_mean']:.2f}"
+        b_mean_ci = format_mean_ci(
+            row['baseline_mean'],
+            row.get('baseline_mean_ci_lower', float('nan')),
+            row.get('baseline_mean_ci_upper', float('nan')),
+            precision=2,
+        )
+        c_mean_ci = format_mean_ci(
+            row['candidate_mean'],
+            row.get('candidate_mean_ci_lower', float('nan')),
+            row.get('candidate_mean_ci_upper', float('nan')),
+            precision=2,
+        )
 
         verdict_fmt = f"**{verdict}**" if verdict in ('IMPROVED', 'REGRESSED') else verdict
         lines.append(
             f"| {row['kernel']} "
             f"| {b_mean_ci} | {c_mean_ci} "
             f"| {b_p50} | {c_p50} "
+            f"| {b_p95} | {c_p95} "
             f"| {b_p99} | {c_p99} "
             f"| {row['relative_change_pct']:+.2f} "
             f"| {d_str} | {effect} "

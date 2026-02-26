@@ -1,6 +1,6 @@
 """Analyze results command"""
 from pathlib import Path
-from cortex.utils.analyzer import TelemetryAnalyzer
+from cortex.utils.analyzer import TelemetryAnalyzer, format_mean_ci
 from cortex.utils.paths import get_most_recent_run, get_run_directory, get_analysis_dir
 from cortex.core import ConsoleLogger, RealFileSystemService
 
@@ -117,30 +117,31 @@ def execute(args):
         print("=" * 80)
         if success:
             # Print quick stats table to console
-            df_loaded = analyzer.load_telemetry(str(run_dir), prefer_format=args.telemetry_format)
-            if df_loaded is not None:
-                import pandas as pd
-                stats = analyzer.calculate_statistics(df_loaded)
-                has_ci = ('latency_us_mean_ci_half' in stats.columns
-                          and stats['latency_us_mean_ci_half'].notna().any())
-                mean_hdr = "Mean ± 95% CI" if has_ci else "Mean"
-                print(f"\n{'Kernel':<18} {mean_hdr:>24} {'P50':>10} {'P95':>10} {'P99':>10} {'N':>8}")
-                print("-" * 84)
-                for kernel_name in stats.index:
-                    row = stats.loc[kernel_name]
-                    ci_half = row.get('latency_us_mean_ci_half', float('nan'))
-                    ci_pct = row.get('latency_us_mean_ci_pct', float('nan'))
-                    mean_val = row['latency_us_mean']
-                    if has_ci and pd.notna(ci_half) and pd.notna(ci_pct):
-                        mean_str = f"{mean_val:.1f} ± {ci_half:.1f} ({ci_pct:.1f}%)"
-                    else:
-                        mean_str = f"{mean_val:.1f}"
-                    p50 = f"{row['latency_us_median']:.1f}"
-                    p95 = f"{row['latency_us_p95']:.1f}"
-                    p99 = f"{row['latency_us_p99']:.1f}"
-                    n = int(row.get('sample_count', 0))
-                    print(f"{kernel_name:<18} {mean_str:>24} {p50:>10} {p95:>10} {p99:>10} {n:>8}")
-                print()
+            try:
+                df_loaded = analyzer.load_telemetry(str(run_dir), prefer_format=args.telemetry_format)
+                if df_loaded is not None:
+                    stats = analyzer.calculate_statistics(df_loaded)
+                    has_ci = ('latency_us_mean_ci_half' in stats.columns
+                              and stats['latency_us_mean_ci_half'].notna().any())
+                    mean_hdr = "Mean ± 95% CI" if has_ci else "Mean"
+                    print(f"\n{'Kernel':<18} {mean_hdr:>24} {'P50':>10} {'P95':>10} {'P99':>10} {'N':>8}")
+                    print("-" * 84)
+                    for kernel_name in stats.index:
+                        row = stats.loc[kernel_name]
+                        mean_str = format_mean_ci(
+                            row.get('latency_us_mean', float('nan')),
+                            row.get('latency_us_mean_ci_lower', float('nan')) if has_ci else float('nan'),
+                            row.get('latency_us_mean_ci_upper', float('nan')) if has_ci else float('nan'),
+                            ci_pct=row.get('latency_us_mean_ci_pct', float('nan')) if has_ci else None,
+                        )
+                        p50 = f"{row.get('latency_us_median', float('nan')):.1f}"
+                        p95 = f"{row.get('latency_us_p95', float('nan')):.1f}"
+                        p99 = f"{row.get('latency_us_p99', float('nan')):.1f}"
+                        n = int(row.get('sample_count', 0))
+                        print(f"{kernel_name:<18} {mean_str:>24} {p50:>10} {p95:>10} {p99:>10} {n:>8}")
+                    print()
+            except Exception as e:
+                print(f"  (Console stats unavailable: {e})")
             print(f"Plots saved to: {output_dir}/")
             print(f"Summary table: {output_dir}/SUMMARY.md")
             print("\nView summary:")

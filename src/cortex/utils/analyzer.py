@@ -28,6 +28,31 @@ PANDAS_VERSION = tuple(map(int, pd.__version__.split('.')[:2]))
 SUPPORTS_INCLUDE_GROUPS = PANDAS_VERSION >= (2, 2)
 
 
+def _ci_half_width(std: float, n: int, alpha: float = 0.05, t_dist=None) -> float:
+    """Compute half-width of a t-distribution confidence interval on the mean.
+
+    Returns NaN when CI cannot be computed (n < 2, NaN std, or no scipy).
+    """
+    if t_dist is None or n < 2 or pd.isna(std):
+        return np.nan
+    sem = std / np.sqrt(n)
+    t_crit = t_dist.ppf(1 - alpha / 2, df=n - 1)
+    return t_crit * sem
+
+
+def format_mean_ci(mean, ci_lower, ci_upper, precision: int = 1, ci_pct=None) -> str:
+    """Format 'mean ± half_width' from CI bounds, or just 'mean' when CI unavailable."""
+    mean_str = f"{mean:.{precision}f}" if precision is not None else str(mean)
+    if pd.notna(ci_lower) and pd.notna(ci_upper):
+        half = (ci_upper - ci_lower) / 2
+        half_str = f"{half:.{precision}f}" if precision is not None else f"{half:.2f}"
+        result = f"{mean_str} ± {half_str}"
+        if ci_pct is not None and pd.notna(ci_pct):
+            result += f" ({ci_pct:.1f}%)"
+        return result
+    return mean_str
+
+
 class TelemetryAnalyzer:
     """Analyzes telemetry data with minimal dependency injection.
 
@@ -247,27 +272,28 @@ class TelemetryAnalyzer:
         # Minimum sample size for CI reporting is 2 (df=0 is undefined).
         try:
             from scipy.stats import t as t_dist
-            has_scipy = True
         except ImportError:
-            has_scipy = False
+            self.log.warning("scipy not installed; confidence intervals unavailable")
+            t_dist = None
 
-        ci_half_vals = []
-        for kernel in stats.index:
-            n = int(stats.loc[kernel, 'sample_count'])
-            std = stats.loc[kernel, 'latency_us_std']
-            if not has_scipy or n < 2 or pd.isna(std):
-                ci_half_vals.append(np.nan)
-            else:
-                sem = std / np.sqrt(n)
-                t_crit = t_dist.ppf(1 - ci_alpha / 2, df=n - 1)
-                ci_half_vals.append(t_crit * sem)
+        ci_half_vals = [
+            _ci_half_width(
+                stats.loc[k, 'latency_us_std'],
+                int(stats.loc[k, 'sample_count']),
+                alpha=ci_alpha,
+                t_dist=t_dist,
+            )
+            for k in stats.index
+        ]
 
         stats['latency_us_mean_ci_half'] = ci_half_vals
         stats['latency_us_mean_ci_lower'] = stats['latency_us_mean'] - stats['latency_us_mean_ci_half']
         stats['latency_us_mean_ci_upper'] = stats['latency_us_mean'] + stats['latency_us_mean_ci_half']
+        # ci_pct: guard with notna() to handle NaN mean correctly (NaN != 0 is True)
+        means = stats['latency_us_mean']
         stats['latency_us_mean_ci_pct'] = np.where(
-            stats['latency_us_mean'] != 0,
-            stats['latency_us_mean_ci_half'] / stats['latency_us_mean'] * 100,
+            means.notna() & (means != 0),
+            stats['latency_us_mean_ci_half'] / means * 100,
             np.nan,
         )
 
@@ -671,7 +697,7 @@ class TelemetryAnalyzer:
             # Write table header
             mean_header = "Mean ± 95% CI" if has_ci else "Mean"
             markdown_lines.append(f"| Kernel | {mean_header} | Median | P95 | P99 | Min | Max | Std Dev | N |\n")
-            markdown_lines.append(f"|--------|{'---' * (len(mean_header) // 3 + 1)}|--------|-----|-----|-----|-----|---------|---|\n")
+            markdown_lines.append("|--------|----------------|--------|-----|-----|-----|-----|---------|---|\n")
 
             # Write table rows
             for kernel_name in stats_rounded.index:
@@ -1022,17 +1048,11 @@ class TelemetryAnalyzer:
                 # P50s equal but means diverged — typical latency unchanged
                 verdict = "NEGLIGIBLE"
 
-            # Compute CI on means (t-distribution, 95%)
-            def _ci_bounds(mean, std, n):
-                if t_dist is None or n < 2:
-                    return (np.nan, np.nan)
-                sem = std / np.sqrt(n)
-                t_crit = t_dist.ppf(1 - alpha / 2, df=n - 1)
-                half = t_crit * sem
-                return (mean - half, mean + half)
-
-            b_ci = _ci_bounds(b_mean, b_std, baseline_n)
-            c_ci = _ci_bounds(c_mean, c_std, candidate_n)
+            # Compute CI on means using module-level helper
+            b_half = _ci_half_width(b_std, baseline_n, alpha=alpha, t_dist=t_dist)
+            c_half = _ci_half_width(c_std, candidate_n, alpha=alpha, t_dist=t_dist)
+            b_ci = (b_mean - b_half, b_mean + b_half)
+            c_ci = (c_mean - c_half, c_mean + c_half)
 
             rows.append({
                 'kernel': kernel,

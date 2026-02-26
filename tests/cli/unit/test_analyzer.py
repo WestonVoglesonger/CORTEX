@@ -11,7 +11,7 @@ from unittest.mock import Mock, MagicMock, call, ANY
 from pathlib import Path
 from typing import List
 
-from cortex.utils.analyzer import TelemetryAnalyzer, STAGE_INDEX_NOT_CHAINED
+from cortex.utils.analyzer import TelemetryAnalyzer, STAGE_INDEX_NOT_CHAINED, format_mean_ci
 from cortex.core.protocols import FileSystemService, Logger
 
 
@@ -727,9 +727,10 @@ class TestConfidenceIntervals:
 
     def test_ci_columns_present(self):
         """CI columns appear in stats DataFrame."""
+        rng = np.random.RandomState(42)
         df = pd.DataFrame({
             'plugin': ['k'] * 10,
-            'latency_us': np.random.normal(100, 10, 10),
+            'latency_us': rng.normal(100, 10, 10),
             'warmup': [0] * 10,
         })
         stats = self.analyzer.calculate_statistics(df)
@@ -842,9 +843,10 @@ class TestConfidenceIntervals:
         fs = RealFileSystemService()
         analyzer = TelemetryAnalyzer(filesystem=fs, logger=self.logger)
 
+        rng = np.random.RandomState(42)
         df = pd.DataFrame({
             'plugin': ['k'] * 50,
-            'latency_us': np.random.normal(100, 10, 50),
+            'latency_us': rng.normal(100, 10, 50),
             'warmup': [0] * 50,
         })
         output_path = str(tmp_path / "SUMMARY.md")
@@ -917,14 +919,15 @@ class TestCompareRunsCI:
 
     def test_compare_has_ci_columns(self):
         """compare_runs result includes baseline/candidate CI bounds."""
+        rng = np.random.RandomState(42)
         df_b = pd.DataFrame({
             'plugin': ['k'] * 50,
-            'latency_us': np.random.normal(100, 10, 50),
+            'latency_us': rng.normal(100, 10, 50),
             'warmup': [0] * 50,
         })
         df_c = pd.DataFrame({
             'plugin': ['k'] * 50,
-            'latency_us': np.random.normal(110, 10, 50),
+            'latency_us': rng.normal(110, 10, 50),
             'warmup': [0] * 50,
         })
         result = self.analyzer.compare_runs(df_b, df_c)
@@ -952,6 +955,82 @@ class TestCompareRunsCI:
         assert row['baseline_mean_ci_upper'] > row['baseline_mean']
         assert row['candidate_mean_ci_lower'] < row['candidate_mean']
         assert row['candidate_mean_ci_upper'] > row['candidate_mean']
+
+
+class TestFormatMeanCI:
+    """Test format_mean_ci helper function."""
+
+    def test_format_with_ci(self):
+        """Renders 'mean ± half' when CI bounds are valid."""
+        result = format_mean_ci(100.0, 95.0, 105.0)
+        assert result == "100.0 ± 5.0"
+
+    def test_format_with_ci_and_pct(self):
+        """Renders 'mean ± half (pct%)' when ci_pct provided."""
+        result = format_mean_ci(100.0, 95.0, 105.0, ci_pct=5.0)
+        assert result == "100.0 ± 5.0 (5.0%)"
+
+    def test_format_without_ci(self):
+        """Renders just 'mean' when CI bounds are NaN."""
+        result = format_mean_ci(100.0, float('nan'), float('nan'))
+        assert result == "100.0"
+
+    def test_format_precision(self):
+        """Precision parameter controls decimal places."""
+        result = format_mean_ci(100.123, 95.0, 105.246, precision=2)
+        assert result == "100.12 ± 5.12"
+
+    def test_format_nan_pct_omitted(self):
+        """NaN ci_pct is omitted from output."""
+        result = format_mean_ci(100.0, 95.0, 105.0, ci_pct=float('nan'))
+        assert result == "100.0 ± 5.0"
+
+
+class TestCIEdgeCases:
+    """Test CI edge cases identified in code review."""
+
+    def setup_method(self):
+        self.fs = Mock(spec=FileSystemService)
+        self.logger = Mock(spec=Logger)
+        self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
+
+    def test_ci_pct_zero_mean(self):
+        """When mean is exactly zero, ci_pct should be NaN (not inf or error)."""
+        # Construct data with mean=0 by centering around zero
+        values = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0]
+        df = pd.DataFrame({
+            'plugin': ['k'] * len(values),
+            'latency_us': values,
+            'warmup': [0] * len(values),
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_pct'])
+        # CI half should still be finite
+        assert pd.notna(stats.loc['k', 'latency_us_mean_ci_half'])
+
+    def test_ci_scipy_warning_logged(self):
+        """When scipy unavailable, a warning is logged."""
+        import unittest.mock as mock
+
+        df = pd.DataFrame({
+            'plugin': ['k'] * 5,
+            'latency_us': [10.0, 20.0, 30.0, 40.0, 50.0],
+            'warmup': [0] * 5,
+        })
+
+        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        def mock_import(name, *args, **kwargs):
+            if name == 'scipy.stats' or (name == 'scipy' and 'stats' in str(args)):
+                raise ImportError("mocked")
+            return original_import(name, *args, **kwargs)
+
+        with mock.patch('builtins.__import__', side_effect=mock_import):
+            self.analyzer.calculate_statistics(df)
+
+        # Verify warning was logged
+        self.logger.warning.assert_called()
+        warning_msg = str(self.logger.warning.call_args)
+        assert 'scipy' in warning_msg.lower() or 'confidence' in warning_msg.lower()
 
 
 # Test discovery for pytest
