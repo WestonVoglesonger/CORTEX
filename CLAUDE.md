@@ -276,7 +276,7 @@ results/                   # Generated benchmark outputs (gitignored)
 - Linux: x86_64, arm64 (Ubuntu, Fedora, Alpine tested)
 
 **Test Coverage:**
-- 303+ Python tests (analyzer unit, runner unit/integration, chain stats, tail attribution, compare verdicts)
+- 322+ Python tests (analyzer unit, runner unit/integration, chain stats, tail attribution, compare verdicts, CI reporting)
 - 73+ C unit tests (scheduler, telemetry, signal handling, replayer, clock resolution, kernel registry)
 - Oracle validation: All 17 kernels match Python reference (f32: rtol=1e-5; Q15: rtol=1e-3; FFT Q15: rtol=5e-2)
 - CI pipeline: GitHub Actions with C unit tests + Python test jobs
@@ -580,7 +580,7 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 **Future:**
 - Q15/Q7 quantized data type support (Spring 2026)
 - Energy measurement integration (RAPL/power rail)
-- Serial transport for embedded devices
+- Serial deployment workflow for embedded devices (transport layer implemented, end-to-end workflow untested)
 - CORTEX Web Companion (separate project — LLM-powered config builder + telemetry dashboard)
 
 ---
