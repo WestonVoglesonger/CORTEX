@@ -36,7 +36,7 @@ CORTEX's architecture follows Butler Lampson's STEADY principles for system desi
 
 CORTEX is built on a primitives-based architecture inspired by Amazon's service-oriented design philosophy: small, independently deployable components with well-defined interfaces that compose into larger workflows. Three primitive types form the foundation:
 
-**Kernel Primitives** are self-contained directories containing a C implementation of the plugin ABI, a Python oracle for validation, a `spec.yaml` with metadata, a README, and a Makefile. They are versioned immutably at `primitives/kernels/v{version}/{name}@{dtype}/`. Each kernel is a single-responsibility signal-processing operation (e.g., bandpass filter, CAR, Goertzel, Welch PSD).
+**Kernel Primitives** are self-contained directories containing a C implementation of the plugin ABI, a Python oracle for validation, a `spec.yaml` with metadata, a README, and a Makefile. They are versioned immutably at `primitives/kernels/v{version}/{name}@{dtype}/`. Each kernel is a single-responsibility signal-processing operation (e.g., bandpass filter, CAR, Goertzel, FFT, Welch PSD).
 
 **Run-Config Primitives** are YAML files specifying dataset path and format, real-time deadlines, load profiles (idle/medium/heavy), CPU governor settings, sample rate, and window parameters. They live in `primitives/configs/` (not yet versioned like kernels). A run-config captures every parameter needed to reproduce an experiment except the kernel and device.
 
@@ -114,4 +114,4 @@ Remote device adapters communicate via a custom binary protocol designed for emb
 
 #### 3.4.4 Oracle Interface
 
-Each kernel's `oracle.py` implements a Python reference producing the same output as the C kernel for identical input. The validation pipeline loads real EEG data, runs both the C kernel and the Python oracle on identical windows, and compares outputs with configurable tolerance (default: `rtol=1e-5`, `atol=1e-6`; relaxed for frequency-domain kernels like Welch PSD). Validation supports `--calibration-state` for trainable kernels (ICA, CSP) and runs structurally before any benchmark—correctness precedes performance (P2).
+Each kernel's `oracle.py` implements a Python reference producing the same output as the C kernel for identical input. The validation pipeline loads real EEG data, runs both the C kernel and the Python oracle on identical windows, and compares outputs with configurable tolerance (default: `rtol=1e-5`, `atol=1e-6`; relaxed for frequency-domain kernels like Welch PSD and FFT). Validation supports `--calibration-state` for trainable kernels (ICA, CSP) and runs structurally before any benchmark—correctness precedes performance (P2).
