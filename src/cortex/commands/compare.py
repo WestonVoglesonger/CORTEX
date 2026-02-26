@@ -126,11 +126,12 @@ def execute(args):
     _generate_markdown_report(comparison, report_path, args, baseline_dir, candidate_dir, filesystem)
 
     # Print summary to stdout
+    # Change% is P50-based, so show P50/P99 alongside Mean±CI for clarity
     print("Comparison Results:")
-    print("-" * 120)
+    print("-" * 130)
     print(f"{'Kernel':<18} {'Base Mean ± CI':>22} {'Cand Mean ± CI':>22} "
-          f"{'Change':>10} {'|d|':>8} {'Verdict':>12}")
-    print("-" * 120)
+          f"{'Base P50':>10} {'Cand P50':>10} {'ΔP50':>10} {'|d|':>8} {'Verdict':>12}")
+    print("-" * 130)
 
     for _, row in comparison.iterrows():
         change_str = f"{row['relative_change_pct']:+.2f}%"
@@ -146,12 +147,14 @@ def execute(args):
             row.get('candidate_mean_ci_lower', float('nan')),
             row.get('candidate_mean_ci_upper', float('nan')),
         )
+        b_p50 = f"{row['baseline_p50']:.1f}" if 'baseline_p50' in row else "N/A"
+        c_p50 = f"{row['candidate_p50']:.1f}" if 'candidate_p50' in row else "N/A"
 
         verdict = row.get('verdict', 'N/A')
         print(f"{row['kernel']:<18} {b_mean_str:>22} {c_mean_str:>22} "
-              f"{change_str:>10} {d_str:>8} {verdict:>12}")
+              f"{b_p50:>10} {c_p50:>10} {change_str:>10} {d_str:>8} {verdict:>12}")
 
-    print("-" * 120)
+    print("-" * 130)
     print(f"\nReport saved: {report_path}")
     print(f"Plots saved:  {output_dir}/")
     print("=" * 80)

@@ -116,11 +116,10 @@ def execute(args):
         print("Analysis Summary")
         print("=" * 80)
         if success:
-            # Print quick stats table to console
+            # Print quick stats table to console (reuse cached stats from run_full_analysis)
             try:
-                df_loaded = analyzer.load_telemetry(str(run_dir), prefer_format=args.telemetry_format)
-                if df_loaded is not None:
-                    stats = analyzer.calculate_statistics(df_loaded)
+                stats = getattr(analyzer, 'last_stats', None)
+                if stats is not None:
                     has_ci = ('latency_us_mean_ci_half' in stats.columns
                               and stats['latency_us_mean_ci_half'].notna().any())
                     mean_hdr = "Mean ± 95% CI" if has_ci else "Mean"
@@ -140,7 +139,7 @@ def execute(args):
                         n = int(row.get('sample_count', 0))
                         print(f"{kernel_name:<18} {mean_str:>24} {p50:>10} {p95:>10} {p99:>10} {n:>8}")
                     print()
-            except Exception as e:
+            except (KeyError, ValueError, AttributeError) as e:
                 print(f"  (Console stats unavailable: {e})")
             print(f"Plots saved to: {output_dir}/")
             print(f"Summary table: {output_dir}/SUMMARY.md")

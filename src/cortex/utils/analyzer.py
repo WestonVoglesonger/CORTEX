@@ -42,10 +42,10 @@ def _ci_half_width(std: float, n: int, alpha: float = 0.05, t_dist=None) -> floa
 
 def format_mean_ci(mean, ci_lower, ci_upper, precision: int = 1, ci_pct=None) -> str:
     """Format 'mean ± half_width' from CI bounds, or just 'mean' when CI unavailable."""
-    mean_str = f"{mean:.{precision}f}" if precision is not None else str(mean)
+    mean_str = f"{mean:.{precision}f}"
     if pd.notna(ci_lower) and pd.notna(ci_upper):
         half = (ci_upper - ci_lower) / 2
-        half_str = f"{half:.{precision}f}" if precision is not None else f"{half:.2f}"
+        half_str = f"{half:.{precision}f}"
         result = f"{mean_str} ± {half_str}"
         if ci_pct is not None and pd.notna(ci_pct):
             result += f" ({ci_pct:.1f}%)"
@@ -703,15 +703,14 @@ class TelemetryAnalyzer:
             for kernel_name in stats_rounded.index:
                 row = stats_rounded.loc[kernel_name]
 
-                # Format mean with embedded CI when available
-                mean_val = row.get('latency_us_mean', 'N/A')
-                ci_half = row.get('latency_us_mean_ci_half', np.nan) if has_ci else np.nan
-                ci_pct = row.get('latency_us_mean_ci_pct', np.nan) if has_ci else np.nan
-
-                if has_ci and pd.notna(ci_half) and pd.notna(ci_pct):
-                    mean_str = f"{mean_val} ± {ci_half:.2f} ({ci_pct:.1f}%)"
-                else:
-                    mean_str = str(mean_val)
+                # Format mean with embedded CI using shared helper
+                mean_str = format_mean_ci(
+                    row.get('latency_us_mean', np.nan),
+                    row.get('latency_us_mean_ci_lower', np.nan) if has_ci else np.nan,
+                    row.get('latency_us_mean_ci_upper', np.nan) if has_ci else np.nan,
+                    precision=2,
+                    ci_pct=row.get('latency_us_mean_ci_pct', np.nan) if has_ci else None,
+                )
 
                 n_str = str(int(row.get('sample_count', 0))) if pd.notna(row.get('sample_count', np.nan)) else "N/A"
 
@@ -1161,6 +1160,9 @@ class TelemetryAnalyzer:
         # Generate summary table
         summary_path = f"{output_dir}/SUMMARY.md"
         summary_success = self.generate_summary_table(df, summary_path, chain_stats=chain_stats)
+
+        # Cache stats for reuse by callers (e.g., analyze.py console output)
+        self.last_stats = stats
 
         # Print summary
         successful_plots = sum(1 for v in plot_results.values() if v)
