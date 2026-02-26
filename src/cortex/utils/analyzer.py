@@ -28,6 +28,31 @@ PANDAS_VERSION = tuple(map(int, pd.__version__.split('.')[:2]))
 SUPPORTS_INCLUDE_GROUPS = PANDAS_VERSION >= (2, 2)
 
 
+def _ci_half_width(std: float, n: int, alpha: float = 0.05, t_dist=None) -> float:
+    """Compute half-width of a t-distribution confidence interval on the mean.
+
+    Returns NaN when CI cannot be computed (n < 2, NaN std, or no scipy).
+    """
+    if t_dist is None or n < 2 or pd.isna(std):
+        return np.nan
+    sem = std / np.sqrt(n)
+    t_crit = t_dist.ppf(1 - alpha / 2, df=n - 1)
+    return t_crit * sem
+
+
+def format_mean_ci(mean, ci_lower, ci_upper, precision: int = 1, ci_pct=None) -> str:
+    """Format 'mean ± half_width' from CI bounds, or just 'mean' when CI unavailable."""
+    mean_str = f"{mean:.{precision}f}"
+    if pd.notna(ci_lower) and pd.notna(ci_upper):
+        half = (ci_upper - ci_lower) / 2
+        half_str = f"{half:.{precision}f}"
+        result = f"{mean_str} ± {half_str}"
+        if ci_pct is not None and pd.notna(ci_pct):
+            result += f" ({ci_pct:.1f}%)"
+        return result
+    return mean_str
+
+
 class TelemetryAnalyzer:
     """Analyzes telemetry data with minimal dependency injection.
 
@@ -206,16 +231,18 @@ class TelemetryAnalyzer:
         self.log.info(f"Loaded {len(df)} telemetry records from {len(dataframes)} kernel(s)")
         return df
 
-    def calculate_statistics(self, df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_statistics(self, df: pd.DataFrame, ci_alpha: float = 0.05) -> pd.DataFrame:
         """Calculate latency statistics per kernel.
 
-        Uses real pandas for deterministic aggregations.
+        Uses real pandas for deterministic aggregations. Computes 95% confidence
+        intervals on the mean using the t-distribution when scipy is available.
 
         Args:
             df: Telemetry DataFrame with 'plugin', 'latency_us', 'warmup' columns
+            ci_alpha: Significance level for CI (default 0.05 → 95% CI)
 
         Returns:
-            DataFrame with statistics per kernel
+            DataFrame with statistics per kernel, including CI columns when scipy available
         """
         # Filter out warmup runs (real pandas filtering)
         df_no_warmup = df[df['warmup'] == 0].copy()
@@ -229,7 +256,8 @@ class TelemetryAnalyzer:
                 ('p99', lambda x: x.quantile(0.99)),
                 'min',
                 'max',
-                'std'
+                'std',
+                'count',
             ]
         })
 
@@ -237,9 +265,41 @@ class TelemetryAnalyzer:
         stats.columns = ['_'.join(col).strip() if col[1] else col[0]
                         for col in stats.columns.values]
 
+        # Rename count → sample_count for clarity
+        stats.rename(columns={'latency_us_count': 'sample_count'}, inplace=True)
+
+        # Compute confidence intervals on the mean (t-distribution)
+        # Minimum sample size for CI reporting is 2 (df=0 is undefined).
+        try:
+            from scipy.stats import t as t_dist
+        except ImportError:
+            self.log.warning("scipy not installed; confidence intervals unavailable")
+            t_dist = None
+
+        ci_half_vals = [
+            _ci_half_width(
+                stats.loc[k, 'latency_us_std'],
+                int(stats.loc[k, 'sample_count']),
+                alpha=ci_alpha,
+                t_dist=t_dist,
+            )
+            for k in stats.index
+        ]
+
+        stats['latency_us_mean_ci_half'] = ci_half_vals
+        stats['latency_us_mean_ci_lower'] = stats['latency_us_mean'] - stats['latency_us_mean_ci_half']
+        stats['latency_us_mean_ci_upper'] = stats['latency_us_mean'] + stats['latency_us_mean_ci_half']
+        # ci_pct: guard with notna() to handle NaN mean correctly (NaN != 0 is True)
+        means = stats['latency_us_mean']
+        stats['latency_us_mean_ci_pct'] = np.where(
+            means.notna() & (means != 0),
+            stats['latency_us_mean_ci_half'] / means * 100,
+            np.nan,
+        )
+
         # Calculate deadline miss rate if deadline info available
         if 'deadline_missed' in df_no_warmup.columns:
-            # Derive deadline_met from deadline_missed for clarity (no copy needed - already copied on line 196)
+            # Derive deadline_met from deadline_missed for clarity (no copy needed - already copied above)
             df_no_warmup['deadline_met'] = ~df_no_warmup['deadline_missed'].astype(bool)
 
             deadline_stats = df_no_warmup.groupby('plugin')['deadline_met'].agg([
@@ -630,22 +690,40 @@ class TelemetryAnalyzer:
 
             markdown_lines.append("## Latency Statistics (μs)\n\n")
 
+            # Determine if CI data is available
+            has_ci = ('latency_us_mean_ci_half' in stats_rounded.columns
+                      and stats_rounded['latency_us_mean_ci_half'].notna().any())
+
             # Write table header
-            markdown_lines.append("| Kernel | Mean | Median | P95 | P99 | Min | Max | Std Dev |\n")
-            markdown_lines.append("|--------|------|--------|-----|-----|-----|-----|----------|\n")
+            mean_header = "Mean ± 95% CI" if has_ci else "Mean"
+            markdown_lines.append(f"| Kernel | {mean_header} | Median | P95 | P99 | Min | Max | Std Dev | N |\n")
+            markdown_lines.append("|--------|----------------|--------|-----|-----|-----|-----|---------|---|\n")
 
             # Write table rows
             for kernel_name in stats_rounded.index:
                 row = stats_rounded.loc[kernel_name]
+
+                # Format mean with embedded CI using shared helper
+                mean_str = format_mean_ci(
+                    row.get('latency_us_mean', np.nan),
+                    row.get('latency_us_mean_ci_lower', np.nan) if has_ci else np.nan,
+                    row.get('latency_us_mean_ci_upper', np.nan) if has_ci else np.nan,
+                    precision=2,
+                    ci_pct=row.get('latency_us_mean_ci_pct', np.nan) if has_ci else None,
+                )
+
+                n_str = str(int(row.get('sample_count', 0))) if pd.notna(row.get('sample_count', np.nan)) else "N/A"
+
                 markdown_lines.append(
                     f"| {kernel_name} "
-                    f"| {row.get('latency_us_mean', 'N/A')} "
+                    f"| {mean_str} "
                     f"| {row.get('latency_us_median', 'N/A')} "
                     f"| {row.get('latency_us_p95', 'N/A')} "
                     f"| {row.get('latency_us_p99', 'N/A')} "
                     f"| {row.get('latency_us_min', 'N/A')} "
                     f"| {row.get('latency_us_max', 'N/A')} "
-                    f"| {row.get('latency_us_std', 'N/A')} |\n"
+                    f"| {row.get('latency_us_std', 'N/A')} "
+                    f"| {n_str} |\n"
                 )
 
             # Add deadline miss info if available
@@ -879,11 +957,12 @@ class TelemetryAnalyzer:
 
         # Try to import scipy for statistical tests
         try:
-            from scipy.stats import ttest_ind
+            from scipy.stats import ttest_ind, t as t_dist
             has_scipy = True
         except ImportError:
             self.log.warning("scipy not installed; statistical tests unavailable (raw means only)")
             has_scipy = False
+            t_dist = None
 
         rows = []
         for kernel in common_kernels:
@@ -968,14 +1047,24 @@ class TelemetryAnalyzer:
                 # P50s equal but means diverged — typical latency unchanged
                 verdict = "NEGLIGIBLE"
 
+            # Compute CI on means using module-level helper
+            b_half = _ci_half_width(b_std, baseline_n, alpha=alpha, t_dist=t_dist)
+            c_half = _ci_half_width(c_std, candidate_n, alpha=alpha, t_dist=t_dist)
+            b_ci = (b_mean - b_half, b_mean + b_half)
+            c_ci = (c_mean - c_half, c_mean + c_half)
+
             rows.append({
                 'kernel': kernel,
                 'baseline_mean': b_mean,
                 'baseline_std': b_std,
                 'baseline_n': baseline_n,
+                'baseline_mean_ci_lower': b_ci[0],
+                'baseline_mean_ci_upper': b_ci[1],
                 'candidate_mean': c_mean,
                 'candidate_std': c_std,
                 'candidate_n': candidate_n,
+                'candidate_mean_ci_lower': c_ci[0],
+                'candidate_mean_ci_upper': c_ci[1],
                 'relative_change_pct': relative_change,
                 'p_value': p_value,
                 'cohens_d': cohens_d,
@@ -1071,6 +1160,9 @@ class TelemetryAnalyzer:
         # Generate summary table
         summary_path = f"{output_dir}/SUMMARY.md"
         summary_success = self.generate_summary_table(df, summary_path, chain_stats=chain_stats)
+
+        # Cache stats for reuse by callers (e.g., analyze.py console output)
+        self.last_stats = stats
 
         # Print summary
         successful_plots = sum(1 for v in plot_results.values() if v)
