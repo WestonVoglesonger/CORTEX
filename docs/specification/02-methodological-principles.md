@@ -84,7 +84,7 @@ Ten frameworks from five domains evaluated against CORTEX's five methodological 
 | MiBench | Embedded | No | No | No | No | No |
 | **CORTEX** | **BCI/Edge** | **Yes** | **Yes** | **Yes** | **Partial** | **Yes** |
 
-Frameworks: BCI2000 (Schalk et al., 2004), MOABB (Jayaram & Barachant, 2018), MLPerf Inference (Reddi et al., 2020), TailBench (Kasture & Sanchez, 2016), SPEC CPU 2017, EEMBC CoreMark, Dhrystone (Weicker, 1984), DeathStarBench (Gan et al., 2019), SeBS (Copik et al., 2021), MiBench (Guthaus et al., 2001).
+Frameworks evaluated as of February 2026: BCI2000 (Schalk et al., 2004; actively maintained), MOABB (Jayaram & Barachant, 2018; v1.4.3 current), MLPerf Inference (Reddi et al., 2020; v5.1 current), TailBench (Kasture & Sanchez, 2016), SPEC CPU 2017 (v1.1.9), EEMBC CoreMark (v1.01), Dhrystone (Weicker, 1984; v2.1), DeathStarBench (Gan et al., 2019), SeBS (Copik et al., 2021; SeBS 2.0 current), MiBench (Guthaus et al., 2001).
 
 ## 2.5 Gap Analysis
 

@@ -7,8 +7,8 @@ Each cell in the cross-domain comparison table (§2.4) is justified below with e
 | Framework | Score | Justification |
 |-----------|-------|---------------|
 | BCI2000 | Partial | BCI2000Certification records per-block timestamps and visualizes latency distributions, but these capture system-level roundtrip timing (ADC→processing→stimulus), not per-kernel invocation latencies. |
-| MOABB | No | Reports only a single aggregate time field (training duration) per evaluation fold; no per-invocation latency data exists. Operates entirely offline on pre-recorded datasets. |
-| MLPerf Inference | Yes | Server scenario records per-query latency; LoadGen reports P50–P99.9 percentiles. Raw per-query timing logs enable full distribution reconstruction and deadline-exceedance assessment. |
+| MOABB | No | Reports only a single aggregate time field (training duration) per evaluation fold; no per-invocation latency data exists. Operates entirely offline on pre-recorded datasets. (Verified Feb 2026: v1.4.3 added execution time and environmental impact considerations but still no per-invocation latency API.) |
+| MLPerf Inference | Yes | Server scenario records per-query latency; LoadGen reports P50–P99.9 percentiles. Raw per-query timing logs enable full distribution reconstruction and deadline-exceedance assessment. (Verified Feb 2026: v5.1 current.) |
 | TailBench | Yes | Records ⟨service_time, e2e_time⟩ tuples for every request in `lats.bin`, parsed via `parselats.py` to produce full CDFs. Explicitly designed for tail-latency characterization. |
 | SPEC CPU 2017 | No | Reports median of three runs (elapsed seconds) per benchmark and computes geometric-mean ratios. Batch-compute workloads have no per-invocation latency concept. |
 | CoreMark | No | Produces a single aggregate Iterations/Sec score from total time divided by total iterations. No per-iteration timing, histogram, or percentile output. |
@@ -21,8 +21,8 @@ Each cell in the cross-domain comparison table (§2.4) is justified below with e
 
 | Framework | Score | Justification |
 |-----------|-------|---------------|
-| BCI2000 | No | Certification validates timing thresholds (e.g., audio latency < 65 ms) as pass/fail, but never checks whether signal-processing kernels produce numerically correct outputs. |
-| MOABB | No | Computes classification scores (ROC-AUC, accuracy) as output metrics but does not validate intermediate computational correctness against a reference oracle. |
+| BCI2000 | No | Certification validates timing thresholds (e.g., audio latency < 65 ms) as pass/fail, but never checks whether signal-processing kernels produce numerically correct outputs. (Verified Feb 2026: still no kernel correctness validation.) |
+| MOABB | No | Computes classification scores (ROC-AUC, accuracy) as output metrics but does not validate intermediate computational correctness against a reference oracle. (Verified Feb 2026: v1.4.3 still accuracy-only; no per-invocation correctness validation.) |
 | MLPerf Inference | Partial | Closed-division submissions must achieve ≥99% of reference FP16 accuracy, gating performance on aggregate quality. However, this is a statistical threshold—a kernel producing incorrect outputs for <1% of inputs passes. Per-invocation numerical correctness is not validated. |
 | TailBench | No | Purely a timing framework—records service time and e2e latency per request but performs no output validation. Correctness of underlying applications is assumed. |
 | SPEC CPU 2017 | Yes | Output validation is structurally mandatory per Run Rule 1.2.1: SPEC tools validate outputs against expected results; validation failure marks the run INVALID and unpublishable. |
@@ -51,15 +51,15 @@ Each cell in the cross-domain comparison table (§2.4) is justified below with e
 
 | Framework | Score | Justification |
 |-----------|-------|---------------|
-| BCI2000 | No | Documents static hardware configuration (CPU model, clock speed) for certification but records no dynamic platform telemetry (frequency scaling, thermal throttling, load) alongside timing. |
+| BCI2000 | No | Documents static hardware configuration (CPU model, clock speed) for certification but records no dynamic platform telemetry (frequency scaling, thermal throttling, load) alongside timing. (Verified Feb 2026: actively maintained with UI and usability improvements, but no platform-state telemetry added.) |
 | MOABB | No | Results contain only dataset/subject/session/score/pipeline metadata. No platform-level variables; the `additional_columns` extension exists but no built-in platform telemetry is provided. |
-| MLPerf Inference | No | System description JSON captures static configuration. Optional "Power" submission mode integrates SPEC PTDaemon for wall-level AC power and ambient temperature, but does not record CPU frequency, governor state, or on-die thermal data. |
+| MLPerf Inference | No | System description JSON captures static configuration. Optional "Power" submission mode integrates SPEC PTDaemon for wall-level AC power and ambient temperature, but does not record CPU frequency, governor state, or on-die thermal data. (Verified Feb 2026: v5.1 Power measurement still uses wall-level AC via SPEC PTDaemon; no CPU frequency or governor telemetry in LoadGen.) |
 | TailBench | No | Output contains only per-request ⟨service_time, e2e_time⟩ tuples. README recommends disabling C-states but these are configuration guidelines, not recorded measurements. |
 | SPEC CPU 2017 | Partial | Requires disclosure of nominal/max MHz and power-management enabled/disabled; sysinfo captures OS/hardware details as static snapshots. Optional PTDaemon records wall-level AC power and ambient temperature, but not on-die CPU frequency, governor transitions, or junction thermal state. |
 | CoreMark | No | Logs only buffer size, total ticks, iterations/sec, and compiler info. CoreMark/MHz requires the user to externally determine clock frequency—the benchmark itself does not measure it. |
 | Dhrystone | No | A manual submission form asks for CPU model, clock, and OS, but these are user-reported text fields external to the benchmark. No runtime measurement of any platform variable. |
 | DeathStarBench | No | The paper's authors use external tools (vTune, RAPL, perf) for platform analysis, but the framework's own tracing records only per-service latency—no platform-state correlation. |
-| SeBS | No | Commercial FaaS platforms are black boxes where CPU frequency, thermal state, and co-location are unobservable. Local mode supports PAPI counters, but cloud (primary use case) provides zero visibility. |
+| SeBS | No | Commercial FaaS platforms are black boxes where CPU frequency, thermal state, and co-location are unobservable. Local mode supports PAPI counters, but cloud (primary use case) provides zero visibility. (Verified Feb 2026: SeBS 2.0 added CPU allocation analysis and cold-start characterization, but no on-device platform state capture—cloud opacity remains fundamental.) |
 | MiBench | No | Originally analyzed via SimpleScalar simulation. When run on real hardware, no instrumentation records CPU frequency, thermal state, or system load. |
 
 ### P5: Kernel–Device Latency Analysis
