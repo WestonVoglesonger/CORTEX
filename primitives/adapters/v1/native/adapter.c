@@ -323,13 +323,14 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     /* 5. Initialize PMU counters (per-thread, measured around kernel process()) */
     pmu_initialized = (cortex_inscount_init() == 0) ? 1 : 0;
 
-    /* 6. Allocate window buffers (dtype-aware sizing from kernel load) */
+    /* 6. Allocate window buffers (dtype-aware sizing from kernel load).
+     * Use calloc for overflow-safe allocation (calloc checks size_t overflow). */
     elem_size = kernel_plugin.elem_size;
-    window_buf = (float *)malloc(window_samples * channels * elem_size);
+    window_buf = (float *)calloc(window_samples * channels, elem_size);
 
     /* Allocate output buffer based on kernel's actual output shape */
     size_t output_samples = kernel_plugin.output_window_length_samples * kernel_plugin.output_channels;
-    output_buf = (float *)malloc(output_samples * elem_size);
+    output_buf = (float *)calloc(output_samples, elem_size);
 
     if (!window_buf || !output_buf) {
         fprintf(stderr, "Failed to allocate window buffers\n");

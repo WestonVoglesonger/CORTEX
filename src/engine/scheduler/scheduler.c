@@ -126,6 +126,12 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
     scheduler->window_samples = window_samples;
     scheduler->hop_samples = hop_samples;
     scheduler->element_size = cortex_dtype_element_size(config->dtype);
+    if (scheduler->element_size == 0) {
+        fprintf(stderr, "[scheduler] Unknown dtype: %u\n", config->dtype);
+        errno = EINVAL;
+        free(scheduler);
+        return NULL;
+    }
     scheduler->buffer_capacity = scheduler->window_samples;
     scheduler->buffer = calloc(scheduler->buffer_capacity, scheduler->element_size);
     if (!scheduler->buffer) {

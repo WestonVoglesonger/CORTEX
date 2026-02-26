@@ -38,7 +38,11 @@ def _discover_kernel(name: str) -> str:
 
     if not candidates:
         raise ValueError(f"Kernel '{name}' not found in primitives/kernels/")
-    return candidates[0]
+
+    # Sort for deterministic selection; prefer f32 (backward-compatible default)
+    candidates.sort()
+    f32 = [c for c in candidates if c.endswith('/f32')]
+    return f32[0] if f32 else candidates[0]
 
 
 def generate_temp_config(
