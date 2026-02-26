@@ -218,6 +218,8 @@ class TestValidateCommand:
         """Test execute command with mocked subprocess."""
         args = argparse.Namespace(
             kernel='goertzel',
+            dtype='f32',
+            calibration_state=None,
             verbose=False
         )
 

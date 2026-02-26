@@ -125,10 +125,10 @@ int device_comm_init(
  * Args:
  *   handle:          Device handle from device_comm_init()
  *   sequence:        Window sequence number (incrementing)
- *   input_samples:   Input window (W×C float32)
+ *   input_samples:   Input window (W×C elements, dtype determined by kernel)
  *   window_samples:  Window length W
  *   channels:        Channel count C
- *   output_samples:  Output buffer (W×C float32)
+ *   output_samples:  Output buffer (W×C elements)
  *   output_buf_size: Size of output buffer (bytes)
  *   out_timing:      Pointer to store device timing
  *
@@ -144,10 +144,10 @@ int device_comm_init(
 int device_comm_execute_window(
     cortex_device_handle_t *handle,
     uint32_t sequence,
-    const float *input_samples,
+    const void *input_samples,
     uint32_t window_samples,
     uint32_t channels,
-    float *output_samples,
+    void *output_samples,
     size_t output_buf_size,
     cortex_device_timing_t *out_timing
 );

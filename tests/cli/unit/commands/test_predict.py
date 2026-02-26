@@ -317,7 +317,7 @@ class TestDynamicInstructionCount:
         mock_result.stdout = pmu_json
 
         with patch('cortex.utils.instruction_analyzer.Path.exists', return_value=True), \
-             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir@f32', 'name': 'bandpass_fir'}), \
+             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir/f32', 'name': 'bandpass_fir'}), \
              patch('cortex.utils.instruction_analyzer.subprocess.run', return_value=mock_result):
             result = count_dynamic_instructions('bandpass_fir')
 
@@ -334,7 +334,7 @@ class TestDynamicInstructionCount:
         mock_result.stdout = pmu_json
 
         with patch('cortex.utils.instruction_analyzer.Path.exists', return_value=True), \
-             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir@f32', 'name': 'bandpass_fir'}), \
+             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir/f32', 'name': 'bandpass_fir'}), \
              patch('cortex.utils.instruction_analyzer.subprocess.run', return_value=mock_result):
             count = count_dynamic_instructions('bandpass_fir')
 
@@ -352,7 +352,7 @@ class TestDynamicInstructionCount:
         import subprocess as sp
 
         with patch('cortex.utils.instruction_analyzer.Path.exists', return_value=True), \
-             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir@f32', 'name': 'bandpass_fir'}), \
+             patch('cortex.utils.instruction_analyzer.find_kernel', return_value={'spec_uri': 'primitives/kernels/v1/bandpass_fir/f32', 'name': 'bandpass_fir'}), \
              patch('cortex.utils.instruction_analyzer.subprocess.run', side_effect=sp.TimeoutExpired(cmd='test', timeout=30)):
             count = count_dynamic_instructions('bandpass_fir')
 

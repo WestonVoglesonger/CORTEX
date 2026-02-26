@@ -14,6 +14,12 @@ def setup_parser(parser):
         help='Path to calibration state file (for trainable kernels)'
     )
     parser.add_argument(
+        '--dtype',
+        choices=['f32', 'float32', 'q15'],
+        default='f32',
+        help='Data type for validation (default: f32)'
+    )
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Show verbose test output'
@@ -34,8 +40,11 @@ def execute(args):
         return 1
 
     if args.kernel:
-        print(f"\nValidating kernel: {args.kernel}")
+        dtype_display = args.dtype if args.dtype != 'float32' else 'f32'
+        print(f"\nValidating kernel: {args.kernel} [dtype={dtype_display}]")
         cmd = [str(test_binary), '--kernel', args.kernel, '--windows', '10']
+        if args.dtype in ('q15',):
+            cmd.extend(['--dtype', args.dtype])
         if getattr(args, 'calibration_state', None):
             cmd.extend(['--state', args.calibration_state])
         if args.verbose:

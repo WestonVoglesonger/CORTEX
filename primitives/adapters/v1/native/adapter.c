@@ -112,24 +112,42 @@ static int load_kernel_plugin(
     kernel_plugin_t *out_plugin
 )
 {
-    /* plugin_name is now spec_uri: "primitives/kernels/v1/noop@f32" */
-    /* Extract kernel@dtype from path (last component after final slash) */
-    const char *last_slash = strrchr(plugin_name, '/');
-    const char *kernel_at_dtype = last_slash ? (last_slash + 1) : plugin_name;
-
-    /* Extract base kernel name (before '@') */
+    /* plugin_name is spec_uri: "primitives/kernels/v1/noop/f32" (new) or "noop@f32" (legacy) */
+    /* Extract kernel name: for new layout it's the parent of the last component */
     char lib_name[64];
-    const char *at_sign = strchr(kernel_at_dtype, '@');
-    if (at_sign) {
-        size_t base_len = (size_t)(at_sign - kernel_at_dtype);
-        if (base_len >= sizeof(lib_name)) {
-            fprintf(stderr, "Kernel name too long: %s\n", kernel_at_dtype);
-            return -1;
+    {
+        /* Make a mutable copy */
+        char uri_copy[256];
+        strncpy(uri_copy, plugin_name, sizeof(uri_copy) - 1);
+        uri_copy[sizeof(uri_copy) - 1] = '\0';
+
+        /* Trim trailing slash */
+        size_t len = strlen(uri_copy);
+        if (len > 0 && uri_copy[len - 1] == '/') uri_copy[--len] = '\0';
+
+        const char *last_slash = strrchr(uri_copy, '/');
+        const char *last_component = last_slash ? last_slash + 1 : uri_copy;
+
+        if (strchr(last_component, '@')) {
+            /* Legacy: "noop@f32" → extract "noop" */
+            const char *at_sign = strchr(last_component, '@');
+            size_t base_len = (size_t)(at_sign - last_component);
+            if (base_len >= sizeof(lib_name)) {
+                fprintf(stderr, "Kernel name too long: %s\n", last_component);
+                return -1;
+            }
+            memcpy(lib_name, last_component, base_len);
+            lib_name[base_len] = '\0';
+        } else {
+            /* New layout: last component is dtype, parent is kernel name */
+            if (last_slash) {
+                *((char *)last_slash) = '\0'; /* Won't work on const, use copy */
+            }
+            /* Re-parse from the copy */
+            char *second_slash = strrchr(uri_copy, '/');
+            const char *name_start = second_slash ? second_slash + 1 : uri_copy;
+            snprintf(lib_name, sizeof(lib_name), "%s", name_start);
         }
-        memcpy(lib_name, kernel_at_dtype, base_len);
-        lib_name[base_len] = '\0';
-    } else {
-        snprintf(lib_name, sizeof(lib_name), "%s", kernel_at_dtype);
     }
 
     /* Construct library path using spec_uri */
@@ -179,6 +197,14 @@ static int load_kernel_plugin(
     uint32_t kernel_abi_version = (calibrate_fn != NULL) ? 3 : 2;
 
     /* Initialize kernel */
+    /* Detect dtype from path: new layout has "/q15/" or "/q7/", legacy has "@q15" or "@q7" */
+    uint32_t dtype = 1;  /* CORTEX_DTYPE_FLOAT32 default */
+    if (strstr(plugin_name, "/q15") || strstr(plugin_name, "@q15")) {
+        dtype = 2;  /* CORTEX_DTYPE_Q15 */
+    } else if (strstr(plugin_name, "/q7") || strstr(plugin_name, "@q7")) {
+        dtype = 4;  /* CORTEX_DTYPE_Q7 */
+    }
+
     cortex_plugin_config_t config = {
         .abi_version = kernel_abi_version,
         .struct_size = sizeof(cortex_plugin_config_t),
@@ -186,7 +212,7 @@ static int load_kernel_plugin(
         .window_length_samples = window_samples,
         .hop_samples = hop_samples,
         .channels = channels,
-        .dtype = 1,  /* CORTEX_DTYPE_FLOAT32 */
+        .dtype = dtype,
         .allow_in_place = 0,
         .kernel_params = plugin_params,
         .kernel_params_size = (uint32_t)strlen(plugin_params),
@@ -245,6 +271,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     float *output_buf = NULL;
     kernel_plugin_t kernel_plugin = {0};
     int pmu_initialized = 0;
+    size_t elem_size = sizeof(float);  /* Updated after kernel load based on dtype */
 
     /* 1. Send HELLO */
     if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
@@ -289,12 +316,17 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     /* 5. Initialize PMU counters (per-thread, measured around kernel process()) */
     pmu_initialized = (cortex_inscount_init() == 0) ? 1 : 0;
 
-    /* 6. Allocate window buffers */
-    window_buf = (float *)malloc(window_samples * channels * sizeof(float));
+    /* 6. Allocate window buffers (dtype-aware sizing) */
+    if (strstr(plugin_name, "/q15") || strstr(plugin_name, "@q15")) {
+        elem_size = sizeof(int16_t);
+    } else if (strstr(plugin_name, "/q7") || strstr(plugin_name, "@q7")) {
+        elem_size = sizeof(int8_t);
+    }
+    window_buf = (float *)malloc(window_samples * channels * elem_size);
 
     /* Allocate output buffer based on kernel's actual output shape */
     size_t output_samples = kernel_plugin.output_window_length_samples * kernel_plugin.output_channels;
-    output_buf = (float *)malloc(output_samples * sizeof(float));
+    output_buf = (float *)malloc(output_samples * elem_size);
 
     if (!window_buf || !output_buf) {
         fprintf(stderr, "Failed to allocate window buffers\n");
@@ -326,7 +358,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
             tp,
             sequence,
             window_buf,
-            window_samples * channels * sizeof(float),
+            window_samples * channels * elem_size,
             CORTEX_WINDOW_TIMEOUT_MS
         );
 

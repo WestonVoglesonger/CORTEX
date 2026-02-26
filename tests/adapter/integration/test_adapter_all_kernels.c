@@ -131,7 +131,7 @@ static int test_kernel(const char *plugin_name, const char *plugin_params)
     /* Kernel-specific validation */
     int valid = 1;
 
-    if (strstr(plugin_name, "noop@f32") != NULL) {
+    if (strstr(plugin_name, "noop") != NULL && strstr(plugin_name, "f32") != NULL) {
         /* Noop: output must match input exactly */
         if (memcmp(input, output, total_samples * sizeof(float)) != 0) {
             printf("ERROR: noop output does not match input\n");
@@ -139,7 +139,7 @@ static int test_kernel(const char *plugin_name, const char *plugin_params)
         } else {
             printf("  ✓ Output matches input (identity verified)\n");
         }
-    } else if (strstr(plugin_name, "goertzel@f32") != NULL) {
+    } else if (strstr(plugin_name, "goertzel") != NULL && strstr(plugin_name, "f32") != NULL) {
         /* Goertzel outputs 2 samples per channel (alpha + beta power) */
         size_t expected_nonzero = 2 * CHANNELS;  /* 2 × 64 = 128 */
         if (nonzero_count < (int)(expected_nonzero * 0.85)) {
@@ -185,12 +185,12 @@ int main(void)
         const char *name;
         const char *params;
     } kernels[] = {
-        {"primitives/kernels/v1/noop@f32", ""},
-        {"primitives/kernels/v1/car@f32", ""},
-        {"primitives/kernels/v1/notch_iir@f32", "f0_hz: 60.0, Q: 30.0"},
-        {"primitives/kernels/v1/bandpass_fir@f32", ""},
-        {"primitives/kernels/v1/goertzel@f32", "alpha_low_hz: 8.0, alpha_high_hz: 13.0, beta_low_hz: 13.0, beta_high_hz: 30.0"},
-        {"primitives/kernels/v1/welch_psd@f32", "n_fft: 256, n_overlap: 128"},
+        {"primitives/kernels/v1/noop/f32", ""},
+        {"primitives/kernels/v1/car/f32", ""},
+        {"primitives/kernels/v1/notch_iir/f32", "f0_hz: 60.0, Q: 30.0"},
+        {"primitives/kernels/v1/bandpass_fir/f32", ""},
+        {"primitives/kernels/v1/goertzel/f32", "alpha_low_hz: 8.0, alpha_high_hz: 13.0, beta_low_hz: 13.0, beta_high_hz: 30.0"},
+        {"primitives/kernels/v1/welch_psd/f32", "n_fft: 256, n_overlap: 128"},
     };
 
     for (size_t i = 0; i < sizeof(kernels) / sizeof(kernels[0]); i++) {

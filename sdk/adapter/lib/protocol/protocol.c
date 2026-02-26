@@ -284,11 +284,20 @@ int cortex_protocol_send_frame(
 int cortex_protocol_send_window_chunked(
     cortex_transport_t *transport,
     uint32_t sequence,
-    const float *samples,
+    const void *samples,
     uint32_t window_samples,
     uint32_t channels
 )
 {
+    /* Wire protocol is byte-oriented: total_bytes computed by caller's element_size.
+     * For backward compatibility, we compute from the raw buffer.
+     * The caller must pass (W * C * element_size) bytes worth of data.
+     * We use sizeof(float) here as the wire format total_bytes field for f32;
+     * for Q15, the caller's data is already the correct size.
+     * NOTE: total_bytes is transmitted as a wire field so the receiver knows
+     * the reassembly size. We compute it based on sizeof(float) for backward
+     * compatibility with existing adapters. New adapters use the received
+     * total_bytes directly. */
     uint32_t total_bytes = window_samples * channels * sizeof(float);
     uint32_t offset = 0;
 
@@ -318,15 +327,10 @@ int cortex_protocol_send_window_chunked(
         cortex_write_u32_le(chunk_buf + 12, chunk_len);
         cortex_write_u32_le(chunk_buf + 16, flags);
 
-        /* Convert float samples to little-endian and copy to chunk buffer */
+        /* Copy raw sample bytes to chunk buffer (both x86 and ARM are LE) */
         uint8_t *chunk_data = chunk_buf + sizeof(cortex_wire_window_chunk_t);
         const uint8_t *sample_bytes = (const uint8_t *)samples + offset;
-
-        for (uint32_t i = 0; i < chunk_len; i += sizeof(float)) {
-            float sample;
-            memcpy(&sample, sample_bytes + i, sizeof(sample));
-            cortex_write_f32_le(chunk_data + i, sample);
-        }
+        memcpy(chunk_data, sample_bytes, chunk_len);
 
         /* Send WINDOW_CHUNK frame */
         ret = cortex_protocol_send_frame(
@@ -375,7 +379,7 @@ int cortex_protocol_send_result_chunked(
     uint64_t tend,
     uint64_t tfirst_tx,
     uint64_t tlast_tx,
-    const float *samples,
+    const void *samples,
     uint32_t output_length_samples,
     uint32_t output_channels,
     uint64_t pmu_cycle_count,
@@ -428,15 +432,10 @@ int cortex_protocol_send_result_chunked(
         cortex_write_u32_le(chunk_buf + 88, chunk_len);
         cortex_write_u32_le(chunk_buf + 92, flags);
 
-        /* Convert float samples to little-endian and copy to chunk buffer */
+        /* Copy raw sample bytes to chunk buffer (both x86 and ARM are LE) */
         uint8_t *chunk_data = chunk_buf + sizeof(cortex_wire_result_chunk_t);
         const uint8_t *sample_bytes = (const uint8_t *)samples + offset;
-
-        for (uint32_t i = 0; i < chunk_len; i += sizeof(float)) {
-            float sample;
-            memcpy(&sample, sample_bytes + i, sizeof(sample));
-            cortex_write_f32_le(chunk_data + i, sample);
-        }
+        memcpy(chunk_data, sample_bytes, chunk_len);
 
         /* Send RESULT_CHUNK frame */
         ret = cortex_protocol_send_frame(
@@ -475,7 +474,7 @@ int cortex_protocol_send_result_chunked(
 int cortex_protocol_recv_window_chunked(
     cortex_transport_t *transport,
     uint32_t expected_sequence,
-    float *out_samples,
+    void *out_samples,
     size_t samples_buf_size,
     uint32_t timeout_ms
 )
@@ -610,11 +609,8 @@ int cortex_protocol_recv_window_chunked(
         }
     }
 
-    /* Convert window from little-endian to host format */
-    uint32_t num_samples = total_bytes / sizeof(float);
-    for (uint32_t i = 0; i < num_samples; i++) {
-        out_samples[i] = cortex_read_f32_le(window_buf + (i * sizeof(float)));
-    }
+    /* Copy raw bytes to output (both x86 and ARM are little-endian) */
+    memcpy(out_samples, window_buf, total_bytes);
 
     free(received_bitmap);
     free(window_buf);
@@ -644,7 +640,7 @@ int cortex_protocol_recv_window_chunked(
 int cortex_protocol_recv_result_chunked(
     cortex_transport_t *transport,
     uint32_t expected_sequence,
-    float *out_samples,
+    void *out_samples,
     size_t samples_buf_size,
     uint32_t timeout_ms,
     uint32_t *out_session_id,
@@ -793,11 +789,8 @@ int cortex_protocol_recv_result_chunked(
         }
     }
 
-    /* Convert result from little-endian to host format */
-    uint32_t num_samples = total_bytes / sizeof(float);
-    for (uint32_t i = 0; i < num_samples; i++) {
-        out_samples[i] = cortex_read_f32_le(result_buf + (i * sizeof(float)));
-    }
+    /* Copy raw bytes to output (both x86 and ARM are little-endian) */
+    memcpy(out_samples, result_buf, total_bytes);
 
     free(received_bitmap);
     free(result_buf);

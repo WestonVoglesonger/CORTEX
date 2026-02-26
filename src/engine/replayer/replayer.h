@@ -123,11 +123,12 @@ typedef struct cortex_replayer_config {
  * The scheduler receives these chunks and forms overlapping windows internally.
  *
  * Parameters:
- *  - chunk_data: pointer to interleaved samples (H × C) in float32 format.
- *  - chunk_samples: number of samples in the chunk_data array (typically H × C).
+ *  - chunk_data: pointer to interleaved samples (H × C). Format matches config dtype:
+ *                float32 for CORTEX_DTYPE_FLOAT32, int16_t for CORTEX_DTYPE_Q15.
+ *  - chunk_samples: number of elements in the chunk_data array (typically H × C).
  *  - user_data: opaque pointer forwarded from cortex_replayer_run().
  */
-typedef void (*cortex_replayer_window_callback)(const float *chunk_data,
+typedef void (*cortex_replayer_window_callback)(const void *chunk_data,
                                                 size_t chunk_samples,
                                                 void *user_data);
 

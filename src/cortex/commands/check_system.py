@@ -437,7 +437,7 @@ class SystemChecker:
                 critical=False,
             )
 
-        noop_dir = 'primitives/kernels/v1/noop@f32'
+        noop_dir = 'primitives/kernels/v1/noop/f32'
         noop_built = any(
             self.fs.exists(f'{noop_dir}/libnoop{ext}')
             for ext in ('.dylib', '.so')

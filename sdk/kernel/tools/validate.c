@@ -46,6 +46,7 @@ typedef struct {
   int max_windows;
   int verbose;
   int test_all;
+  int is_q15;      /* 1 if kernel uses Q15 dtype */
 } test_config_t;
 
 /* EEG data structure */
@@ -211,7 +212,8 @@ static int compare_outputs(const float *c_output, const float *py_output,
 /* Run Python oracle via subprocess */
 static int run_python_oracle(const char *kernel_name, const float *input,
                              size_t W, size_t C, float *output,
-                             const char *state_path, size_t output_size) {
+                             const char *state_path, size_t output_size,
+                             int is_q15) {
   char input_file[] = "/tmp/test_input_XXXXXX";
   char output_file[] = "/tmp/test_output_XXXXXX";
   char command[1024];
@@ -248,6 +250,7 @@ static int run_python_oracle(const char *kernel_name, const float *input,
   close(fd_out); /* Close it, Python will write to it */
 
   /* Build command with unique paths */
+  const char *oracle_dtype = is_q15 ? "q15" : "f32";
   /* Detect v2 kernels and use appropriate oracle path */
   if (strlen(kernel_name) > 3 &&
       strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
@@ -257,14 +260,14 @@ static int run_python_oracle(const char *kernel_name, const float *input,
     strncpy(base_name, kernel_name, base_len);
     base_name[base_len] = '\0';
     snprintf(command, sizeof(command),
-             "python3 primitives/kernels/v2/%s@f32/oracle.py --test %s "
+             "python3 primitives/kernels/v2/%s/%s/oracle.py --test %s "
              "--output %s --state %s > /dev/null 2>&1",
-             base_name, input_file, output_file, state_path);
+             base_name, oracle_dtype, input_file, output_file, state_path);
   } else {
     snprintf(command, sizeof(command),
-             "python3 primitives/kernels/v1/%s@f32/oracle.py --test %s "
+             "python3 primitives/kernels/v1/%s/%s/oracle.py --test %s "
              "--output %s --state %s > /dev/null 2>&1",
-             kernel_name, input_file, output_file, state_path);
+             kernel_name, oracle_dtype, input_file, output_file, state_path);
   }
 
   /* Execute oracle */
@@ -304,16 +307,17 @@ static int run_python_oracle(const char *kernel_name, const float *input,
 static cortex_plugin_config_t build_plugin_config(uint32_t abi_version,
                                                   uint32_t Fs, uint32_t W,
                                                   uint32_t H, uint32_t C,
+                                                  uint32_t dtype,
                                                   const void *calibration_state,
                                                   uint32_t calibration_state_size) {
   cortex_plugin_config_t config = {0};
-  config.abi_version = abi_version;  /* Pass detected plugin ABI version */
+  config.abi_version = abi_version;
   config.struct_size = sizeof(cortex_plugin_config_t);
   config.sample_rate_hz = Fs;
   config.window_length_samples = W;
   config.hop_samples = H;
   config.channels = C;
-  config.dtype = CORTEX_DTYPE_FLOAT32;
+  config.dtype = dtype;
   config.allow_in_place = 0;
   config.kernel_params = NULL;
   config.kernel_params_size = 0;
@@ -323,12 +327,17 @@ static cortex_plugin_config_t build_plugin_config(uint32_t abi_version,
 }
 
 /* Load tolerances from spec.yaml */
-static tolerance_t load_tolerances(const char *kernel_name) {
-  /* Default strict tolerances */
+static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
+  /* Q15 kernels use relaxed tolerances due to quantization error */
+  if (is_q15) {
+    tolerance_t tol = {.rtol = 1e-3, .atol = 1e-3};
+    return tol;
+  }
+
+  /* Default strict tolerances for float32 */
   tolerance_t tol = {.rtol = 1e-5, .atol = 1e-6};
 
-  /* Relaxed tolerances for Welch PSD due to float/double precision differences
-   */
+  /* Relaxed tolerances for Welch PSD due to float/double precision differences */
   if (strcmp(kernel_name, "welch_psd") == 0) {
     tol.rtol = 2e-3;
     tol.atol = 1e-4;
@@ -336,9 +345,28 @@ static tolerance_t load_tolerances(const char *kernel_name) {
   return tol;
 }
 
+/* Convert float32 array to Q15 (int16_t) */
+static void convert_f32_to_q15(const float *in, int16_t *out, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    float clamped = fmaxf(-1.0f, fminf(1.0f, in[i]));
+    int32_t scaled = (int32_t)(clamped * 32767.0f);
+    if (scaled > 32767) scaled = 32767;
+    if (scaled < -32768) scaled = -32768;
+    out[i] = (int16_t)scaled;
+  }
+}
+
+/* Convert Q15 (int16_t) array to float32 */
+static void convert_q15_to_f32(const int16_t *in, float *out, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    out[i] = (float)in[i] / 32768.0f;
+  }
+}
+
 /* Test a single kernel */
 static int test_kernel(const char *kernel_name, const test_config_t *config) {
-  printf("\nTesting kernel: %s\n", kernel_name);
+  printf("\nTesting kernel: %s [dtype=%s]\n", kernel_name,
+         config->is_q15 ? "q15" : "float32");
   printf("  Loading data: %s\n", config->data_path);
 
   /* For trainable kernels, check calibration state */
@@ -405,6 +433,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   /* 3. Load plugin */
   char plugin_path[512];
   char spec_uri[256];
+  const char *dtype_suffix = config->is_q15 ? "q15" : "f32";
   /* Detect v2 kernels (name ends with _v2) and use v2 path */
   if (strlen(kernel_name) > 3 &&
       strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
@@ -413,11 +442,11 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
     size_t base_len = strlen(kernel_name) - 3;
     strncpy(base_name, kernel_name, base_len);
     base_name[base_len] = '\0';
-    snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v2/%s@f32",
-             base_name);
+    snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v2/%s/%s",
+             base_name, dtype_suffix);
   } else {
-    snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v1/%s@f32",
-             kernel_name);
+    snprintf(spec_uri, sizeof(spec_uri), "primitives/kernels/v1/%s/%s",
+             kernel_name, dtype_suffix);
   }
 
   if (cortex_plugin_build_path(spec_uri, plugin_path, sizeof(plugin_path)) !=
@@ -446,7 +475,9 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   uint32_t plugin_abi_version = (plugin.api.calibrate == NULL) ? 2 : 3;
 
   /* 4. Initialize plugin */
+  uint32_t plugin_dtype = config->is_q15 ? CORTEX_DTYPE_Q15 : CORTEX_DTYPE_FLOAT32;
   cortex_plugin_config_t cfg = build_plugin_config(plugin_abi_version, 160, W, H, 64,
+                                                   plugin_dtype,
                                                    calibration_state,
                                                    calibration_state_size);
   cortex_init_result_t init_result = plugin.api.init(&cfg);
@@ -471,32 +502,47 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
   void *handle = init_result.handle;
 
   /* 5. Load tolerances */
-  tolerance_t tol = load_tolerances(kernel_name);
+  tolerance_t tol = load_tolerances(kernel_name, config->is_q15);
 
   printf("  Testing %d windows...\n", config->max_windows);
 
   /* 6. Test each window */
   int failures = 0;
+  size_t window_elements = W * 64;  /* W * C */
+
   for (int i = 0; i < config->max_windows && i < (int)num_windows; i++) {
-    float *c_output = (float *)calloc(output_size, sizeof(float));
+    float *c_output_f32 = (float *)calloc(output_size, sizeof(float));
     float *py_output = (float *)calloc(output_size, sizeof(float));
 
-    /* Run C kernel */
-    plugin.api.process(handle, windows[i].window_data, c_output);
+    if (config->is_q15) {
+      /* Q15 path: convert float32 input → Q15, run kernel, convert Q15 output → float32 */
+      int16_t *q15_input = (int16_t *)calloc(window_elements, sizeof(int16_t));
+      int16_t *q15_output = (int16_t *)calloc(output_size, sizeof(int16_t));
 
-    /* Run Python oracle */
+      convert_f32_to_q15(windows[i].window_data, q15_input, window_elements);
+      plugin.api.process(handle, q15_input, q15_output);
+      convert_q15_to_f32(q15_output, c_output_f32, output_size);
+
+      free(q15_input);
+      free(q15_output);
+    } else {
+      /* Float32 path: direct */
+      plugin.api.process(handle, windows[i].window_data, c_output_f32);
+    }
+
+    /* Run Python oracle (always operates on float32 input, returns float32 output) */
     if (run_python_oracle(kernel_name, windows[i].window_data, W, 64, py_output,
-                          state_file, output_size) != 0) {
+                          state_file, output_size, config->is_q15) != 0) {
       fprintf(stderr, "  Window %d: Oracle execution failed\n", i);
       failures++;
-      free(c_output);
+      free(c_output_f32);
       free(py_output);
       continue;
     }
 
-    /* Compare */
+    /* Compare (both in float32 space) */
     comparison_result_t result;
-    compare_outputs(c_output, py_output, output_size, &tol, &result);
+    compare_outputs(c_output_f32, py_output, output_size, &tol, &result);
 
     if (!result.passed) {
       fprintf(stderr,
@@ -509,7 +555,7 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
              result.max_abs_error, result.max_rel_error);
     }
 
-    free(c_output);
+    free(c_output_f32);
     free(py_output);
   }
 
@@ -555,6 +601,7 @@ static void show_usage(const char *program_name) {
   printf("  --data <path>       Path to dataset\n");
   printf("  --state <path>      Path to calibration state file (for trainable kernels)\n");
   printf("  --windows <N>       Number of windows to test (default: 10)\n");
+  printf("  --dtype <type>      Data type: \"f32\" (default) or \"q15\"\n");
   printf("  --verbose           Print detailed comparison results\n");
   printf("  --help              Show this help\n");
 }
@@ -568,11 +615,12 @@ int main(int argc, char **argv) {
                                   {"data", required_argument, 0, 'd'},
                                   {"state", required_argument, 0, 's'},
                                   {"windows", required_argument, 0, 'w'},
+                                  {"dtype", required_argument, 0, 't'},
                                   {"verbose", no_argument, 0, 'v'},
                                   {"help", no_argument, 0, 'h'},
                                   {0, 0, 0, 0}};
 
-  while ((opt = getopt_long(argc, argv, "k:ad:s:w:vh", long_options, NULL)) !=
+  while ((opt = getopt_long(argc, argv, "k:ad:s:w:t:vh", long_options, NULL)) !=
          -1) {
     switch (opt) {
     case 'k':
@@ -590,6 +638,16 @@ int main(int argc, char **argv) {
       break;
     case 'w':
       config.max_windows = atoi(optarg);
+      break;
+    case 't':
+      if (strcmp(optarg, "q15") == 0) {
+        config.is_q15 = 1;
+      } else if (strcmp(optarg, "f32") == 0 || strcmp(optarg, "float32") == 0) {
+        config.is_q15 = 0;
+      } else {
+        fprintf(stderr, "Unknown dtype: %s (use 'f32' or 'q15')\n", optarg);
+        return 1;
+      }
       break;
     case 'v':
       config.verbose = 1;

@@ -1,16 +1,16 @@
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include -Idependencies
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../../sdk/kernel/include -Idependencies
 
 # Detect OS for shared library extension and flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	LIB_EXT = dylib
 	SOFLAGS = -dynamiclib -undefined dynamic_lookup
-	LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
+	LDFLAGS = -L../../../../../sdk/kernel/lib -lcortex -lm
 else
 	LIB_EXT = so
 	SOFLAGS = -shared
-	LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
+	LDFLAGS = -L../../../../../sdk/kernel/lib -lcortex -lm
 endif
 
 TARGET = libwelch_psd.$(LIB_EXT)

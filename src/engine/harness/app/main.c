@@ -24,7 +24,7 @@ typedef struct harness_context {
     char run_id[32];
 } harness_context_t;
 
-static void on_replayer_chunk(const float *chunk_data, size_t chunk_samples, void *user_data) {
+static void on_replayer_chunk(const void *chunk_data, size_t chunk_samples, void *user_data) {
     (void)chunk_samples;
     harness_context_t *ctx = (harness_context_t *)user_data;
     cortex_scheduler_feed_samples(ctx->scheduler, chunk_data, chunk_samples);

@@ -13,24 +13,28 @@ def load_base_config(config_path: str = "primitives/configs/cortex.yaml") -> Dic
 
 
 def _discover_kernel(name: str) -> str:
-    """Find a kernel's spec_uri on disk.
+    """Find a kernel's spec_uri (dtype directory) on disk.
 
-    If *name* already contains '@' (e.g. 'notch_iir@f32') it is treated as
-    fully qualified and matched exactly.  Otherwise we glob with '@*' to
-    discover the first available format variant.
+    Layout: primitives/kernels/v{N}/{kernel_name}/{dtype}/
+    If *name* already contains '/' (e.g. 'notch_iir/f32') it is treated as
+    fully qualified.  Otherwise we discover the first available dtype variant.
 
     Returns:
-        Path to the kernel directory (e.g. 'primitives/kernels/v1/notch_iir@f32')
+        Path to the dtype directory (e.g. 'primitives/kernels/v1/notch_iir/f32')
 
     Raises:
         ValueError: If the kernel cannot be found.
     """
-    if '@' in name:
+    if '/' in name:
         # Fully qualified — match exact directory
         candidates = globmod.glob(f'primitives/kernels/v*/{name}')
     else:
-        # Short name — discover any format variant
-        candidates = globmod.glob(f'primitives/kernels/v*/{name}@*')
+        # Short name — discover any dtype variant
+        candidates = globmod.glob(f'primitives/kernels/v*/{name}/*')
+        # Filter to only directories that contain a .c file (actual dtype dirs)
+        candidates = [c for c in candidates
+                      if Path(c).is_dir() and
+                      any(Path(c).glob('*.c'))]
 
     if not candidates:
         raise ValueError(f"Kernel '{name}' not found in primitives/kernels/")

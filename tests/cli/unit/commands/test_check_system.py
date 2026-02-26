@@ -594,8 +594,8 @@ class TestCheckBuildStatus:
         # Mock glob to return kernel plugins
         from pathlib import Path
         fs.glob.side_effect = lambda d, p: [
-            Path('primitives/kernels/v1/noop@f32/libnoop.dylib'),
-            Path('primitives/kernels/v1/car@f32/libcar.dylib'),
+            Path('primitives/kernels/v1/noop/f32/libnoop.dylib'),
+            Path('primitives/kernels/v1/car/f32/libcar.dylib'),
         ]
 
         checker = SystemChecker(
@@ -638,7 +638,7 @@ class TestCheckBuildStatus:
         )
         from pathlib import Path
         fs.glob.side_effect = lambda d, p: [
-            Path('primitives/kernels/v1/noop@f32/libnoop.dylib'),
+            Path('primitives/kernels/v1/noop/f32/libnoop.dylib'),
         ]
 
         checker = SystemChecker(
@@ -663,7 +663,7 @@ class TestCheckPmuPrivilege:
         fs = create_mock_filesystem(
             files={
                 'sdk/kernel/tools/cortex_inscount': '',
-                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+                'primitives/kernels/v1/noop/f32/libnoop.dylib': '',
             }
         )
         process = create_mock_process({
@@ -686,7 +686,7 @@ class TestCheckPmuPrivilege:
         fs = create_mock_filesystem(
             files={
                 'sdk/kernel/tools/cortex_inscount': '',
-                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+                'primitives/kernels/v1/noop/f32/libnoop.dylib': '',
             }
         )
         process = create_mock_process({
@@ -710,7 +710,7 @@ class TestCheckPmuPrivilege:
         fs = create_mock_filesystem(
             files={
                 'sdk/kernel/tools/cortex_inscount': '',
-                'primitives/kernels/v1/noop@f32/libnoop.so': '',
+                'primitives/kernels/v1/noop/f32/libnoop.so': '',
             }
         )
         process = create_mock_process({
@@ -750,7 +750,7 @@ class TestCheckPmuPrivilege:
         fs = create_mock_filesystem(
             files={
                 'sdk/kernel/tools/cortex_inscount': '',
-                'primitives/kernels/v1/noop@f32/libnoop.dylib': '',
+                'primitives/kernels/v1/noop/f32/libnoop.dylib': '',
             }
         )
         # Simulate process failure
@@ -888,7 +888,7 @@ class TestRunAllChecks:
                 'primitives/adapters/v1/native/cortex_adapter_native': '',
             }
         )
-        fs.glob.side_effect = lambda d, p: [Path('primitives/kernels/v1/noop@f32/libnoop.dylib')]
+        fs.glob.side_effect = lambda d, p: [Path('primitives/kernels/v1/noop/f32/libnoop.dylib')]
 
         checker = SystemChecker(
             filesystem=fs,
