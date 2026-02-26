@@ -232,9 +232,9 @@ src/
     └── utils/             # runner.py (HarnessRunner), analyzer.py (TelemetryAnalyzer), config.py
 
 primitives/
-├── kernels/v1/            # Immutable kernel implementations (8 kernels)
-│   ├── bandpass_fir@f32/  ├── car@f32/  ├── csp@f32/  ├── goertzel@f32/
-│   ├── ica@f32/  ├── noop@f32/  ├── notch_iir@f32/  └── welch_psd@f32/
+├── kernels/v1/            # Immutable kernel implementations (9 f32 + 8 Q15 = 17 kernels)
+│   ├── bandpass_fir/  ├── car/  ├── csp/  ├── fft/  ├── goertzel/
+│   ├── ica/  ├── noop/  ├── notch_iir/  └── welch_psd/
 ├── datasets/v1/           # Immutable dataset primitives
 ├── configs/               # YAML execution parameters
 ├── devices/               # Device profiles (rpi4, jetson-nano, m1-macos, m1-asahi)
@@ -259,24 +259,26 @@ results/                   # Generated benchmark outputs (gitignored)
 
 ## Current State
 
-**Kernels:** 8 validated float32 implementations
+**Kernels:** 9 f32 + 8 Q15 = 17 validated implementations
 - `car` — Common Average Reference (spatial filtering)
 - `notch_iir` — 60Hz line noise removal (IIR filter)
 - `bandpass_fir` — 8-30Hz passband (FIR filter, 129 taps)
 - `goertzel` — Alpha/beta bandpower (Goertzel algorithm)
+- `fft` — FFT magnitude-squared spectrum (vendored kiss_fft)
 - `welch_psd` — Power spectral density (Welch's method)
 - `ica` — Independent Component Analysis (trainable, offline calibration)
 - `csp` — Common Spatial Patterns (trainable, offline calibration)
 - `noop` — Identity function (harness overhead baseline)
+- All except `welch_psd` have Q15 variants; `fft@q15` uses kiss_fft FIXED_POINT=16
 
 **Platforms:**
 - macOS: arm64 (Apple Silicon), x86_64 (Intel)
 - Linux: x86_64, arm64 (Ubuntu, Fedora, Alpine tested)
 
 **Test Coverage:**
-- 49+ Python tests (analyzer unit, runner unit/integration, chain stats)
-- 21+ C unit tests (scheduler, telemetry, signal handling, replayer, clock resolution)
-- Oracle validation: All kernels match SciPy reference (tolerance 1e-5)
+- 303+ Python tests (analyzer unit, runner unit/integration, chain stats, tail attribution, compare verdicts)
+- 73+ C unit tests (scheduler, telemetry, signal handling, replayer, clock resolution, kernel registry)
+- Oracle validation: All 17 kernels match Python reference (f32: rtol=1e-5; Q15: rtol=1e-3; FFT Q15: rtol=5e-2)
 - CI pipeline: GitHub Actions with C unit tests + Python test jobs
 - Validation studies: DVFS, no-op overhead, Linux governor, high-channel scalability
 
@@ -499,7 +501,7 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 3. **Test command**: Use `make tests` (plural) not `make test`
 4. **Header location**: `sdk/kernel/include/cortex_plugin.h` (not `plugin_abi.h` or in primitives/)
 5. **Directory naming**: `primitives/configs/` not `run-configs/`
-6. **Kernel count**: 8 kernels (not 4) — includes `welch_psd`, `noop`, `ica`, and `csp`
+6. **Kernel count**: 9 f32 + 8 Q15 = 17 kernels (not 8) — includes `fft`, `welch_psd`, `noop`, `ica`, `csp`, and Q15 variants
 7. **Parallel execution**: NEVER run kernels in parallel (violates measurement isolation)
 8. **Modifying primitives**: Create `v2/` instead of editing `v1/` files
 9. **Oracle-first rule**: ALWAYS validate correctness before benchmarking performance
