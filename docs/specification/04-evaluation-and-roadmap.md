@@ -8,9 +8,9 @@ Capabilities are organized into priority tiers reflecting implementation urgency
 |------|-----------|------------|----------|---------------|
 | Tier 1 | Pipeline composition | High | Implemented | Darkroom streaming, ILP buffer scheduling |
 | Tier 1 | Device adapters | High | Adapt | |
-| Tier 1 | Latency decomposition | High | Implemented | Roofline, nn-Meter |
+| Tier 1 | Latency decomposition (incl. SE-7 tail attribution) | High | Implemented | Roofline, nn-Meter |
 | Tier 2 | Deadline analysis CLI | Low | Adapt | LTTng, Cyclictest, WCET |
-| Tier 2 | Comparative analysis CLI | Low | Adapt | MLPerf stats, Welch t-test, Cohen's d |
+| Tier 2 | Comparative analysis CLI | Low | Implemented | MLPerf stats, Welch t-test, Cohen's d |
 | Tier 2 | Platform-state (full) | Medium | Reuse | perf/ftrace, sysfs, eBPF |
 | Tier 2 | Multi-dtype (Q15) | Medium | Adapt | CMSIS-DSP Q15 |
 | Tier 2 | Mandatory reporting | Low | Adapt | EEMBC CoreMark, MLPerf |
@@ -31,9 +31,9 @@ Capabilities are organized into priority tiers reflecting implementation urgency
 
 | Strategy | Count | Capabilities |
 |----------|-------|-------------|
-| **Implemented** | 16 | Oracle validation, component separation, SSH deployment, transports, protocol, native adapter, kernel calibration, synthetic datasets, sustained measurement, warmup, load profiles, two-phase measurement, latency distribution, analysis/reporting, pipeline composition, latency decomposition |
+| **Implemented** | 17 | Oracle validation, component separation, SSH deployment, transports, protocol, native adapter, kernel calibration, synthetic datasets, sustained measurement, warmup, load profiles, two-phase measurement, latency distribution, analysis/reporting, comparative analysis, pipeline composition, latency decomposition |
 | **Reuse** | 3 | stress-ng (load profiles), perf/ftrace (platform-state), OpenSSH+rsync (deployment) |
-| **Adapt** | 11 | Platform-state, statistical confidence, multi-dtype, deadline analysis, comparative analysis, mandatory reporting, oracle workflow, scenario-based, power measurement, diagnostic framework, performance counters |
+| **Adapt** | 10 | Platform-state, statistical confidence, multi-dtype, deadline analysis, mandatory reporting, oracle workflow, scenario-based, power measurement, diagnostic framework, performance counters |
 | **Innovate** | 2 | SNR validation, scaled tolerance |
 | **Defer** | 3 | Labeled datasets (MOABB), efficacy benchmarking (MOABB), hardware feasibility (Foresee) |
 

@@ -65,9 +65,9 @@ Implementation Note: AR efficacy benchmarking is deferred—MOABB [1] serves thi
 | SE-2 | I'm choosing between two filter implementations. I need to compare their latency tradeoffs on the target deployment platform. | Comparative benchmarking, diff reports | Partial |
 | SE-3 | I'm porting a float32 kernel to fixed16. I need to validate numerical correctness against the float32 oracle before measuring latency. | Multi-dtype oracle validation, degradation metrics | Partial |
 | SE-4 | I need to characterize how platform state (idle vs. loaded) affects kernel latency on my target device. | Load profiles, platform effect isolation | Partial |
-| SE-5 | My kernel runs slower than expected. I need to determine if it's compute-bound, memory-bound, or platform-effect-bound. | Static analysis, performance counters, platform-state capture, bottleneck attribution | Partial |
+| SE-5 | My kernel runs slower than expected. I need to determine if it's compute-bound, memory-bound, or platform-effect-bound. | Static analysis, performance counters, platform-state capture, bottleneck attribution | Exists |
 | SE-6 | I need to benchmark latency distribution (P50/P95/P99) under sustained load to guarantee consistent real-time performance. | Sustained measurement, warmup protocol, distribution capture | Exists |
-| SE-7 | I need to understand why P99 latency is 4× worse than P50 so I can determine if it's algorithmic or platform-caused. | Latency distribution analysis, platform correlation, counter data | Partial |
+| SE-7 | I need to understand why P99 latency is 4× worse than P50 so I can determine if it's algorithmic or platform-caused. | Latency distribution analysis, platform correlation, counter data | Exists |
 | SE-8 | I need to measure end-to-end latency of my full pipeline (bandpass → CAR → CSP → classifier) to verify it meets real-time deadlines. | Pipeline composition, stage telemetry | Exists |
 | SE-9 | I need to stress test my kernel with 1024 channels to validate it scales for next-generation implants. | Synthetic dataset generation, parameterized data | Exists |
 | SE-10 | I need to train my CSP kernel on calibration data, save parameters, then deploy and benchmark the calibrated kernel. | Kernel calibration | Exists |
@@ -87,8 +87,8 @@ Implementation Note: HE workflows are planned for device adapter expansion. The 
 | Persona | Total | Exists | Partial | Planned | Coverage (Exists + Partial) |
 | --- | --- | --- | --- | --- | --- |
 | Algorithm Researcher | 2 | 0 | 0 | 2 | 0% |
-| Software Engineer | 11 | 5 | 6 | 0 | 100% |
+| Software Engineer | 11 | 7 | 4 | 0 | 100% |
 | Hardware Engineer | 2 | 0 | 0 | 2 | 0% |
-| Total | 15 | 5 | 6 | 4 | 73% |
+| Total | 15 | 7 | 4 | 4 | 73% |
 
 These 15 user stories across three personas represent the chaotic surface of BCI deployment needs. The next section distills the methodological principles that unify them.
