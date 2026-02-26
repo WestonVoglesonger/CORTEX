@@ -419,9 +419,9 @@ def attribute_tail(
                         result.freq_ks_pvalue = 1.0
                     provenance["freq_stratification"] = "measured/stratification/KS"
 
-    # --- Tier 3: Shapley variance decomposition (≥500 windows + ≥2 covariates) ---
+    # --- Tier 3: Shapley variance decomposition (requires Tier 2 + ≥500 windows + ≥2 covariates) ---
     non_zero_covariates = {k: v for k, v in covariates.items() if np.any(v != 0)}
-    if n_windows >= 500 and len(non_zero_covariates) >= 2:
+    if tier >= 2 and n_windows >= 500 and len(non_zero_covariates) >= 2:
         # Build regression matrix with transformed covariates
         cov_names = sorted(non_zero_covariates.keys())
         X_cols = []
