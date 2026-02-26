@@ -1,4 +1,4 @@
-"""Tests for SE-5 latency characterization (post-hoc decomposition)."""
+"""Tests for SE-5 latency characterization and SE-7 tail attribution."""
 import argparse
 import pytest
 import numpy as np
@@ -6,8 +6,29 @@ from unittest.mock import patch, MagicMock
 
 from cortex.utils.decomposition import (
     CharacterizationResult, characterize_kernel,
+    TailAttribution, attribute_tail, _shapley_r_squared,
 )
 
+# Shared test fixtures — single source of truth for device + kernel specs
+M1_DEVICE_SPEC = {
+    "device": {
+        "name": "Apple M1",
+        "cpu_peak_gflops": 100.0,
+        "memory_bandwidth_gb_s": 68.25,
+        "l1_cache_kb": 192,
+        "frequency": {"max_hz": 3_228_000_000},
+    }
+}
+
+GOERTZEL_KERNEL_SPECS = {
+    "goertzel": {
+        "computational": {
+            "flops_per_sample": 12,
+            "memory_loads_per_sample": 1,
+            "memory_stores_per_sample": 1,
+        }
+    }
+}
 
 
 # ===========================================================================
@@ -20,25 +41,8 @@ class TestCharacterizeKernel:
     # Goertzel spec: flops_per_sample=12, loads=1, stores=1
     # M1 device: cpu_peak_gflops=100, memory_bw=68.25 GB/s, l1=192 KB, max_hz=3.228 GHz
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_roofline_floor_compute_bound(self):
         """Correct roofline floor from spec + device."""
@@ -170,25 +174,8 @@ class TestCharacterizeKernel:
 class TestCharacterizeKernelPMU:
     """Tests for PMU enrichment in characterize_kernel()."""
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_ipc_populated(self):
         """IPC populated when cycle_counts + instruction_counts provided."""
@@ -294,25 +281,8 @@ class TestCharacterizeKernelPMU:
 class TestCharacterizeKernelNoop:
     """Tests for noop cross-validation in characterize_kernel()."""
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_noop_p50_populated(self):
         """noop_p50_us populated when noop provided."""
@@ -389,22 +359,8 @@ class TestCharacterizeDecomposeExecute:
         mock_fs.exists.return_value = True
         mock_fs_cls.return_value = mock_fs
 
-        mock_load_dev.return_value = {
-            "device": {
-                "name": "Apple M1", "cpu_peak_gflops": 100.0,
-                "memory_bandwidth_gb_s": 68.25, "l1_cache_kb": 192,
-                "frequency": {"max_hz": 3_228_000_000},
-            }
-        }
-        mock_load_specs.return_value = {
-            "goertzel": {
-                "computational": {
-                    "flops_per_sample": 12,
-                    "memory_loads_per_sample": 1,
-                    "memory_stores_per_sample": 1,
-                }
-            }
-        }
+        mock_load_dev.return_value = M1_DEVICE_SPEC
+        mock_load_specs.return_value = GOERTZEL_KERNEL_SPECS
 
         df = self._make_telemetry_df(has_device_ts=True)
         mock_analyzer = MagicMock()
@@ -564,24 +520,10 @@ class TestCharacterizeDecomposeExecute:
             assert kw.get('per_window_cycle_counts') is None
 
     def _device_spec(self):
-        return {
-            "device": {
-                "name": "Apple M1", "cpu_peak_gflops": 100.0,
-                "memory_bandwidth_gb_s": 68.25, "l1_cache_kb": 192,
-                "frequency": {"max_hz": 3_228_000_000},
-            }
-        }
+        return M1_DEVICE_SPEC
 
     def _kernel_specs(self):
-        return {
-            "goertzel": {
-                "computational": {
-                    "flops_per_sample": 12,
-                    "memory_loads_per_sample": 1,
-                    "memory_stores_per_sample": 1,
-                }
-            }
-        }
+        return GOERTZEL_KERNEL_SPECS
 
     def _mock_result(self, ipc=3.2, unavailable=None):
         return CharacterizationResult(
@@ -601,7 +543,7 @@ class TestCharacterizeDecomposeExecute:
 class TestCharacterizeOutputFormatters:
     """Tests for characterization output formatters."""
 
-    def _make_result(self):
+    def _make_char_result(self):
         return CharacterizationResult(
             kernel_name="goertzel",
             bound="compute", operational_intensity=1.5,
@@ -613,6 +555,7 @@ class TestCharacterizeOutputFormatters:
             noop_p50_us=5.0, ipc=3.2,
             effective_freq_ghz=2.8, frequency_tax_pct=13.2,
             n_windows=200,
+            tail_ratio=1.31, platform_tail_verdict="platform-dominated",
             provenance={
                 "roofline_floor_us": "estimated/roofline",
                 "best_us": "measured/timing/device",
@@ -624,6 +567,21 @@ class TestCharacterizeOutputFormatters:
             },
             unavailable={"osaca_floor_us": "OSACA not integrated"},
         )
+
+    def _make_tail_attribution(self):
+        return TailAttribution(
+            kernel_name="goertzel",
+            n_windows=200,
+            tail_ratio=1.31,
+            noop_tail_ratio=1.2,
+            normalized_ratio=1.09,
+            verdict="platform-dominated",
+            tier=1,
+            provenance={"tail_ratio": "measured/timing"},
+        )
+
+    def _make_result(self):
+        return (self._make_char_result(), self._make_tail_attribution())
 
     def test_table_shows_provenance(self, capsys):
         """Table shows provenance tags in brackets."""
@@ -638,23 +596,26 @@ class TestCharacterizeOutputFormatters:
         assert "goertzel" in captured
         assert "estimated/roofline" in captured or "roofline" in captured.lower()
         assert "compute" in captured
+        # SE-7: tail attribution output
+        assert "Tail ratio" in captured
+        assert "Verdict" in captured or "verdict" in captured
 
     def test_unavailable_shows_na(self, capsys):
         """Unavailable metrics show N/A with reason."""
         from cortex.commands.decompose import _output_characterization
 
         dev = {"name": "Apple M1"}
-        result = self._make_result()
-        result.ipc = None
-        result.effective_freq_ghz = None
-        result.frequency_tax_pct = None
-        result.unavailable = {
+        char_result = self._make_char_result()
+        char_result.ipc = None
+        char_result.effective_freq_ghz = None
+        char_result.frequency_tax_pct = None
+        char_result.unavailable = {
             "osaca_floor_us": "OSACA not integrated",
             "ipc": "no PMU data",
             "effective_freq_ghz": "no PMU data",
             "frequency_tax_pct": "no PMU data",
         }
-        results = [result]
+        results = [(char_result, self._make_tail_attribution())]
 
         _output_characterization(results, dev, 'table')
         captured = capsys.readouterr().out
@@ -662,7 +623,7 @@ class TestCharacterizeOutputFormatters:
         assert "N/A" in captured
 
     def test_json_has_correct_keys(self):
-        """JSON has correct keys including provenance and unavailable."""
+        """JSON has correct keys including provenance, unavailable, and tail_attribution."""
         import json as json_mod
         from cortex.commands.decompose import _output_characterization
         from io import StringIO
@@ -685,6 +646,12 @@ class TestCharacterizeOutputFormatters:
         assert "provenance" in char
         assert "unavailable" in char
         assert "kernel" in char
+        # SE-7: tail attribution in JSON
+        assert "tail_attribution" in char
+        ta = char["tail_attribution"]
+        assert "tail_ratio" in ta
+        assert "verdict" in ta
+        assert "tier" in ta
 
     def test_markdown_is_valid(self):
         """Markdown output contains expected structure."""
@@ -705,3 +672,276 @@ class TestCharacterizeOutputFormatters:
 
         assert "#" in output  # has headers
         assert "goertzel" in output
+        # SE-7: tail attribution in markdown
+        assert "Tail ratio" in output
+        assert "Tail verdict" in output
+
+
+# ===========================================================================
+# SE-7: Tail-latency attribution tests
+# ===========================================================================
+
+class TestAttributeTailTier1:
+    """Tier 1 tests: diagnostic ratios (always available)."""
+
+    def test_basic_ratio(self):
+        """P99=100, P50=50 → ratio=2.0."""
+        # 90% of values at 50, top 10% at 100
+        lats = [50.0] * 900 + [100.0] * 100
+        result = attribute_tail("goertzel", lats)
+        assert result.tail_ratio == pytest.approx(100.0 / 50.0, rel=0.1)
+        assert result.tier >= 1
+        assert result.kernel_name == "goertzel"
+
+    def test_with_noop_normalization(self):
+        """noop ratio=1.5, kernel ratio=3.0 → normalized=2.0 → 'mixed'."""
+        # Kernel: P50=50, P99=150 → ratio=3.0
+        kernel_lats = [50.0] * 900 + [150.0] * 100
+        # Noop: P50=10, P99=15 → ratio=1.5
+        noop_lats = [10.0] * 900 + [15.0] * 100
+        result = attribute_tail("goertzel", kernel_lats, noop_latencies_us=noop_lats)
+        assert result.noop_tail_ratio is not None
+        assert result.normalized_ratio is not None
+        assert result.normalized_ratio == pytest.approx(
+            result.tail_ratio / result.noop_tail_ratio, rel=0.1
+        )
+        assert result.verdict == "mixed"
+
+    def test_platform_dominated(self):
+        """normalized < 1.5 → 'platform-dominated'."""
+        # Kernel and noop have similar tail ratios
+        kernel_lats = [100.0] * 900 + [120.0] * 100
+        noop_lats = [10.0] * 900 + [12.0] * 100
+        result = attribute_tail("goertzel", kernel_lats, noop_latencies_us=noop_lats)
+        assert result.verdict == "platform-dominated"
+
+    def test_algorithmic(self):
+        """normalized > 3.0 → 'algorithmic'."""
+        # Kernel has massive tail, noop is tight
+        kernel_lats = [50.0] * 900 + [500.0] * 100
+        noop_lats = [10.0] * 900 + [11.0] * 100
+        result = attribute_tail("goertzel", kernel_lats, noop_latencies_us=noop_lats)
+        assert result.verdict == "algorithmic"
+
+
+class TestAttributeTailTier2:
+    """Tier 2 tests: cohort stratification."""
+
+    def _make_lats_with_freq(self, n=1000, seed=42):
+        """Create latencies correlated with CPU frequency.
+
+        Tail windows get low frequency (1600 MHz), typical get high (3200 MHz).
+        """
+        rng = np.random.RandomState(seed)
+        freq = np.full(n, 3200.0)
+        lats = rng.normal(100, 5, n)
+        # Make top 5% have much higher latency AND lower freq
+        tail_count = n // 20
+        lats[-tail_count:] = rng.normal(300, 20, tail_count)
+        freq[-tail_count:] = 1600.0
+        return lats.tolist(), freq.tolist()
+
+    def test_cohort_comparison(self):
+        """1000 windows with tail windows having lower freq → significant."""
+        lats, freq = self._make_lats_with_freq(n=1000)
+        result = attribute_tail(
+            "goertzel", lats,
+            per_window_cpu_freq_mhz=freq,
+        )
+        assert result.tier >= 2
+        assert result.tail_cohort_size is not None
+        assert result.typical_cohort_size is not None
+        assert "cpu_freq_mhz" in result.covariate_comparisons
+        comp = result.covariate_comparisons["cpu_freq_mhz"]
+        assert comp.significant is True
+        assert comp.direction == "lower_in_tail"
+
+    def test_freq_stratification(self):
+        """Stable freq windows have lower P99 than unstable."""
+        lats, freq = self._make_lats_with_freq(n=1000)
+        result = attribute_tail(
+            "goertzel", lats,
+            per_window_cpu_freq_mhz=freq,
+        )
+        assert result.stable_freq_p99_us is not None
+        assert result.unstable_freq_p99_us is not None
+        # Unstable freq (1600 MHz) windows should have higher P99
+        assert result.unstable_freq_p99_us > result.stable_freq_p99_us
+
+    def test_insufficient_windows_falls_back(self):
+        """50 windows → tier=1."""
+        lats = [100.0] * 45 + [300.0] * 5
+        freq = [3200.0] * 45 + [1600.0] * 5
+        result = attribute_tail(
+            "goertzel", lats,
+            per_window_cpu_freq_mhz=freq,
+        )
+        assert result.tier == 1
+        assert result.tail_cohort_size is None
+
+    def test_all_zeros_covariates_skipped(self):
+        """cpu_freq all 0 (macOS) → skips freq, stays tier 1 if no other covariates."""
+        lats = [100.0] * 200 + [300.0] * 50
+        freq = [0.0] * 250
+        result = attribute_tail(
+            "goertzel", lats,
+            per_window_cpu_freq_mhz=freq,
+        )
+        # All-zero covariates should be skipped
+        assert "cpu_freq_mhz" not in result.covariate_comparisons
+
+
+class TestAttributeTailTier3:
+    """Tier 3 tests: Shapley variance decomposition."""
+
+    def test_shapley_decomposition(self):
+        """500+ windows with known correlations → R² > 0, percentages sum to ~100%."""
+        rng = np.random.RandomState(42)
+        n = 600
+        freq = rng.uniform(1600, 3200, n)
+        noise = rng.exponential(100, n)
+        # Latency = f(1/freq, noise) + small random
+        lats = 1e6 / freq + 0.01 * noise + rng.normal(0, 5, n)
+        lats = np.abs(lats)  # ensure positive
+
+        stall_cycles = rng.uniform(100, 1000, n)
+        cycle_counts = rng.uniform(10000, 50000, n)
+
+        result = attribute_tail(
+            "goertzel", lats.tolist(),
+            per_window_cpu_freq_mhz=freq.tolist(),
+            per_window_osnoise_ns=noise.tolist(),
+            per_window_backend_stall_counts=stall_cycles.tolist(),
+            per_window_cycle_counts=cycle_counts.tolist(),
+        )
+        assert result.tier == 3
+        assert result.model_r_squared > 0
+        assert result.shapley_pct is not None
+        assert result.algorithmic_residual_pct is not None
+        # Shapley pct + algorithmic residual should sum to ~100% (total variance)
+        total = sum(result.shapley_pct.values()) + result.algorithmic_residual_pct
+        assert total == pytest.approx(100.0, abs=1.0)
+
+    def test_insufficient_windows_falls_back(self):
+        """300 windows → tier=2 (not 3)."""
+        rng = np.random.RandomState(42)
+        n = 300
+        freq = rng.uniform(1600, 3200, n)
+        noise = rng.exponential(100, n)
+        lats = 1e6 / freq + 0.01 * noise + rng.normal(0, 5, n)
+        lats = np.abs(lats)
+
+        stall_cycles = rng.uniform(100, 1000, n)
+        cycle_counts = rng.uniform(10000, 50000, n)
+
+        result = attribute_tail(
+            "goertzel", lats.tolist(),
+            per_window_cpu_freq_mhz=freq.tolist(),
+            per_window_osnoise_ns=noise.tolist(),
+            per_window_backend_stall_counts=stall_cycles.tolist(),
+            per_window_cycle_counts=cycle_counts.tolist(),
+        )
+        assert result.tier == 2
+        assert result.model_r_squared is None
+
+    def test_single_covariate_falls_back(self):
+        """Only one non-zero covariate → tier=2 (Shapley needs ≥2)."""
+        rng = np.random.RandomState(42)
+        n = 600
+        freq = rng.uniform(1600, 3200, n)
+        lats = 1e6 / freq + rng.normal(0, 5, n)
+        lats = np.abs(lats)
+
+        result = attribute_tail(
+            "goertzel", lats.tolist(),
+            per_window_cpu_freq_mhz=freq.tolist(),
+        )
+        # Only one covariate → can't do Shapley
+        assert result.tier == 2
+        assert result.model_r_squared is None
+
+
+class TestAttributeTailEdgeCases:
+    """Edge cases for attribute_tail."""
+
+    def test_zero_latency_variance(self):
+        """All latencies identical → ratio=1.0, verdict='platform-dominated'."""
+        lats = [100.0] * 500
+        result = attribute_tail("goertzel", lats)
+        assert result.tail_ratio == pytest.approx(1.0)
+        assert result.verdict == "platform-dominated"
+
+
+class TestShapleyRSquared:
+    """Tests for _shapley_r_squared helper."""
+
+    def test_known_decomposition(self):
+        """y = 2*x1 + 3*x2 + noise → both covariates get meaningful shares."""
+        rng = np.random.RandomState(42)
+        n = 500
+        x1 = rng.normal(0, 1, n)
+        x2 = rng.normal(0, 1, n)
+        noise = rng.normal(0, 0.1, n)
+        y = 2 * x1 + 3 * x2 + noise
+
+        X = np.column_stack([x1, x2])
+        shapley_pct, full_r2 = _shapley_r_squared(y, X, ["x1", "x2"])
+
+        assert full_r2 > 0.95  # Very high R² since noise is small
+        assert shapley_pct["x1"] > 0
+        assert shapley_pct["x2"] > 0
+        # x2 has larger coefficient → should get larger share
+        assert shapley_pct["x2"] > shapley_pct["x1"]
+        # Should sum to ~R² * 100 (percentages of total variance)
+        assert sum(shapley_pct.values()) == pytest.approx(full_r2 * 100, abs=1.0)
+
+    def test_single_predictor(self):
+        """1 covariate → Shapley = full R²."""
+        rng = np.random.RandomState(42)
+        n = 500
+        x = rng.normal(0, 1, n)
+        y = 3 * x + rng.normal(0, 0.1, n)
+
+        X = x.reshape(-1, 1)
+        shapley_pct, full_r2 = _shapley_r_squared(y, X, ["x"])
+
+        assert full_r2 > 0.95
+        # Single predictor: Shapley = R² * 100 (pct of total variance)
+        assert shapley_pct["x"] == pytest.approx(full_r2 * 100, abs=1.0)
+
+    def test_uncorrelated_predictors(self):
+        """Independent covariates → Shapley ≈ marginal R²."""
+        rng = np.random.RandomState(42)
+        n = 500
+        x1 = rng.normal(0, 1, n)
+        x2 = rng.normal(0, 1, n)
+        y = x1 + x2 + rng.normal(0, 0.1, n)
+
+        X = np.column_stack([x1, x2])
+        shapley_pct, full_r2 = _shapley_r_squared(y, X, ["x1", "x2"])
+
+        # Equal coefficients, uncorrelated → roughly equal shares
+        assert abs(shapley_pct["x1"] - shapley_pct["x2"]) < 15
+        assert sum(shapley_pct.values()) == pytest.approx(full_r2 * 100, abs=1.0)
+
+
+class TestCharacterizationTailFields:
+    """Tests for tail_ratio and platform_tail_verdict in CharacterizationResult."""
+
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
+
+    def test_tail_ratio_populated(self):
+        """characterize_kernel populates tail_ratio."""
+        outer = [100.0] * 180 + [200.0] * 20
+        result = characterize_kernel(
+            "goertzel", outer_latencies_us=outer, device_latencies_us=None,
+            device_spec=self.DEVICE_SPEC, kernel_specs=self.KERNEL_SPECS,
+        )
+        assert result.tail_ratio is not None
+        assert result.tail_ratio > 1.0
+        assert result.platform_tail_verdict is not None
+        assert result.platform_tail_verdict in (
+            "platform-dominated", "mixed", "algorithmic"
+        )
+        assert "tail_ratio" in result.provenance
