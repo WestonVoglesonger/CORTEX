@@ -69,6 +69,10 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     }
 
     uint32_t n_fft = config->window_length_samples;
+    if (n_fft == 0) {
+        fprintf(stderr, "[fft@q15] window_length_samples must be > 0\n");
+        return result;
+    }
 
     /* Validate n_fft is a kiss_fft "fast size" (factors into {2,3,5}) */
     if ((int)n_fft != kiss_fft_next_fast_size((int)n_fft)) {
