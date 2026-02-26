@@ -5,7 +5,7 @@
  * 1. Loading real EEG data from dataset
  * 2. Processing windows through C kernels
  * 3. Processing same data through Python oracles
- * 4. Comparing outputs with tolerance checking (rtol=1e-5, atol=1e-6)
+ * 4. Comparing outputs with per-kernel tolerances (loaded from spec.yaml)
  *
  * FUTURE: Capability Assessment System
  * ===================================
@@ -353,7 +353,11 @@ static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
            "primitives/kernels/v1/%s/spec.yaml", kernel_name);
 
   FILE *f = fopen(spec_path, "r");
-  if (!f) return tol;
+  if (!f) {
+    fprintf(stderr, "  [tolerances] spec.yaml not found at %s, using defaults "
+            "(rtol=%.1e, atol=%.1e)\n", spec_path, tol.rtol, tol.atol);
+    return tol;
+  }
 
   const char *target = is_q15 ? "quantized:" : "float32:";
   int in_target = 0;
@@ -375,7 +379,15 @@ static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
       continue;
     }
 
-    /* If we hit another dtype section or a less-indented key, leave target */
+    /* If we hit another dtype section or a less-indented key, leave target.
+     * Indent threshold 6 assumes standard 2-space-per-level YAML:
+     *   numerical:        (indent 0)
+     *     tolerances:     (indent 2)
+     *       float32:      (indent 4)
+     *         rtol: ...   (indent 6)
+     *         atol: ...   (indent 6)
+     *       quantized:    (indent 4)
+     * Keys at indent <= 6 that are NOT rtol/atol signal a section boundary. */
     if (in_target && indent <= 6 && strstr(trimmed, ":")) {
       if (strncmp(trimmed, "rtol:", 5) != 0 &&
           strncmp(trimmed, "atol:", 5) != 0) {

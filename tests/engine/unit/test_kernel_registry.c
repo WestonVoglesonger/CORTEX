@@ -28,7 +28,8 @@ static kernel_test_t expected_kernels[] = {
     {"car", "[160, 64]", "[160, 64]", 0},
     {"notch_iir", "[160, 64]", "[160, 64]", 1},
     {"bandpass_fir", "[160, 64]", "[160, 64]", 1},
-    {"goertzel", "[160, 64]", "[2, 64]", 0}
+    {"goertzel", "[160, 64]", "[2, 64]", 0},
+    {"fft", "[W, C]", "[W/2+1, C]", 0}
 };
 
 static int file_exists(const char *path) {

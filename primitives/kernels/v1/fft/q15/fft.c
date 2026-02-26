@@ -5,7 +5,7 @@
  * FIXED_POINT=16 mode. kiss_fft_scalar becomes int16_t and butterfly
  * arithmetic uses C_FIXDIV per-stage scaling.
  *
- * ABI Version: 2 (non-trainable)
+ * ABI Compatibility: v2 (non-trainable, backward compatible with v3 harness)
  * Data Type: Q15
  * Input shape: (W, C)
  * Output shape: (W/2+1, C)
@@ -25,9 +25,9 @@
 #endif
 
 #include "kiss_fft.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #undef CORTEX_ABI_VERSION
 #define CORTEX_ABI_VERSION 2u
@@ -35,7 +35,6 @@
 typedef struct {
     uint32_t n_fft;
     uint32_t channels;
-    uint32_t window_length;
     uint32_t output_bins;       /* n_fft / 2 + 1 */
     kiss_fft_cfg fft_cfg;
     kiss_fft_cpx *fft_in;      /* int16_t r/i with FIXED_POINT=16 */
@@ -45,10 +44,29 @@ typedef struct {
 cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     cortex_init_result_t result = {0};
 
-    if (!config) return result;
-    if (config->abi_version != CORTEX_ABI_VERSION) return result;
-    if (config->struct_size < sizeof(cortex_plugin_config_t)) return result;
-    if (config->dtype != CORTEX_DTYPE_Q15) return result;
+    if (!config) {
+        fprintf(stderr, "[fft@q15] cortex_init: config is NULL\n");
+        return result;
+    }
+    if (config->abi_version != CORTEX_ABI_VERSION) {
+        fprintf(stderr, "[fft@q15] ABI mismatch: expected %u, got %u\n",
+                CORTEX_ABI_VERSION, config->abi_version);
+        return result;
+    }
+    if (config->struct_size < sizeof(cortex_plugin_config_t)) {
+        fprintf(stderr, "[fft@q15] struct_size too small: %u < %zu\n",
+                config->struct_size, sizeof(cortex_plugin_config_t));
+        return result;
+    }
+    if (config->dtype != CORTEX_DTYPE_Q15) {
+        fprintf(stderr, "[fft@q15] unsupported dtype: %u (expected Q15=%u)\n",
+                config->dtype, CORTEX_DTYPE_Q15);
+        return result;
+    }
+    if (config->channels == 0) {
+        fprintf(stderr, "[fft@q15] channels must be > 0\n");
+        return result;
+    }
 
     uint32_t n_fft = config->window_length_samples;
 
@@ -60,12 +78,20 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return result;
     }
 
+    /* Check allocation size overflow */
+    if (n_fft > SIZE_MAX / sizeof(kiss_fft_cpx)) {
+        fprintf(stderr, "[fft@q15] n_fft=%u causes allocation overflow\n", n_fft);
+        return result;
+    }
+
     fft_q15_state_t *st = (fft_q15_state_t *)calloc(1, sizeof(fft_q15_state_t));
-    if (!st) return result;
+    if (!st) {
+        fprintf(stderr, "[fft@q15] calloc failed for state\n");
+        return result;
+    }
 
     st->n_fft = n_fft;
     st->channels = config->channels;
-    st->window_length = config->window_length_samples;
     st->output_bins = n_fft / 2 + 1;
 
     st->fft_cfg = kiss_fft_alloc((int)n_fft, 0, NULL, NULL);
@@ -73,6 +99,8 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     st->fft_out = (kiss_fft_cpx *)malloc(sizeof(kiss_fft_cpx) * n_fft);
 
     if (!st->fft_cfg || !st->fft_in || !st->fft_out) {
+        fprintf(stderr, "[fft@q15] allocation failed: cfg=%p in=%p out=%p\n",
+                (void *)st->fft_cfg, (void *)st->fft_in, (void *)st->fft_out);
         cortex_teardown(st);
         return result;
     }
