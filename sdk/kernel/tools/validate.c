@@ -349,8 +349,19 @@ static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
   }
 
   char spec_path[512];
-  snprintf(spec_path, sizeof(spec_path),
-           "primitives/kernels/v1/%s/spec.yaml", kernel_name);
+  /* Detect v2 kernels (name ends with _v2) and use v2 path */
+  if (strlen(kernel_name) > 3 &&
+      strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+    char base_name[64];
+    size_t base_len = strlen(kernel_name) - 3;
+    strncpy(base_name, kernel_name, base_len);
+    base_name[base_len] = '\0';
+    snprintf(spec_path, sizeof(spec_path),
+             "primitives/kernels/v2/%s/spec.yaml", base_name);
+  } else {
+    snprintf(spec_path, sizeof(spec_path),
+             "primitives/kernels/v1/%s/spec.yaml", kernel_name);
+  }
 
   FILE *f = fopen(spec_path, "r");
   if (!f) {

@@ -16,11 +16,11 @@
  */
 
 #include "cortex_plugin.h"
-#include "cortex_q15.h"
 
-/* FIXED_POINT=16 must be defined before including kiss_fft.h so that
- * kiss_fft_scalar resolves to int16_t in this translation unit. */
-#ifndef FIXED_POINT
+/* FIXED_POINT must equal 16 before including kiss_fft.h so that
+ * kiss_fft_scalar resolves to int16_t in this translation unit.
+ * FIXED_POINT=32 would use int32_t — wrong struct layout. */
+#if !defined(FIXED_POINT) || FIXED_POINT != 16
 #error "fft@q15 must be compiled with -DFIXED_POINT=16"
 #endif
 
