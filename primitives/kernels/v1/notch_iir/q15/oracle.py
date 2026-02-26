@@ -31,13 +31,14 @@ def q15_to_float(x):
 
 
 def double_to_q14(x):
-    """Quantize a double coefficient to Q14 (range [-2, +2))."""
+    """Quantize a double coefficient to Q14 (range [-2, +2)).
+    Full int16_t range [-32768, 32767] maps to [-2.0, +2.0)."""
     scaled = x * 16384.0  # 1 << 14
     rounded = int(round(scaled))
-    if rounded > 16383:
-        rounded = 16383
-    elif rounded < -16384:
-        rounded = -16384
+    if rounded > 32767:
+        rounded = 32767
+    elif rounded < -32768:
+        rounded = -32768
     return np.int16(rounded)
 
 

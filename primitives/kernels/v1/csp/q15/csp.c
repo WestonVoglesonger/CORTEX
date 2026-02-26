@@ -73,11 +73,26 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     csp_q15_state_t *state = malloc(sizeof(csp_q15_state_t));
     if (!state) return (cortex_init_result_t){NULL, 0, 0, 0};
 
+    /* Validate minimum calibration state header size */
+    if (config->calibration_state_size < 8) {
+        fprintf(stderr, "[csp@q15] ERROR: Calibration state too small (%u bytes, need >= 8)\n",
+                config->calibration_state_size);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
     /* Deserialize float32 calibration state (same format as f32 variant) */
     const uint8_t *bytes = (const uint8_t *)config->calibration_state;
     uint32_t C, n_components;
     memcpy(&C, bytes, 4); bytes += 4;
     memcpy(&n_components, bytes, 4); bytes += 4;
+
+    /* Validate calibration state contains enough data for filters */
+    uint32_t expected_size = 8 + C * n_components * (uint32_t)sizeof(float);
+    if (config->calibration_state_size < expected_size) {
+        fprintf(stderr, "[csp@q15] ERROR: Calibration state truncated (%u bytes, need %u)\n",
+                config->calibration_state_size, expected_size);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
 
     if (C != config->channels) {
         fprintf(stderr, "[csp@q15] ERROR: Channel mismatch (state=%u, config=%u)\n",

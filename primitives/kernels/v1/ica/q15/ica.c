@@ -60,10 +60,25 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return (cortex_init_result_t){NULL, 0, 0, 0};
     }
 
+    /* Validate minimum calibration state header size */
+    if (config->calibration_state_size < sizeof(uint32_t)) {
+        fprintf(stderr, "[ica@q15] ERROR: Calibration state too small (%u bytes)\n",
+                config->calibration_state_size);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
+
     /* Deserialize float32 calibration state (same format as f32 variant) */
     const uint8_t *bytes = (const uint8_t *)config->calibration_state;
     uint32_t C;
     memcpy(&C, bytes, sizeof(uint32_t));
+
+    /* Validate calibration state contains enough data for mean + unmixing matrix */
+    uint32_t expected_size = (uint32_t)sizeof(uint32_t) + C * (uint32_t)sizeof(float) + C * C * (uint32_t)sizeof(float);
+    if (config->calibration_state_size < expected_size) {
+        fprintf(stderr, "[ica@q15] ERROR: Calibration state truncated (%u bytes, need %u)\n",
+                config->calibration_state_size, expected_size);
+        return (cortex_init_result_t){NULL, 0, 0, 0};
+    }
 
     if (C != config->channels) {
         fprintf(stderr, "[ica@q15] ERROR: Channel mismatch (state=%u, config=%u)\n",

@@ -520,6 +520,16 @@ static int test_kernel(const char *kernel_name, const test_config_t *config) {
       int16_t *q15_input = (int16_t *)calloc(window_elements, sizeof(int16_t));
       int16_t *q15_output = (int16_t *)calloc(output_size, sizeof(int16_t));
 
+      if (!q15_input || !q15_output) {
+        fprintf(stderr, "  Window %d: Q15 buffer allocation failed\n", i);
+        free(q15_input);
+        free(q15_output);
+        free(c_output_f32);
+        free(py_output);
+        failures++;
+        continue;
+      }
+
       convert_f32_to_q15(windows[i].window_data, q15_input, window_elements);
       plugin.api.process(handle, q15_input, q15_output);
       convert_q15_to_f32(q15_output, c_output_f32, output_size);

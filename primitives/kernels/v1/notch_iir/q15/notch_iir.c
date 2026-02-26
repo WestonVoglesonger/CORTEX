@@ -51,12 +51,15 @@ typedef struct {
     int32_t *state;  /* 4 * channels elements */
 } notch_iir_q15_state_t;
 
-/* Quantize a double coefficient to Q14 with clamping */
+/* Quantize a double coefficient to Q14 with clamping.
+ * Q14 range: [-2.0, +2.0) stored in full int16_t range [-32768, 32767].
+ * Biquad coefficients (b1, a1) can reach ~1.36, well within Q14 range. */
 static int16_t double_to_q14(double x) {
     double scaled = x * 16384.0;  /* 1 << 14 */
-    if (scaled >= 16383.0)  return 16383;
-    if (scaled <= -16384.0) return -16384;
-    return (int16_t)(scaled + (scaled >= 0.0 ? 0.5 : -0.5));
+    int32_t rounded = (int32_t)(scaled + (scaled >= 0.0 ? 0.5 : -0.5));
+    if (rounded > 32767)  rounded = 32767;
+    if (rounded < -32768) rounded = -32768;
+    return (int16_t)rounded;
 }
 
 /* Compute biquad notch filter coefficients (same as f32 version) */

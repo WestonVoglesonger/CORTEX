@@ -11,9 +11,11 @@ from typing import Tuple
 
 
 def float_to_q15(x: np.ndarray) -> np.ndarray:
-    """Convert float32 [-1.0, 1.0) to Q15 (int16)."""
+    """Convert float32 [-1.0, 1.0) to Q15 (int16).
+    Standard Q15 scale: multiply by 32768, clamp to [-32768, 32767]."""
     clamped = np.clip(x, -1.0, 1.0)
-    return np.round(clamped * 32767.0).astype(np.int16)
+    scaled = np.round(clamped * 32768.0).astype(np.int64)
+    return np.clip(scaled, -32768, 32767).astype(np.int16)
 
 
 def q15_to_float(x: np.ndarray) -> np.ndarray:
