@@ -14,7 +14,7 @@ Capabilities are organized into priority tiers reflecting implementation urgency
 | Tier 2 | Platform-state (full) | Medium | Reuse | perf/ftrace, sysfs, eBPF |
 | Tier 2 | Multi-dtype (Q15) | Medium | Implemented | CMSIS-DSP Q15 |
 | Tier 2 | Mandatory reporting | Low | Adapt | EEMBC CoreMark, MLPerf |
-| Tier 2 | Statistical confidence (CI) | Low | Adapt | MLPerf, Kalibera & Jones |
+| Tier 2 | Statistical confidence (CI) | Low | Implemented | MLPerf, Kalibera & Jones |
 | Tier 2 | Scenario-based (Streaming) | Medium | Adapt | MLPerf scenarios |
 | Tier 2 | Oracle workflow CLI | Low | Adapt | MOABB, MLPerf reference |
 | Tier 3 | Diagnostic framework | High | Adapt | Roofline, async-profiler, eBPF |
@@ -31,9 +31,9 @@ Capabilities are organized into priority tiers reflecting implementation urgency
 
 | Strategy | Count | Capabilities |
 |----------|-------|-------------|
-| **Implemented** | 18 | Oracle validation, component separation, SSH deployment, transports, protocol, native adapter, kernel calibration, synthetic datasets, sustained measurement, warmup, load profiles, two-phase measurement, latency distribution, analysis/reporting, comparative analysis, pipeline composition, latency decomposition, multi-dtype (Q15) |
+| **Implemented** | 19 | Oracle validation, component separation, SSH deployment, transports, protocol, native adapter, kernel calibration, synthetic datasets, sustained measurement, warmup, load profiles, two-phase measurement, statistical confidence (CI), latency distribution, analysis/reporting, comparative analysis, pipeline composition, latency decomposition, multi-dtype (Q15) |
 | **Reuse** | 3 | stress-ng (load profiles), perf/ftrace (platform-state), OpenSSH+rsync (deployment) |
-| **Adapt** | 9 | Platform-state, statistical confidence, deadline analysis, mandatory reporting, oracle workflow, scenario-based, power measurement, diagnostic framework, performance counters |
+| **Adapt** | 8 | Platform-state, deadline analysis, mandatory reporting, oracle workflow, scenario-based, power measurement, diagnostic framework, performance counters |
 | **Innovate** | 2 | SNR validation, scaled tolerance |
 | **Defer** | 3 | Labeled datasets (MOABB), efficacy benchmarking (MOABB), hardware feasibility (Foresee) |
 
