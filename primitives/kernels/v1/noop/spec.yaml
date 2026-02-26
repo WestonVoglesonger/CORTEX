@@ -1,25 +1,25 @@
-name: "noop"
-version: "1.0.0"
-dtype: "float32"
-description: "Identity function (no-op) kernel for measuring harness overhead"
+kernel:
+  name: "noop"
+  version: "1.0.0"
+  dtype: "float32"
 
-# Runtime configuration
-runtime:
-  window_length_samples: 160
-  hop_samples: 80
-  channels: 64
-  allow_in_place: true  # Allow in-place to minimize overhead measurement
+abi:
+  input_shape: [W, C]
+  output_shape: [W, C]
+  stateful: false
 
-# Parameters (none for no-op)
-params: {}
+numerical:
+  tolerances:
+    float32:
+      rtol: 1.0e-7
+      atol: 1.0e-9
+    quantized:
+      # Q15 round-trip: C uses round-half-away-from-zero, Python uses
+      # round-half-to-even. Differ by 1 Q15 unit (~3.05e-5) on ties.
+      rtol: 1.0e-3
+      atol: 1.0e-3
 
-# Validation tolerances (perfect match expected)
-tolerances:
-  rtol: 1.0e-7
-  atol: 1.0e-9
-
-# Metadata
-author: "Weston Voglesonger"
-purpose: "Harness overhead measurement"
-category: "benchmark"
-complexity: "O(1)"  # Constant time (just memory copy)
+oracle:
+  path: "oracle.py"
+  function: "noop_ref"
+  dependencies: ["numpy"]

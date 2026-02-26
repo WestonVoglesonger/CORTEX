@@ -35,9 +35,13 @@ algorithm:
   max_iterations: 50      # For eigenvalue solver
 
 numerical:
-  tolerance:
-    rtol: 1.0e-4  # Looser than ICA due to eigenvalue numerical variance
-    atol: 1.0e-4
+  tolerances:
+    float32:
+      rtol: 1.0e-4
+      atol: 1.0e-4
+    quantized:
+      rtol: 1.0e-3
+      atol: 1.0e-3
 
 oracle:
   calibrate_function: "calibrate_csp"

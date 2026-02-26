@@ -5,7 +5,7 @@
  * 1. Loading real EEG data from dataset
  * 2. Processing windows through C kernels
  * 3. Processing same data through Python oracles
- * 4. Comparing outputs with tolerance checking (rtol=1e-5, atol=1e-6)
+ * 4. Comparing outputs with per-kernel tolerances (loaded from spec.yaml)
  *
  * FUTURE: Capability Assessment System
  * ===================================
@@ -326,22 +326,99 @@ static cortex_plugin_config_t build_plugin_config(uint32_t abi_version,
   return config;
 }
 
-/* Load tolerances from spec.yaml */
+/*
+ * Load tolerances from spec.yaml.
+ *
+ * All spec.yaml files use the uniform format:
+ *   numerical:
+ *     tolerances:
+ *       float32:
+ *         rtol: <value>
+ *         atol: <value>
+ *       quantized:
+ *         rtol: <value>
+ *         atol: <value>
+ *
+ * Falls back to hardcoded defaults if spec.yaml is missing or unparseable.
+ */
 static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
-  /* Q15 kernels use relaxed tolerances due to quantization error */
+  tolerance_t tol = {.rtol = 1e-5, .atol = 1e-6};
   if (is_q15) {
-    tolerance_t tol = {.rtol = 1e-3, .atol = 1e-3};
+    tol.rtol = 1e-3;
+    tol.atol = 1e-3;
+  }
+
+  char spec_path[512];
+  /* Detect v2 kernels (name ends with _v2) and use v2 path */
+  if (strlen(kernel_name) > 3 &&
+      strcmp(kernel_name + strlen(kernel_name) - 3, "_v2") == 0) {
+    char base_name[64];
+    size_t base_len = strlen(kernel_name) - 3;
+    strncpy(base_name, kernel_name, base_len);
+    base_name[base_len] = '\0';
+    snprintf(spec_path, sizeof(spec_path),
+             "primitives/kernels/v2/%s/spec.yaml", base_name);
+  } else {
+    snprintf(spec_path, sizeof(spec_path),
+             "primitives/kernels/v1/%s/spec.yaml", kernel_name);
+  }
+
+  FILE *f = fopen(spec_path, "r");
+  if (!f) {
+    fprintf(stderr, "  [tolerances] spec.yaml not found at %s, using defaults "
+            "(rtol=%.1e, atol=%.1e)\n", spec_path, tol.rtol, tol.atol);
     return tol;
   }
 
-  /* Default strict tolerances for float32 */
-  tolerance_t tol = {.rtol = 1e-5, .atol = 1e-6};
+  const char *target = is_q15 ? "quantized:" : "float32:";
+  int in_target = 0;
+  char line[256];
 
-  /* Relaxed tolerances for Welch PSD due to float/double precision differences */
-  if (strcmp(kernel_name, "welch_psd") == 0) {
-    tol.rtol = 2e-3;
-    tol.atol = 1e-4;
+  while (fgets(line, sizeof(line), f)) {
+    /* Count leading spaces */
+    int indent = 0;
+    while (line[indent] == ' ') indent++;
+    char *trimmed = line + indent;
+
+    /* Skip blank/comment lines */
+    if (trimmed[0] == '\n' || trimmed[0] == '\0' || trimmed[0] == '#')
+      continue;
+
+    /* Detect target dtype section */
+    if (strncmp(trimmed, target, strlen(target)) == 0) {
+      in_target = 1;
+      continue;
+    }
+
+    /* If we hit another dtype section or a less-indented key, leave target.
+     * Indent threshold 6 assumes standard 2-space-per-level YAML:
+     *   numerical:        (indent 0)
+     *     tolerances:     (indent 2)
+     *       float32:      (indent 4)
+     *         rtol: ...   (indent 6)
+     *         atol: ...   (indent 6)
+     *       quantized:    (indent 4)
+     * Keys at indent <= 6 that are NOT rtol/atol signal a section boundary. */
+    if (in_target && indent <= 6 && strstr(trimmed, ":")) {
+      if (strncmp(trimmed, "rtol:", 5) != 0 &&
+          strncmp(trimmed, "atol:", 5) != 0) {
+        in_target = 0;
+      }
+    }
+
+    if (!in_target) continue;
+
+    double val;
+    if (strncmp(trimmed, "rtol:", 5) == 0 &&
+        sscanf(trimmed + 5, " %lf", &val) == 1) {
+      tol.rtol = val;
+    } else if (strncmp(trimmed, "atol:", 5) == 0 &&
+               sscanf(trimmed + 5, " %lf", &val) == 1) {
+      tol.atol = val;
+    }
   }
+
+  fclose(f);
   return tol;
 }
 
