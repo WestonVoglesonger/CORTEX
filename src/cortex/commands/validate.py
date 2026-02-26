@@ -39,6 +39,9 @@ def execute(args):
         print("  Run 'make all' to build it")
         return 1
 
+    if not args.kernel and args.dtype != 'f32':
+        print(f"\nWarning: --dtype={args.dtype} ignored without --kernel (validate-all uses default dtype)")
+
     if args.kernel:
         dtype_display = args.dtype if args.dtype != 'float32' else 'f32'
         print(f"\nValidating kernel: {args.kernel} [dtype={dtype_display}]")

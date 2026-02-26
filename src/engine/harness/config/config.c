@@ -100,7 +100,6 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     }
 
     char line[1024];
-    char dtype_str[32] = "";
     uint32_t window_length = 160; /* Default W */
     uint32_t output_window = 0;   /* 0 = not found yet */
     uint32_t output_channels = 0; /* 0 = not found yet */
@@ -110,25 +109,18 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
         trim(line);
         if (line[0] == '\0' || line[0] == '#') continue;
 
-        if (starts_with(line, "  dtype:")) {
-            const char *v = line + strlen("  dtype:");
-            while (*v == ' ') v++;
-            char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
-            trim(tmp); unquote(tmp);
-            strncpy(dtype_str, tmp, sizeof(dtype_str)-1);
-        }
-        else if (starts_with(line, "  input_shape:")) {
+        if (starts_with(line, "input_shape:")) {
             /* Parse [W, null] format - extract W only, ignore C (comes from dataset) */
-            const char *v = line + strlen("  input_shape:");
+            const char *v = line + strlen("input_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
                 window_length = (uint32_t)strtoul(v, (char**)&v, 10);
             }
         }
-        else if (starts_with(line, "  output_shape:")) {
+        else if (starts_with(line, "output_shape:")) {
             /* Parse [W, C] or [W, null] format */
-            const char *v = line + strlen("  output_shape:");
+            const char *v = line + strlen("output_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
@@ -157,7 +149,16 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     runtime->window_length_samples = window_length;
     runtime->hop_samples = window_length / 2; /* Default: 50% overlap */
     runtime->channels = dataset_channels;     /* Always use dataset channels */
-    runtime->dtype = map_dtype(dtype_str[0] ? dtype_str : "float32");
+
+    /* Derive dtype from spec_uri path component (last directory: "f32", "q15", etc.)
+     * The shared spec.yaml doesn't contain per-dtype information — the dtype
+     * subdirectory name is the authoritative source. */
+    {
+        const char *last_slash = strrchr(spec_uri, '/');
+        const char *dtype_dir = last_slash ? last_slash + 1 : spec_uri;
+        runtime->dtype = map_dtype(dtype_dir);
+    }
+
     runtime->allow_in_place = 1; /* Most kernels can be in-place */
 
     /* Resolve output dimensions: null means passthrough */

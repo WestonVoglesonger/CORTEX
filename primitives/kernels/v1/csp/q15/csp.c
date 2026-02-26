@@ -70,9 +70,6 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return (cortex_init_result_t){NULL, 0, 0, 0};
     }
 
-    csp_q15_state_t *state = malloc(sizeof(csp_q15_state_t));
-    if (!state) return (cortex_init_result_t){NULL, 0, 0, 0};
-
     /* Validate minimum calibration state header size */
     if (config->calibration_state_size < 8) {
         fprintf(stderr, "[csp@q15] ERROR: Calibration state too small (%u bytes, need >= 8)\n",
@@ -97,9 +94,12 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     if (C != config->channels) {
         fprintf(stderr, "[csp@q15] ERROR: Channel mismatch (state=%u, config=%u)\n",
                 C, config->channels);
-        free(state);
         return (cortex_init_result_t){NULL, 0, 0, 0};
     }
+
+    /* Allocate state AFTER all validation checks to prevent leaks on early return */
+    csp_q15_state_t *state = malloc(sizeof(csp_q15_state_t));
+    if (!state) return (cortex_init_result_t){NULL, 0, 0, 0};
 
     state->W = config->window_length_samples;
     state->C = C;

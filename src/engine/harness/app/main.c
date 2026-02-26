@@ -120,7 +120,7 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     rcfg.dataset_path = ctx->run_cfg.dataset.path;
     rcfg.sample_rate_hz = ctx->run_cfg.dataset.sample_rate_hz;
     rcfg.channels = ctx->run_cfg.dataset.channels;
-    rcfg.dtype = 1u; /* float32 */
+    rcfg.dtype = plugin_cfg->runtime.dtype;
     rcfg.window_length_samples = plugin_cfg->runtime.window_length_samples;
     rcfg.hop_samples = plugin_cfg->runtime.hop_samples;
     rcfg.enable_dropouts = 0;
