@@ -686,7 +686,7 @@ class TestAttributeTailTier1:
 
     def test_basic_ratio(self):
         """P99=100, P50=50 → ratio=2.0."""
-        # 90% of values at 50, top 1% at 100
+        # 90% of values at 50, top 10% at 100
         lats = [50.0] * 900 + [100.0] * 100
         result = attribute_tail("goertzel", lats)
         assert result.tail_ratio == pytest.approx(100.0 / 50.0, rel=0.1)

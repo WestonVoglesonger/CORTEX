@@ -211,10 +211,12 @@ def _shapley_r_squared(
     X: np.ndarray,
     covariate_names: List[str],
 ) -> Tuple[dict, float]:
-    """Compute Shapley value R² decomposition for 2-4 covariates.
+    """Compute Shapley value R² decomposition for k covariates (k >= 1).
 
-    Fits all 2^k subset OLS models, averages marginal R² contribution
-    across all orderings for each covariate. Returns ({name: fraction}, R²_full).
+    Fits all 2^k subset OLS models and averages each covariate's marginal
+    R² contribution across all orderings. Returns
+    ({name: percentage_of_total_variance}, R²_full), where the Shapley
+    percentages sum to approximately R²_full * 100.
     Uses numpy.linalg.lstsq — no external dependencies beyond numpy.
     """
     n, k = X.shape
@@ -399,8 +401,8 @@ def attribute_tail(
             # Frequency stratification (if freq data available)
             if "cpu_freq_mhz" in covariates:
                 freq = covariates["cpu_freq_mhz"]
-                freq_mode = float(np.median(freq))  # Use median as "stable" freq
-                stable_mask = np.abs(freq - freq_mode) < (freq_mode * 0.02)
+                freq_median = float(np.median(freq))  # Use median as "stable" freq
+                stable_mask = np.abs(freq - freq_median) < (freq_median * 0.02)
                 unstable_mask = ~stable_mask
 
                 stable_lats = lat[stable_mask]

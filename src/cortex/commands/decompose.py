@@ -12,7 +12,7 @@ from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
-    attribute_tail, TailAttribution, _pmu_unavailable_reason,
+    attribute_tail, _pmu_unavailable_reason,
 )
 
 
