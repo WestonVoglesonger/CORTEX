@@ -1,23 +1,22 @@
-# Makefile for building CSP kernel plugin (ABI v3 trainable)
-# Platform-specific shared library build
+# Makefile for building notch_iir@q15 kernel plugin
 
 CC = cc
-CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../sdk/kernel/include
+CFLAGS = -Wall -Wextra -O2 -g -fPIC -I../../../../../sdk/kernel/include
 
 # Detect platform and set extension/flag
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
     SOFLAG = -dynamiclib
     LIBEXT = .dylib
-    LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
+    LDFLAGS = -L../../../../../sdk/kernel/lib -lcortex -lm
 else
     SOFLAG = -shared
     LIBEXT = .so
-    LDFLAGS = -L../../../../sdk/kernel/lib -lcortex -lm
+    LDFLAGS = -L../../../../../sdk/kernel/lib -lcortex -lm
 endif
 
-# Kernel name from directory (e.g., "ica" from "ica@f32/")
-KERNEL_NAME = $(shell basename $(CURDIR) | sed 's/@.*//')
+# Kernel name from directory (e.g., "notch_iir" from "notch_iir@q15/")
+KERNEL_NAME = $(shell basename $(shell dirname $(CURDIR)))
 PLUGIN_SRC = $(KERNEL_NAME).c
 PLUGIN_OBJ = $(KERNEL_NAME).o
 PLUGIN_LIB = lib$(KERNEL_NAME)$(LIBEXT)

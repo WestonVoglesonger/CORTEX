@@ -90,6 +90,25 @@ static inline int cortex_mul_size_overflow(size_t a, size_t b, size_t *result) {
 #endif
 }
 
+/**
+ * Derive element size in bytes from dtype bitmask.
+ * Returns sizeof(float) for FLOAT32, sizeof(int16_t) for Q15, sizeof(int8_t) for Q7.
+ * Returns 0 for unknown dtypes — caller must check.
+ *
+ * Dtype constants (from cortex_plugin.h):
+ *   CORTEX_DTYPE_FLOAT32 = 1u  (1 << 0)
+ *   CORTEX_DTYPE_Q15     = 2u  (1 << 1)
+ *   CORTEX_DTYPE_Q7      = 4u  (1 << 2)
+ */
+static inline size_t cortex_dtype_element_size(uint32_t dtype) {
+    switch (dtype) {
+        case 1u: return sizeof(float);    /* CORTEX_DTYPE_FLOAT32 */
+        case 2u: return sizeof(int16_t);  /* CORTEX_DTYPE_Q15 */
+        case 4u: return sizeof(int8_t);   /* CORTEX_DTYPE_Q7 */
+        default: return 0;               /* unknown dtype — caller must check */
+    }
+}
+
 #endif /* CORTEX_HARNESS_UTIL_H */
 
 

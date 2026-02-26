@@ -90,7 +90,7 @@ def probe_pmu_available(fs, process_executor) -> bool:
     if not fs.exists(inscount_path):
         return False
 
-    noop_dir = 'primitives/kernels/v1/noop@f32'
+    noop_dir = 'primitives/kernels/v1/noop/f32'
     noop_built = any(
         fs.exists(f'{noop_dir}/libnoop{ext}')
         for ext in ('.dylib', '.so')
@@ -125,7 +125,7 @@ def _probe_pmu() -> dict:
     if not inscount_path.exists():
         return {"pmu_available": False, "cpu_freq_hz": 0}
 
-    noop_spec_uri = Path("primitives/kernels/v1/noop@f32")
+    noop_spec_uri = Path("primitives/kernels/v1/noop/f32")
     # Verify the plugin is built (dylib/so exists)
     plugin_built = any(
         (noop_spec_uri / f"libnoop{ext}").exists()

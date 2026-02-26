@@ -40,18 +40,39 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --help               Show this help\n");
 }
 
-/* Extract kernel name from spec_uri: "primitives/kernels/v1/bandpass_fir@f32" -> "bandpass_fir" */
+/* Extract kernel name from spec_uri:
+ *   New: "primitives/kernels/v1/bandpass_fir/f32" -> "bandpass_fir"
+ *   Legacy: "primitives/kernels/v1/bandpass_fir@f32" -> "bandpass_fir"
+ */
 static const char *extract_kernel_name(const char *spec_uri) {
-    const char *last_slash = strrchr(spec_uri, '/');
-    const char *name = last_slash ? last_slash + 1 : spec_uri;
-
-    /* Strip @dtype suffix */
     static char buf[256];
-    strncpy(buf, name, sizeof(buf) - 1);
+
+    /* Make a mutable copy */
+    strncpy(buf, spec_uri, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
-    char *at = strchr(buf, '@');
-    if (at) *at = '\0';
-    return buf;
+
+    /* Trim trailing slash */
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '/') buf[--len] = '\0';
+
+    /* Find last component */
+    char *last_slash = strrchr(buf, '/');
+    char *last_component = last_slash ? last_slash + 1 : buf;
+
+    if (strchr(last_component, '@')) {
+        /* Legacy format: strip @dtype */
+        char *at = strchr(last_component, '@');
+        if (at) *at = '\0';
+        return last_component;
+    } else {
+        /* New format: last component is dtype, parent is kernel name */
+        if (last_slash) {
+            *last_slash = '\0';
+            char *second_slash = strrchr(buf, '/');
+            return second_slash ? second_slash + 1 : buf;
+        }
+        return last_component;
+    }
 }
 
 int main(int argc, char **argv) {

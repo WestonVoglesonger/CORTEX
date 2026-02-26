@@ -379,6 +379,7 @@ static int test_execute_window_success(void) {
         input,
         TEST_WINDOW,
         TEST_CHANNELS,
+        sizeof(float),
         output,
         input_samples * sizeof(float),
         &timing
@@ -442,6 +443,7 @@ static int test_execute_multiple_windows(void) {
             input,
             TEST_WINDOW,
             TEST_CHANNELS,
+            sizeof(float),
             output,
             input_samples * sizeof(float),
             &timing
@@ -497,6 +499,7 @@ static int test_execute_window_identity(void) {
         input,
         TEST_WINDOW,
         TEST_CHANNELS,
+        sizeof(float),
         output,
         input_samples * sizeof(float),
         &timing

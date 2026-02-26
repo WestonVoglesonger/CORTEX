@@ -27,24 +27,57 @@ static void sanitize_name(const char *in, char *out, size_t out_sz) {
 
 int cortex_plugin_build_path(const char *spec_uri, char *out_path, size_t out_sz) {
     if (!spec_uri || !out_path || out_sz == 0) return -1;
-    
-    /* spec_uri is like "primitives/kernels/v1/car@f32" - build path to libcar.dylib in that directory */
+
+    /* spec_uri is either:
+     *   New layout: "primitives/kernels/v1/car/f32" (dtype subdirectory)
+     *   Legacy:     "primitives/kernels/v1/car@f32" (flat directory)
+     *
+     * Extract kernel name: for new layout, it's the parent directory name.
+     * For legacy, it's the last component before '@'.
+     * The library lives in the spec_uri directory itself. */
     char clean[256];
     sanitize_name(spec_uri, clean, sizeof(clean));
 
-    /* Extract kernel name from spec_uri (e.g., "car" from "primitives/kernels/v1/car@f32") */
-    const char *name_start = strrchr(spec_uri, '/');
-    if (!name_start) name_start = spec_uri;
-    else name_start++; /* Skip the '/' */
-    
-    /* Trim @f32 or @dtype suffix to get just the kernel name */
+    /* Find the last path component */
+    const char *last_slash = strrchr(spec_uri, '/');
+    const char *last_component = last_slash ? last_slash + 1 : spec_uri;
+
     char kernel_name[64];
-    size_t i = 0;
-    while (name_start[i] != '\0' && name_start[i] != '@' && i < sizeof(kernel_name)-1) {
-        kernel_name[i] = name_start[i];
-        i++;
+
+    if (strchr(last_component, '@')) {
+        /* Legacy format: "car@f32" — extract name before '@' */
+        size_t i = 0;
+        while (last_component[i] != '\0' && last_component[i] != '@' && i < sizeof(kernel_name)-1) {
+            kernel_name[i] = last_component[i];
+            i++;
+        }
+        kernel_name[i] = '\0';
+    } else {
+        /* New format: last component is dtype (e.g., "f32"), kernel name is parent */
+        /* Find second-to-last slash */
+        char uri_copy[256];
+        strncpy(uri_copy, spec_uri, sizeof(uri_copy) - 1);
+        uri_copy[sizeof(uri_copy) - 1] = '\0';
+
+        /* Trim trailing slash if present */
+        size_t len = strlen(uri_copy);
+        if (len > 0 && uri_copy[len - 1] == '/') uri_copy[--len] = '\0';
+
+        /* Remove last component (dtype) */
+        char *slash = strrchr(uri_copy, '/');
+        if (slash) {
+            *slash = '\0';
+            /* Now find the kernel name (last component of remaining path) */
+            char *name_start = strrchr(uri_copy, '/');
+            name_start = name_start ? name_start + 1 : uri_copy;
+            strncpy(kernel_name, name_start, sizeof(kernel_name) - 1);
+            kernel_name[sizeof(kernel_name) - 1] = '\0';
+        } else {
+            /* Fallback: use the dtype component as name (shouldn't happen) */
+            strncpy(kernel_name, last_component, sizeof(kernel_name) - 1);
+            kernel_name[sizeof(kernel_name) - 1] = '\0';
+        }
     }
-    kernel_name[i] = '\0';
 
     /* Validate kernel name for security (prevent path traversal) */
     if (validate_plugin_name(kernel_name) < 0) {
@@ -57,7 +90,7 @@ int cortex_plugin_build_path(const char *spec_uri, char *out_path, size_t out_sz
 #else
     snprintf(out_path, out_sz, "%s/lib%s.so", spec_uri, kernel_name);
 #endif
-    
+
     return 0;
 }
 

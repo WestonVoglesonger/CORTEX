@@ -24,7 +24,7 @@ typedef struct harness_context {
     char run_id[32];
 } harness_context_t;
 
-static void on_replayer_chunk(const float *chunk_data, size_t chunk_samples, void *user_data) {
+static void on_replayer_chunk(const void *chunk_data, size_t chunk_samples, void *user_data) {
     (void)chunk_samples;
     harness_context_t *ctx = (harness_context_t *)user_data;
     cortex_scheduler_feed_samples(ctx->scheduler, chunk_data, chunk_samples);
@@ -120,7 +120,7 @@ static int run_once(harness_context_t *ctx, uint32_t seconds, const cortex_plugi
     rcfg.dataset_path = ctx->run_cfg.dataset.path;
     rcfg.sample_rate_hz = ctx->run_cfg.dataset.sample_rate_hz;
     rcfg.channels = ctx->run_cfg.dataset.channels;
-    rcfg.dtype = 1u; /* float32 */
+    rcfg.dtype = plugin_cfg->runtime.dtype;
     rcfg.window_length_samples = plugin_cfg->runtime.window_length_samples;
     rcfg.hop_samples = plugin_cfg->runtime.hop_samples;
     rcfg.enable_dropouts = 0;

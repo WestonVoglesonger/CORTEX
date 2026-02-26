@@ -20,9 +20,17 @@ def needs_rebuild(kernel_spec_uri: str) -> bool:
     if not kernel_dir.exists():
         return False  # Kernel doesn't exist, can't build
 
-    # Extract kernel name from directory (e.g., "goertzel@f32" -> "goertzel")
+    # Extract kernel name from directory path.
+    # New layout: spec_uri is "primitives/kernels/v1/goertzel/f32"
+    #   -> parent is "goertzel", kernel_name = "goertzel"
+    # Legacy: spec_uri is "primitives/kernels/v1/goertzel@f32"
+    #   -> dir_name = "goertzel@f32", kernel_name = "goertzel"
     dir_name = kernel_dir.name
-    kernel_name = dir_name.split('@')[0]
+    if '@' in dir_name:
+        kernel_name = dir_name.split('@')[0]
+    else:
+        # New layout: dir_name is the dtype (e.g., "f32"), parent is kernel name
+        kernel_name = kernel_dir.parent.name
 
     # Check for source file
     source_file = kernel_dir / f"{kernel_name}.c"

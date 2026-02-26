@@ -24,11 +24,13 @@ plugins: sdk
 	@echo "Building kernel plugins from registry..."
 	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
-			for dir in $$version_dir*@*/; do \
-				if [ -f "$$dir/Makefile" ]; then \
-					echo "  Building $$(basename $$(dirname $$dir))/$$(basename $$dir)..."; \
-					$(MAKE) -C "$$dir"; \
-				fi \
+			for kernel_dir in $$version_dir*/; do \
+				for dtype_dir in $$kernel_dir*/; do \
+					if [ -f "$$dtype_dir/Makefile" ]; then \
+						echo "  Building $$(basename $$kernel_dir)/$$(basename $$dtype_dir)..."; \
+						$(MAKE) -C "$$dtype_dir"; \
+					fi \
+				done \
 			done \
 		fi \
 	done
@@ -60,10 +62,12 @@ clean:
 	$(MAKE) -C src/engine/harness clean
 	@for version_dir in primitives/kernels/v*/; do \
 		if [ -d "$$version_dir" ]; then \
-			for dir in $$version_dir*@*/; do \
-				if [ -f "$$dir/Makefile" ]; then \
-					$(MAKE) -C "$$dir" clean || true; \
-				fi \
+			for kernel_dir in $$version_dir*/; do \
+				for dtype_dir in $$kernel_dir*/; do \
+					if [ -f "$$dtype_dir/Makefile" ]; then \
+						$(MAKE) -C "$$dtype_dir" clean || true; \
+					fi \
+				done \
 			done \
 		fi \
 	done

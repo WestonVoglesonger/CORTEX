@@ -58,9 +58,33 @@ static uint32_t map_dtype(const char *s) {
 int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cortex_plugin_runtime_cfg_t *runtime) {
     if (!spec_uri || !runtime) return -1;
 
-    /* Build spec path: primitives/kernels/v1/{name}@{dtype}/spec.yaml */
+    /* spec_uri is the dtype directory (e.g., primitives/kernels/v1/car/f32).
+     * spec.yaml lives in the parent kernel directory (e.g., primitives/kernels/v1/car/spec.yaml).
+     * Try parent first, then the dtype directory itself for backward compatibility. */
     char spec_path[512];
-    snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
+
+    /* Try parent directory first (new layout: {name}/{dtype}/) */
+    {
+        /* Find last slash to get parent */
+        const char *last_slash = strrchr(spec_uri, '/');
+        if (last_slash && last_slash > spec_uri) {
+            size_t parent_len = (size_t)(last_slash - spec_uri);
+            char parent_path[512];
+            if (parent_len < sizeof(parent_path)) {
+                memcpy(parent_path, spec_uri, parent_len);
+                parent_path[parent_len] = '\0';
+                snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", parent_path);
+                if (access(spec_path, F_OK) != 0) {
+                    /* Fallback: try spec_uri directory itself */
+                    snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
+                }
+            } else {
+                snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
+            }
+        } else {
+            snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", spec_uri);
+        }
+    }
 
     FILE *f = fopen(spec_path, "r");
     if (!f) {
@@ -76,7 +100,6 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     }
 
     char line[1024];
-    char dtype_str[32] = "";
     uint32_t window_length = 160; /* Default W */
     uint32_t output_window = 0;   /* 0 = not found yet */
     uint32_t output_channels = 0; /* 0 = not found yet */
@@ -86,25 +109,18 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
         trim(line);
         if (line[0] == '\0' || line[0] == '#') continue;
 
-        if (starts_with(line, "  dtype:")) {
-            const char *v = line + strlen("  dtype:");
-            while (*v == ' ') v++;
-            char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0';
-            trim(tmp); unquote(tmp);
-            strncpy(dtype_str, tmp, sizeof(dtype_str)-1);
-        }
-        else if (starts_with(line, "  input_shape:")) {
+        if (starts_with(line, "input_shape:")) {
             /* Parse [W, null] format - extract W only, ignore C (comes from dataset) */
-            const char *v = line + strlen("  input_shape:");
+            const char *v = line + strlen("input_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
                 window_length = (uint32_t)strtoul(v, (char**)&v, 10);
             }
         }
-        else if (starts_with(line, "  output_shape:")) {
+        else if (starts_with(line, "output_shape:")) {
             /* Parse [W, C] or [W, null] format */
-            const char *v = line + strlen("  output_shape:");
+            const char *v = line + strlen("output_shape:");
             while (*v == ' ') v++;
             if (*v == '[') {
                 v++;
@@ -133,7 +149,16 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     runtime->window_length_samples = window_length;
     runtime->hop_samples = window_length / 2; /* Default: 50% overlap */
     runtime->channels = dataset_channels;     /* Always use dataset channels */
-    runtime->dtype = map_dtype(dtype_str[0] ? dtype_str : "float32");
+
+    /* Derive dtype from spec_uri path component (last directory: "f32", "q15", etc.)
+     * The shared spec.yaml doesn't contain per-dtype information — the dtype
+     * subdirectory name is the authoritative source. */
+    {
+        const char *last_slash = strrchr(spec_uri, '/');
+        const char *dtype_dir = last_slash ? last_slash + 1 : spec_uri;
+        runtime->dtype = map_dtype(dtype_dir);
+    }
+
     runtime->allow_in_place = 1; /* Most kernels can be in-place */
 
     /* Resolve output dimensions: null means passthrough */
@@ -143,13 +168,7 @@ int cortex_load_kernel_spec(const char *spec_uri, uint32_t dataset_channels, cor
     return 0;
 }
 
-/* Comparison function for qsort - sort plugins alphabetically by name
- *
- * TODO(Spring 2026 - Quantization): When multiple dtypes exist (f32/q15/q7),
- * this sorting may produce inconsistent ordering across runs. Should implement
- * secondary sort by dtype priority: f32 > q15 > q7.
- * Currently safe because only @f32 variants exist.
- */
+/* Comparison function for qsort - sort plugins alphabetically by name */
 static int compare_plugin_names(const void *a, const void *b) {
     const cortex_plugin_entry_cfg_t *pa = (const cortex_plugin_entry_cfg_t *)a;
     const cortex_plugin_entry_cfg_t *pb = (const cortex_plugin_entry_cfg_t *)b;
@@ -193,126 +212,135 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
 
         struct dirent *kernel_entry;
 
-        /* Iterate kernel@dtype directories */
+        /* Iterate kernel directories (car/, noop/, etc.) */
         while ((kernel_entry = readdir(version_dir)) != NULL) {
             if (kernel_entry->d_name[0] == '.') continue;
 
-            /* Parse {name}@{dtype} format */
-            char *at_sign = strchr(kernel_entry->d_name, '@');
-            if (!at_sign) continue;
-
-            /* Extract kernel name and dtype */
-            size_t name_len = at_sign - kernel_entry->d_name;
-            if (name_len == 0 || name_len >= 64) continue;
-
-            char kernel_name[64];
-            strncpy(kernel_name, kernel_entry->d_name, name_len);
-            kernel_name[name_len] = '\0';
-
-            const char *dtype = at_sign + 1;
-
-            /* Build kernel directory path */
-            char kernel_path[768];
-            snprintf(kernel_path, sizeof(kernel_path), "%s/%s",
+            /* Build kernel root path */
+            char kernel_root[768];
+            snprintf(kernel_root, sizeof(kernel_root), "%s/%s",
                      version_path, kernel_entry->d_name);
 
-            /* Check if built (has shared library) */
-            char lib_path_dylib[900];
-            char lib_path_so[900];
-            snprintf(lib_path_dylib, sizeof(lib_path_dylib),
-                     "%s/lib%s.dylib", kernel_path, kernel_name);
-            snprintf(lib_path_so, sizeof(lib_path_so),
-                     "%s/lib%s.so", kernel_path, kernel_name);
+            /* Check it's a directory */
+            struct stat kst;
+            if (stat(kernel_root, &kst) != 0 || !S_ISDIR(kst.st_mode)) continue;
 
-            int is_built = (access(lib_path_dylib, F_OK) == 0) ||
-                          (access(lib_path_so, F_OK) == 0);
+            /* Scan dtype subdirectories (f32/, q15/, etc.) */
+            DIR *kernel_dir = opendir(kernel_root);
+            if (!kernel_dir) continue;
 
-            if (!is_built) {
-                continue;  /* Skip unbuilt kernels silently for clean output */
-            }
+            char kernel_name[64];
+            strncpy(kernel_name, kernel_entry->d_name, sizeof(kernel_name) - 1);
+            kernel_name[sizeof(kernel_name) - 1] = '\0';
 
-            /* Check implementation exists */
-            char impl_path[900];
-            snprintf(impl_path, sizeof(impl_path), "%s/%s.c",
-                     kernel_path, kernel_name);
-            if (access(impl_path, F_OK) != 0) {
-                continue;  /* Skip if no .c file */
-            }
+            struct dirent *dtype_entry;
+            while ((dtype_entry = readdir(kernel_dir)) != NULL) {
+                if (dtype_entry->d_name[0] == '.') continue;
 
-            /* Add to plugin list */
-            if (kernel_count >= CORTEX_MAX_PLUGINS) {
-                fprintf(stderr, "[discovery] warning: max plugins reached (%d)\n",
-                        CORTEX_MAX_PLUGINS);
-                closedir(version_dir);
-                closedir(base_dir);
-                cfg->plugin_count = kernel_count;
-                return kernel_count;
-            }
+                char dtype_path[900];
+                snprintf(dtype_path, sizeof(dtype_path), "%s/%s",
+                         kernel_root, dtype_entry->d_name);
 
-            cortex_plugin_entry_cfg_t *plugin = &cfg->plugins[kernel_count];
-            memset(plugin, 0, sizeof(*plugin));
+                struct stat dst;
+                if (stat(dtype_path, &dst) != 0 || !S_ISDIR(dst.st_mode)) continue;
 
-            /* Set plugin name */
-            strncpy(plugin->name, kernel_name, sizeof(plugin->name) - 1);
-            plugin->name[sizeof(plugin->name) - 1] = '\0';
+                const char *dtype = dtype_entry->d_name;
 
-            /* Set status to ready (auto-detected kernels are assumed ready) */
-            strncpy(plugin->status, "ready", sizeof(plugin->status) - 1);
-            plugin->status[sizeof(plugin->status) - 1] = '\0';
+                /* Check if built (has shared library) */
+                char lib_path_dylib[1024];
+                char lib_path_so[1024];
+                snprintf(lib_path_dylib, sizeof(lib_path_dylib),
+                         "%s/lib%s.dylib", dtype_path, kernel_name);
+                snprintf(lib_path_so, sizeof(lib_path_so),
+                         "%s/lib%s.so", dtype_path, kernel_name);
 
-            /* Set spec_uri (kernel directory path) */
-            snprintf(plugin->spec_uri, sizeof(plugin->spec_uri), "%s", kernel_path);
-            plugin->spec_uri[sizeof(plugin->spec_uri) - 1] = '\0';
+                int is_built = (access(lib_path_dylib, F_OK) == 0) ||
+                              (access(lib_path_so, F_OK) == 0);
 
-            /* Load spec version if spec.yaml exists */
-            char spec_path[900];
-            snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", kernel_path);
-            FILE *spec_file = fopen(spec_path, "r");
-            if (spec_file) {
-                /* Simple version extraction from spec.yaml */
-                char line[256];
-                while (fgets(line, sizeof(line), spec_file)) {
-                    if (strstr(line, "version:")) {
-                        /* Extract version value */
-                        char *colon = strchr(line, ':');
-                        if (colon) {
-                            const char *v = colon + 1;
-                            while (*v == ' ' || *v == '"' || *v == '\'') v++;
-                            char tmp[32];
-                            strncpy(tmp, v, sizeof(tmp) - 1);
-                            tmp[sizeof(tmp) - 1] = '\0';
-                            trim(tmp);
-                            if (strlen(tmp) > 0 && tmp[0] != '\0') {
-                                strncpy(plugin->spec_version, tmp,
-                                        sizeof(plugin->spec_version) - 1);
-                                plugin->spec_version[sizeof(plugin->spec_version) - 1] = '\0';
-                                break;
+                if (!is_built) {
+                    continue;  /* Skip unbuilt kernels silently for clean output */
+                }
+
+                /* Check implementation exists */
+                char impl_path[1024];
+                snprintf(impl_path, sizeof(impl_path), "%s/%s.c",
+                         dtype_path, kernel_name);
+                if (access(impl_path, F_OK) != 0) {
+                    continue;  /* Skip if no .c file */
+                }
+
+                /* Add to plugin list */
+                if (kernel_count >= CORTEX_MAX_PLUGINS) {
+                    fprintf(stderr, "[discovery] warning: max plugins reached (%d)\n",
+                            CORTEX_MAX_PLUGINS);
+                    closedir(kernel_dir);
+                    closedir(version_dir);
+                    closedir(base_dir);
+                    cfg->plugin_count = kernel_count;
+                    return kernel_count;
+                }
+
+                cortex_plugin_entry_cfg_t *plugin = &cfg->plugins[kernel_count];
+                memset(plugin, 0, sizeof(*plugin));
+
+                /* Set plugin name */
+                strncpy(plugin->name, kernel_name, sizeof(plugin->name) - 1);
+                plugin->name[sizeof(plugin->name) - 1] = '\0';
+
+                /* Set status to ready (auto-detected kernels are assumed ready) */
+                strncpy(plugin->status, "ready", sizeof(plugin->status) - 1);
+                plugin->status[sizeof(plugin->status) - 1] = '\0';
+
+                /* Set spec_uri to dtype directory (where lib lives) */
+                snprintf(plugin->spec_uri, sizeof(plugin->spec_uri), "%s", dtype_path);
+                plugin->spec_uri[sizeof(plugin->spec_uri) - 1] = '\0';
+
+                /* Load spec version from kernel root spec.yaml */
+                char spec_path[1024];
+                snprintf(spec_path, sizeof(spec_path), "%s/spec.yaml", kernel_root);
+                FILE *spec_file = fopen(spec_path, "r");
+                if (spec_file) {
+                    char line[256];
+                    while (fgets(line, sizeof(line), spec_file)) {
+                        if (strstr(line, "version:")) {
+                            char *colon = strchr(line, ':');
+                            if (colon) {
+                                const char *v = colon + 1;
+                                while (*v == ' ' || *v == '"' || *v == '\'') v++;
+                                char tmp[32];
+                                strncpy(tmp, v, sizeof(tmp) - 1);
+                                tmp[sizeof(tmp) - 1] = '\0';
+                                trim(tmp);
+                                if (strlen(tmp) > 0 && tmp[0] != '\0') {
+                                    strncpy(plugin->spec_version, tmp,
+                                            sizeof(plugin->spec_version) - 1);
+                                    plugin->spec_version[sizeof(plugin->spec_version) - 1] = '\0';
+                                    break;
+                                }
                             }
                         }
                     }
+                    fclose(spec_file);
                 }
-                fclose(spec_file);
+
+                /* Default spec version if not found */
+                if (plugin->spec_version[0] == '\0') {
+                    strncpy(plugin->spec_version, "1.0.0", sizeof(plugin->spec_version) - 1);
+                }
+
+                /* Set default adapter path (universal adapter model) */
+                strncpy(plugin->adapter_path,
+                        "primitives/adapters/v1/native/cortex_adapter_native",
+                        sizeof(plugin->adapter_path) - 1);
+                plugin->adapter_path[sizeof(plugin->adapter_path) - 1] = '\0';
+
+                printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
+                       kernel_name, dtype, dtype_path);
+
+                kernel_count++;
             }
 
-            /* Default spec version if not found */
-            if (plugin->spec_version[0] == '\0') {
-                strncpy(plugin->spec_version, "1.0.0", sizeof(plugin->spec_version) - 1);
-            }
-
-            /* Set default adapter path (universal adapter model) */
-            strncpy(plugin->adapter_path,
-                    "primitives/adapters/v1/native/cortex_adapter_native",
-                    sizeof(plugin->adapter_path) - 1);
-            plugin->adapter_path[sizeof(plugin->adapter_path) - 1] = '\0';
-
-            /* TODO(Spring 2026 - Quantization): Display full {name}@{dtype} instead of
-             * just kernel_name to disambiguate when multiple dtypes exist.
-             * Currently safe because only @f32 variants exist.
-             */
-            printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
-                   kernel_name, dtype, kernel_path);
-
-            kernel_count++;
+            closedir(kernel_dir);
         }
 
         closedir(version_dir);

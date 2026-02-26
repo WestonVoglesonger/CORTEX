@@ -65,7 +65,7 @@ typedef struct {
 } test_context_t;
 
 /* Test callback that records invocations */
-static void test_callback(const float *chunk_data, size_t chunk_samples, void *user_data) {
+static void test_callback(const void *chunk_data, size_t chunk_samples, void *user_data) {
     test_context_t *ctx = (test_context_t *)user_data;
     
     struct timespec now;

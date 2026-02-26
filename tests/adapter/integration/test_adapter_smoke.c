@@ -19,7 +19,7 @@ int main(void)
     printf("=== Adapter Smoke Test ===\n\n");
 
     const char *adapter_path = "primitives/adapters/v1/native/cortex_adapter_native";
-    const char *spec_uri = "primitives/kernels/v1/noop@f32";  /* Full path, not just "noop@f32" */
+    const char *spec_uri = "primitives/kernels/v1/noop/f32";  /* Full path to dtype directory */
     const char *plugin_params = "";
 
     const uint32_t sample_rate_hz = 160;
@@ -72,6 +72,7 @@ int main(void)
         input,
         window_samples,
         channels,
+        sizeof(float),
         output,
         total_samples * sizeof(float),
         &timing

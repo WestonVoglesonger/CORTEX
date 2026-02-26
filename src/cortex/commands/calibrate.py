@@ -127,7 +127,7 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--spec-uri',
-        help='Plugin spec_uri (default: primitives/kernels/v1/{kernel}@f32)'
+        help='Plugin spec_uri (default: primitives/kernels/v1/{kernel}/f32)'
     )
     parser.add_argument(
         '--labels',
@@ -197,7 +197,7 @@ def execute(args):
         return 1
 
     # Build spec_uri if not provided
-    spec_uri = args.spec_uri or f"primitives/kernels/v1/{args.kernel}@f32"
+    spec_uri = args.spec_uri or f"primitives/kernels/v1/{args.kernel}/f32"
 
     print(f"\nKernel:       {args.kernel}")
     print(f"Spec URI:     {spec_uri}")

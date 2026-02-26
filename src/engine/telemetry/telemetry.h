@@ -47,6 +47,9 @@ typedef struct cortex_telemetry_record {
 
     /* Chain execution (SE-8) */
     uint32_t stage_index;          /* Stage within chain (0xFFFFFFFF = not chained) */
+
+    /* Data type (SE-3) */
+    uint32_t dtype;                /* Dtype bitmask: 1=float32, 2=q15, 4=q7 */
 } cortex_telemetry_record_t;
 
 typedef struct cortex_telemetry_buffer {

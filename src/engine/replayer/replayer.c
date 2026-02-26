@@ -98,6 +98,7 @@ static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk
 static void sleep_until(const struct timespec *target);
 static int prepare_background_load(cortex_replayer_t *replayer, const char *profile_name);
 static float *allocate_window_buffer(size_t samples_per_window);
+static void convert_float32_to_q15(const float *in, int16_t *out, size_t count);
 
 /* Background load helpers. */
 static int get_cpu_count(void);
@@ -323,15 +324,30 @@ static void *replayer_thread_main(void *arg) {
     /* Calculate chunk size (overflow already checked in start()) */
     size_t hop_samples = (size_t)replayer->config.hop_samples * replayer->config.channels;
 
+    /* Always read float32 from disk (datasets are stored as float32) */
     float *chunk_buffer = allocate_window_buffer(hop_samples);
     if (!chunk_buffer) {
         replayer->running = 0;
         return NULL;
     }
 
+    /* If Q15 requested, allocate a conversion buffer */
+    const int is_q15 = (replayer->config.dtype == 2u);  /* CORTEX_DTYPE_Q15 */
+    int16_t *q15_buffer = NULL;
+    if (is_q15) {
+        q15_buffer = (int16_t *)calloc(hop_samples, sizeof(int16_t));
+        if (!q15_buffer) {
+            perror("calloc q15 conversion buffer");
+            free(chunk_buffer);
+            replayer->running = 0;
+            return NULL;
+        }
+    }
+
     FILE *stream = fopen(replayer->config.dataset_path, "rb");
     if (!stream) {
         perror("failed to open dataset");
+        free(q15_buffer);
         free(chunk_buffer);
         replayer->running = 0;
         return NULL;
@@ -343,13 +359,14 @@ static void *replayer_thread_main(void *arg) {
     const double hop_period_sec = (double)replayer->config.hop_samples / (double)replayer->config.sample_rate_hz;
     const long hop_period_nsec = (long)(hop_period_sec * NSEC_PER_SEC);
 
-    fprintf(stdout, "[replayer] streaming %u samples/channel × %u channels = %zu total samples every %.1f ms (%.2f Hz chunk rate, %.0f samples/s total)\n",
+    fprintf(stdout, "[replayer] streaming %u samples/channel × %u channels = %zu total samples every %.1f ms (%.2f Hz chunk rate, %.0f samples/s total) [dtype=%s]\n",
             replayer->config.hop_samples,
             replayer->config.channels,
             hop_samples,
             hop_period_sec * 1000.0,
             1.0 / hop_period_sec,
-            (double)hop_samples / hop_period_sec);
+            (double)hop_samples / hop_period_sec,
+            is_q15 ? "q15" : "float32");
 
     while (replayer->running) {
         int read_status = read_next_chunk(stream, chunk_buffer, hop_samples);
@@ -363,7 +380,13 @@ static void *replayer_thread_main(void *arg) {
         }
 
         if (replayer->callback) {
-            replayer->callback(chunk_buffer, hop_samples, replayer->callback_user_data);
+            if (is_q15) {
+                /* Convert float32 → Q15 in-place before passing to scheduler */
+                convert_float32_to_q15(chunk_buffer, q15_buffer, hop_samples);
+                replayer->callback(q15_buffer, hop_samples, replayer->callback_user_data);
+            } else {
+                replayer->callback(chunk_buffer, hop_samples, replayer->callback_user_data);
+            }
         }
 
         next_emit.tv_nsec += hop_period_nsec;
@@ -372,6 +395,7 @@ static void *replayer_thread_main(void *arg) {
     }
 
     fclose(stream);
+    free(q15_buffer);
     free(chunk_buffer);
     return NULL;
 }
@@ -397,6 +421,17 @@ static int read_next_chunk(FILE *stream, float *buffer, size_t samples_per_chunk
         }
     }
     return (int)read_elems;
+}
+
+static void convert_float32_to_q15(const float *in, int16_t *out, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        float clamped = fmaxf(-1.0f, fminf(1.0f, in[i]));
+        /* Scale by 32768 (standard Q15) with round-to-nearest */
+        float scaled = clamped * 32768.0f;
+        if (scaled >= 32767.0f) { out[i] = 32767; continue; }
+        if (scaled <= -32768.0f) { out[i] = -32768; continue; }
+        out[i] = (int16_t)(scaled + (scaled >= 0.0f ? 0.5f : -0.5f));
+    }
 }
 
 static void sleep_until(const struct timespec *target) {

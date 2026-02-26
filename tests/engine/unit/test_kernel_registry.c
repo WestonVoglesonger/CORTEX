@@ -25,10 +25,10 @@ typedef struct {
 } kernel_test_t;
 
 static kernel_test_t expected_kernels[] = {
-    {"car@f32", "[160, 64]", "[160, 64]", 0},
-    {"notch_iir@f32", "[160, 64]", "[160, 64]", 1},
-    {"bandpass_fir@f32", "[160, 64]", "[160, 64]", 1},
-    {"goertzel@f32", "[160, 64]", "[2, 64]", 0}
+    {"car", "[160, 64]", "[160, 64]", 0},
+    {"notch_iir", "[160, 64]", "[160, 64]", 1},
+    {"bandpass_fir", "[160, 64]", "[160, 64]", 1},
+    {"goertzel", "[160, 64]", "[2, 64]", 0}
 };
 
 static int file_exists(const char *path) {
@@ -56,9 +56,10 @@ static int test_kernel_structure(const char *kernel_name) {
     char spec_path[MAX_PATH];
     char oracle_path[MAX_PATH];
     char readme_path[MAX_PATH];
-    
+
+    /* New layout: spec.yaml and README.md at kernel root, oracle.py in dtype subdirectory */
     snprintf(spec_path, sizeof(spec_path), "primitives/kernels/v1/%s/spec.yaml", kernel_name);
-    snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/oracle.py", kernel_name);
+    snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/f32/oracle.py", kernel_name);
     snprintf(readme_path, sizeof(readme_path), "primitives/kernels/v1/%s/README.md", kernel_name);
     
     if (!file_exists(spec_path)) {
@@ -154,7 +155,7 @@ static int test_oracles_executable(void) {
     for (int i = 0; i < num_kernels; i++) {
         const char *kernel = expected_kernels[i].name;
         char oracle_path[MAX_PATH];
-        snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/oracle.py", kernel);
+        snprintf(oracle_path, sizeof(oracle_path), "primitives/kernels/v1/%s/f32/oracle.py", kernel);
         
         // Check that oracle has shebang and main guard
         if (!find_string_in_file(oracle_path, "#!/usr")) {

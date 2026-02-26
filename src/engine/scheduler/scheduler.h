@@ -78,15 +78,13 @@ int cortex_scheduler_register_device(cortex_scheduler_t *scheduler,
                                      uint32_t config_channels);
 
 /*
- * Feed interleaved samples (float32 frames of size C) into the scheduler.
+ * Feed interleaved samples (frames of size C) into the scheduler.
  * Samples are queued until enough data is available to form a window.  The
  * function returns the number of frames consumed or a negative errno value.
- *
- * TODO: add support for Q15/Q7 datasets when dtype parsing is implemented in
- * the replayer.
+ * Element type (float32 / Q15 / Q7) is determined by config->dtype at creation.
  */
 int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
-                                  const float *samples,
+                                  const void *samples,
                                   size_t sample_count);
 
 /*

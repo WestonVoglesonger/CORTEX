@@ -97,33 +97,34 @@ int cortex_protocol_send_frame(
 /*
  * cortex_protocol_send_window_chunked - Send window as multiple WINDOW_CHUNK frames
  *
- * Breaks large window (W×C float32 samples) into 8KB chunks and sends as
+ * Breaks large window (W×C elements) into 8KB chunks and sends as
  * separate WINDOW_CHUNK frames. Last chunk has CORTEX_CHUNK_FLAG_LAST set.
  *
  * Args:
  *   transport:     Transport to send on
  *   sequence:      Window sequence number
- *   samples:       Float32 sample buffer (W×C samples)
+ *   samples:       Sample buffer (W×C elements, dtype-agnostic)
  *   window_samples: Number of samples per channel (W)
  *   channels:      Number of channels (C)
+ *   element_size:  Size of each element in bytes (sizeof(float) for f32, sizeof(int16_t) for Q15)
  *
  * Returns:
  *    0: Success (all chunks sent)
  *   <0: Error (transport send failure)
  *
- * Example: 160×64 window = 40,960 bytes → 5 chunks (4×8KB + 1×8KB)
+ * Example: 160×64 float32 window = 40,960 bytes → 5 chunks (4×8KB + 1×8KB)
  *
  * IMPORTANT:
- *   - samples buffer is float32 array in host format (NOT little-endian yet)
- *   - This function handles conversion to little-endian wire format
+ *   - Data sent as raw little-endian bytes (both x86 and ARM are LE)
  *   - Chunks sent sequentially (not parallel)
  */
 int cortex_protocol_send_window_chunked(
     cortex_transport_t *transport,
     uint32_t sequence,
-    const float *samples,
+    const void *samples,
     uint32_t window_samples,
-    uint32_t channels
+    uint32_t channels,
+    size_t element_size
 );
 
 /*
@@ -135,7 +136,7 @@ int cortex_protocol_send_window_chunked(
  * Args:
  *   transport:         Transport to receive from
  *   expected_sequence: Expected window sequence number
- *   out_samples:       Output buffer for float32 samples (host format)
+ *   out_samples:       Output buffer for samples (host format, dtype-agnostic)
  *   samples_buf_size:  Size of out_samples buffer in bytes
  *   timeout_ms:        Total timeout for receiving ALL chunks
  *
@@ -143,23 +144,15 @@ int cortex_protocol_send_window_chunked(
  *    0: Success (window complete and validated)
  *   <0: Error (timeout, sequence mismatch, incomplete chunks, etc.)
  *
- * Errors:
- *   CORTEX_ETIMEDOUT:               Timeout waiting for chunks
- *   CORTEX_EPROTO_*:                Protocol errors (CRC, MAGIC, etc.)
- *   CORTEX_ECHUNK_SEQUENCE_MISMATCH: Chunk has wrong sequence number
- *   CORTEX_ECHUNK_INCOMPLETE:        Missing chunks (incomplete transfer)
- *   CORTEX_ECHUNK_BUFFER_TOO_SMALL:  out_samples buffer too small
- *
  * IMPORTANT:
  *   - Blocks until ALL chunks received or timeout
- *   - Converts samples from little-endian wire format to host format
- *   - Sets tin timestamp AFTER final chunk (CORTEX_CHUNK_FLAG_LAST) received
+ *   - Receives raw little-endian bytes (x86/ARM are LE, no conversion needed)
  *   - Caller must know window dimensions (W×C) from CONFIG handshake
  */
 int cortex_protocol_recv_window_chunked(
     cortex_transport_t *transport,
     uint32_t expected_sequence,
-    float *out_samples,
+    void *out_samples,
     size_t samples_buf_size,
     uint32_t timeout_ms
 );
@@ -196,12 +189,13 @@ int cortex_protocol_send_result_chunked(
     uint64_t tend,
     uint64_t tfirst_tx,
     uint64_t tlast_tx,
-    const float *samples,
+    const void *samples,
     uint32_t output_length_samples,
     uint32_t output_channels,
     uint64_t pmu_cycle_count,
     uint64_t pmu_instruction_count,
-    uint64_t pmu_backend_stall_cycles
+    uint64_t pmu_backend_stall_cycles,
+    size_t element_size
 );
 
 /*
@@ -213,7 +207,7 @@ int cortex_protocol_send_result_chunked(
  * Args:
  *   transport:          Transport to receive from
  *   expected_sequence:  Expected window sequence number
- *   out_samples:        Output buffer for float32 samples (host format)
+ *   out_samples:        Output buffer for samples (host format, dtype-agnostic)
  *   samples_buf_size:   Size of out_samples buffer in bytes
  *   timeout_ms:         Total timeout for receiving ALL chunks
  *   out_session_id:     [OUT] Session ID from result
@@ -232,7 +226,7 @@ int cortex_protocol_send_result_chunked(
 int cortex_protocol_recv_result_chunked(
     cortex_transport_t *transport,
     uint32_t expected_sequence,
-    float *out_samples,
+    void *out_samples,
     size_t samples_buf_size,
     uint32_t timeout_ms,
     uint32_t *out_session_id,

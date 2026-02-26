@@ -34,7 +34,7 @@ benchmark:
 plugins:
   - name: "notch_iir"
     status: ready
-    spec_uri: "primitives/kernels/v1/notch_iir@f32"
+    spec_uri: "primitives/kernels/v1/notch_iir/f32"
     spec_version: "1.0.0"
     params:
       f0_hz: 50.0  # European power line (50Hz instead of default 60Hz)

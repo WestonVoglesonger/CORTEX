@@ -530,10 +530,11 @@ int device_comm_init(
 int device_comm_execute_window(
     cortex_device_handle_t *handle,
     uint32_t sequence,
-    const float *input_samples,
+    const void *input_samples,
     uint32_t window_samples,
     uint32_t channels,
-    float *output_samples,
+    size_t element_size,
+    void *output_samples,
     size_t output_buf_size,
     cortex_device_timing_t *out_timing
 )
@@ -544,7 +545,8 @@ int device_comm_execute_window(
         sequence,
         input_samples,
         window_samples,
-        channels
+        channels,
+        element_size
     );
 
     if (ret < 0) {

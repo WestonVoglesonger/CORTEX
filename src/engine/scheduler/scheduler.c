@@ -41,7 +41,8 @@ typedef struct cortex_scheduler_plugin_entry {
 
 struct cortex_scheduler_t {
     cortex_scheduler_config_t config;
-    float *buffer;
+    void *buffer;
+    size_t element_size;       /* sizeof(float) for f32, sizeof(int16_t) for Q15 */
     size_t buffer_capacity;
     size_t buffer_fill;
     size_t window_samples;
@@ -71,8 +72,8 @@ static int apply_realtime_attributes(cortex_scheduler_t *scheduler);
 static void normalize_timespec(struct timespec *ts);
 static void timespec_add_seconds(struct timespec *ts, double seconds);
 static uint32_t sample_cpu_freq_mhz(void);
-static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_data);
-static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_data);
+static void dispatch_window(cortex_scheduler_t *scheduler, const void *window_data);
+static void dispatch_chain(cortex_scheduler_t *scheduler, const void *window_data);
 static void record_window_metrics(const cortex_scheduler_t *scheduler,
                                   const cortex_scheduler_plugin_entry_t *plugin,
                                   const struct timespec *release_ts,
@@ -124,8 +125,15 @@ cortex_scheduler_t *cortex_scheduler_create(const cortex_scheduler_config_t *con
 
     scheduler->window_samples = window_samples;
     scheduler->hop_samples = hop_samples;
+    scheduler->element_size = cortex_dtype_element_size(config->dtype);
+    if (scheduler->element_size == 0) {
+        fprintf(stderr, "[scheduler] Unknown dtype: %u\n", config->dtype);
+        errno = EINVAL;
+        free(scheduler);
+        return NULL;
+    }
     scheduler->buffer_capacity = scheduler->window_samples;
-    scheduler->buffer = calloc(scheduler->buffer_capacity, sizeof(float));
+    scheduler->buffer = calloc(scheduler->buffer_capacity, scheduler->element_size);
     if (!scheduler->buffer) {
         free(scheduler);
         return NULL;
@@ -231,8 +239,8 @@ int cortex_scheduler_register_device(cortex_scheduler_t *scheduler,
         ? device_info->output_channels
         : config_channels;
 
-    /* Allocate output buffer */
-    const size_t element_size = sizeof(float); /* TODO: support Q15/Q7 */
+    /* Allocate output buffer (dtype-aware element size) */
+    const size_t element_size = scheduler->element_size;
 
     /* Check for overflow in output buffer size calculation */
     size_t temp, output_bytes;
@@ -267,7 +275,7 @@ int cortex_scheduler_register_device(cortex_scheduler_t *scheduler,
 }
 
 int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
-                                  const float *samples,
+                                  const void *samples,
                                   size_t sample_count) {
     if (!scheduler || !samples) {
         return -EINVAL;
@@ -278,6 +286,10 @@ int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
             scheduler->realtime_applied = 1;
         }
     }
+
+    const size_t esz = scheduler->element_size;
+    const uint8_t *src = (const uint8_t *)samples;
+    uint8_t *buf = (uint8_t *)scheduler->buffer;
 
     size_t consumed = 0;
     while (consumed < sample_count) {
@@ -290,7 +302,7 @@ int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
         if (to_copy > space) {
             to_copy = space;
         }
-        memcpy(scheduler->buffer + scheduler->buffer_fill, samples + consumed, to_copy * sizeof(float));
+        memcpy(buf + scheduler->buffer_fill * esz, src + consumed * esz, to_copy * esz);
         scheduler->buffer_fill += to_copy;
         consumed += to_copy;
 
@@ -301,7 +313,7 @@ int cortex_scheduler_feed_samples(cortex_scheduler_t *scheduler,
                 dispatch_window(scheduler, scheduler->buffer);
             }
             size_t remaining = scheduler->buffer_fill - scheduler->hop_samples;
-            memmove(scheduler->buffer, scheduler->buffer + scheduler->hop_samples, remaining * sizeof(float));
+            memmove(buf, buf + scheduler->hop_samples * esz, remaining * esz);
             scheduler->buffer_fill = remaining;
         }
     }
@@ -314,6 +326,9 @@ int cortex_scheduler_flush(cortex_scheduler_t *scheduler) {
         return -EINVAL;
     }
 
+    const size_t esz = scheduler->element_size;
+    uint8_t *buf = (uint8_t *)scheduler->buffer;
+
     while (scheduler->buffer_fill >= scheduler->window_samples && scheduler->hop_samples > 0) {
         if (scheduler->config.chain_mode && scheduler->plugin_count > 1) {
             dispatch_chain(scheduler, scheduler->buffer);
@@ -321,7 +336,7 @@ int cortex_scheduler_flush(cortex_scheduler_t *scheduler) {
             dispatch_window(scheduler, scheduler->buffer);
         }
         size_t remaining = scheduler->buffer_fill - scheduler->hop_samples;
-        memmove(scheduler->buffer, scheduler->buffer + scheduler->hop_samples, remaining * sizeof(float));
+        memmove(buf, buf + scheduler->hop_samples * esz, remaining * esz);
         scheduler->buffer_fill = remaining;
     }
     return 0;
@@ -455,7 +470,7 @@ static void timespec_add_seconds(struct timespec *ts, double seconds) {
     normalize_timespec(ts);
 }
 
-static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_data) {
+static void dispatch_window(cortex_scheduler_t *scheduler, const void *window_data) {
     /* Sample CPU frequency before window execution (SE-4) */
     uint32_t cpu_freq_mhz = sample_cpu_freq_mhz();
 
@@ -471,7 +486,7 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
 
     for (size_t i = 0; i < scheduler->plugin_count; ++i) {
         cortex_scheduler_plugin_entry_t *entry = &scheduler->plugins[i];
-        const float *input = window_data;
+        const void *input = window_data;
         void *output = entry->output_buffer;
         struct timespec start_ts;
         struct timespec end_ts;
@@ -505,7 +520,8 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const float *window_d
             input,
             (uint32_t)scheduler->config.window_length_samples,
             (uint32_t)scheduler->config.channels,
-            (float *)output,
+            scheduler->element_size,
+            output,
             entry->output_bytes,
             &device_timing
         );
@@ -641,6 +657,9 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
         /* Chain stage (SE-8): not part of a chain */
         rec.stage_index = CORTEX_STAGE_NOT_CHAINED;
 
+        /* Data type (SE-3) */
+        rec.dtype = scheduler->config.dtype;
+
         cortex_telemetry_add(buffer, &rec);
     }
 
@@ -669,7 +688,7 @@ static void record_window_metrics(const cortex_scheduler_t *scheduler,
 
 /* Chained pipeline dispatch (SE-8): Plugin A's output becomes Plugin B's input.
  * Each stage gets per-stage telemetry with stage_index set. */
-static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_data) {
+static void dispatch_chain(cortex_scheduler_t *scheduler, const void *window_data) {
     uint32_t cpu_freq_mhz = sample_cpu_freq_mhz();
 
     struct timespec release_ts;
@@ -682,7 +701,7 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
         timespec_add_seconds(&deadline_ts, deadline_delta);
     }
 
-    const float *current_input = window_data;
+    const void *current_input = window_data;
 
     /* Track current dimensions across chain stages (SE-8 shape propagation fix).
      * Stage 0 uses config dimensions; subsequent stages use previous stage's
@@ -717,7 +736,8 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             current_input,
             current_W,
             current_C,
-            (float *)output,
+            scheduler->element_size,
+            output,
             entry->output_bytes,
             &device_timing
         );
@@ -786,6 +806,7 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
             rec.osnoise_total_ns = osnoise_ns;
 
             rec.stage_index = (uint32_t)i;
+            rec.dtype = scheduler->config.dtype;
 
             cortex_telemetry_add(buffer, &rec);
         }
@@ -794,7 +815,7 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const float *window_da
         if (window_failed) break;
 
         /* Chain output -> next input (propagate shape for next stage) */
-        current_input = (const float *)output;
+        current_input = (const void *)output;
         current_W = entry->output_window_length_samples;
         current_C = entry->output_channels;
     }
