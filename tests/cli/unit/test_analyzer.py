@@ -717,6 +717,243 @@ class TestChainStatistics:
         assert "Pipeline Chain Breakdown" not in content
 
 
+class TestConfidenceIntervals:
+    """Test 95% confidence interval computation in calculate_statistics()."""
+
+    def setup_method(self):
+        self.fs = Mock(spec=FileSystemService)
+        self.logger = Mock(spec=Logger)
+        self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
+
+    def test_ci_columns_present(self):
+        """CI columns appear in stats DataFrame."""
+        df = pd.DataFrame({
+            'plugin': ['k'] * 10,
+            'latency_us': np.random.normal(100, 10, 10),
+            'warmup': [0] * 10,
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        for col in ['latency_us_mean_ci_half', 'latency_us_mean_ci_lower',
+                     'latency_us_mean_ci_upper', 'latency_us_mean_ci_pct', 'sample_count']:
+            assert col in stats.columns, f"Missing column: {col}"
+
+    def test_ci_known_values(self):
+        """Verify CI against hand-calculated t-distribution values."""
+        from scipy.stats import t as t_dist
+
+        values = [10.0, 20.0, 30.0, 40.0, 50.0]
+        df = pd.DataFrame({
+            'plugin': ['k'] * 5,
+            'latency_us': values,
+            'warmup': [0] * 5,
+        })
+        stats = self.analyzer.calculate_statistics(df)
+
+        mean = np.mean(values)
+        std = np.std(values, ddof=1)  # pandas default
+        n = 5
+        sem = std / np.sqrt(n)
+        t_crit = t_dist.ppf(0.975, df=n - 1)
+        expected_ci_half = t_crit * sem
+
+        assert stats.loc['k', 'latency_us_mean_ci_half'] == pytest.approx(expected_ci_half, rel=1e-6)
+        assert stats.loc['k', 'latency_us_mean_ci_lower'] == pytest.approx(mean - expected_ci_half, rel=1e-6)
+        assert stats.loc['k', 'latency_us_mean_ci_upper'] == pytest.approx(mean + expected_ci_half, rel=1e-6)
+
+    def test_ci_percentage(self):
+        """CI percentage = ci_half / mean * 100."""
+        values = [100.0, 110.0, 90.0, 105.0, 95.0]
+        df = pd.DataFrame({
+            'plugin': ['k'] * 5,
+            'latency_us': values,
+            'warmup': [0] * 5,
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        ci_half = stats.loc['k', 'latency_us_mean_ci_half']
+        mean = stats.loc['k', 'latency_us_mean']
+        expected_pct = ci_half / mean * 100
+        assert stats.loc['k', 'latency_us_mean_ci_pct'] == pytest.approx(expected_pct, rel=1e-6)
+
+    def test_ci_n1_is_nan(self):
+        """n=1: CI is undefined (df=0), all CI columns should be NaN."""
+        df = pd.DataFrame({
+            'plugin': ['k'],
+            'latency_us': [100.0],
+            'warmup': [0],
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_half'])
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_lower'])
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_upper'])
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_pct'])
+        # Mean should still be valid
+        assert stats.loc['k', 'latency_us_mean'] == 100.0
+
+    def test_ci_n2_is_finite(self):
+        """n=2: minimum valid case — CI should be wide but finite."""
+        df = pd.DataFrame({
+            'plugin': ['k', 'k'],
+            'latency_us': [100.0, 200.0],
+            'warmup': [0, 0],
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        ci_half = stats.loc['k', 'latency_us_mean_ci_half']
+        assert pd.notna(ci_half)
+        assert np.isfinite(ci_half)
+        # For n=2, t_crit(0.975, df=1) = 12.706 — CI should be very wide
+        assert ci_half > 50  # With std=70.7, sem=50, ci_half ≈ 635
+
+    def test_ci_n30_approaches_z(self):
+        """n=30+: t-distribution CI should be close to z-distribution CI."""
+        np.random.seed(42)
+        values = np.random.normal(100, 10, 100)
+        df = pd.DataFrame({
+            'plugin': ['k'] * 100,
+            'latency_us': values,
+            'warmup': [0] * 100,
+        })
+        stats = self.analyzer.calculate_statistics(df)
+
+        mean = np.mean(values)
+        std = np.std(values, ddof=1)
+        n = 100
+        sem = std / np.sqrt(n)
+
+        # z-based CI half (1.96 * SEM)
+        z_ci_half = 1.96 * sem
+        t_ci_half = stats.loc['k', 'latency_us_mean_ci_half']
+
+        # At n=100, t_crit ≈ 1.984, so t-CI is ~1% wider than z-CI
+        assert abs(t_ci_half - z_ci_half) / z_ci_half < 0.02
+
+    def test_ci_sample_count(self):
+        """sample_count column reflects non-warmup sample count."""
+        df = pd.DataFrame({
+            'plugin': ['k'] * 15,
+            'latency_us': [100.0] * 15,
+            'warmup': [0] * 10 + [1] * 5,
+        })
+        stats = self.analyzer.calculate_statistics(df)
+        assert int(stats.loc['k', 'sample_count']) == 10
+
+    def test_ci_rendering_in_summary_with_ci(self, tmp_path):
+        """Summary table shows mean ± ci_half (ci_pct%) format."""
+        from cortex.core import RealFileSystemService
+        fs = RealFileSystemService()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=self.logger)
+
+        df = pd.DataFrame({
+            'plugin': ['k'] * 50,
+            'latency_us': np.random.normal(100, 10, 50),
+            'warmup': [0] * 50,
+        })
+        output_path = str(tmp_path / "SUMMARY.md")
+        result = analyzer.generate_summary_table(df, output_path)
+
+        assert result is True
+        content = Path(output_path).read_text()
+        assert "Mean ± 95% CI" in content
+        assert "±" in content
+        assert "%" in content
+
+    def test_ci_rendering_in_summary_n1(self, tmp_path):
+        """When n=1 (CI is NaN), summary shows just the mean, no ± suffix."""
+        from cortex.core import RealFileSystemService
+        fs = RealFileSystemService()
+        analyzer = TelemetryAnalyzer(filesystem=fs, logger=self.logger)
+
+        df = pd.DataFrame({
+            'plugin': ['k'],
+            'latency_us': [100.0],
+            'warmup': [0],
+        })
+        output_path = str(tmp_path / "SUMMARY.md")
+        result = analyzer.generate_summary_table(df, output_path)
+
+        assert result is True
+        content = Path(output_path).read_text()
+        # Should NOT have ± for the single-sample kernel row
+        # The header will say "Mean ± 95% CI" if scipy is available and n>=2 kernels exist
+        # but for n=1, the row value should just be the plain mean
+        lines_with_k = [l for l in content.split('\n') if l.startswith('| k ')]
+        assert len(lines_with_k) == 1
+        # The row itself should not contain ±
+        assert "±" not in lines_with_k[0]
+
+    def test_ci_scipy_unavailable_fallback(self):
+        """When scipy unavailable, CI columns are NaN but no exception raised."""
+        import unittest.mock as mock
+
+        df = pd.DataFrame({
+            'plugin': ['k'] * 10,
+            'latency_us': [100.0] * 10,
+            'warmup': [0] * 10,
+        })
+
+        # Patch scipy import to raise ImportError
+        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        def mock_import(name, *args, **kwargs):
+            if name == 'scipy.stats' or (name == 'scipy' and 'stats' in str(args)):
+                raise ImportError("mocked scipy unavailable")
+            return original_import(name, *args, **kwargs)
+
+        with mock.patch('builtins.__import__', side_effect=mock_import):
+            stats = self.analyzer.calculate_statistics(df)
+
+        # CI columns should exist but be NaN
+        assert 'latency_us_mean_ci_half' in stats.columns
+        assert pd.isna(stats.loc['k', 'latency_us_mean_ci_half'])
+        # Mean should still work
+        assert stats.loc['k', 'latency_us_mean'] == 100.0
+
+
+class TestCompareRunsCI:
+    """Test that compare_runs includes CI bounds."""
+
+    def setup_method(self):
+        self.fs = Mock(spec=FileSystemService)
+        self.logger = Mock(spec=Logger)
+        self.analyzer = TelemetryAnalyzer(filesystem=self.fs, logger=self.logger)
+
+    def test_compare_has_ci_columns(self):
+        """compare_runs result includes baseline/candidate CI bounds."""
+        df_b = pd.DataFrame({
+            'plugin': ['k'] * 50,
+            'latency_us': np.random.normal(100, 10, 50),
+            'warmup': [0] * 50,
+        })
+        df_c = pd.DataFrame({
+            'plugin': ['k'] * 50,
+            'latency_us': np.random.normal(110, 10, 50),
+            'warmup': [0] * 50,
+        })
+        result = self.analyzer.compare_runs(df_b, df_c)
+        assert result is not None
+        for col in ['baseline_mean_ci_lower', 'baseline_mean_ci_upper',
+                     'candidate_mean_ci_lower', 'candidate_mean_ci_upper']:
+            assert col in result.columns, f"Missing column: {col}"
+
+    def test_compare_ci_bounds_valid(self):
+        """CI bounds should bracket the mean."""
+        np.random.seed(42)
+        df_b = pd.DataFrame({
+            'plugin': ['k'] * 100,
+            'latency_us': np.random.normal(100, 10, 100),
+            'warmup': [0] * 100,
+        })
+        df_c = pd.DataFrame({
+            'plugin': ['k'] * 100,
+            'latency_us': np.random.normal(105, 10, 100),
+            'warmup': [0] * 100,
+        })
+        result = self.analyzer.compare_runs(df_b, df_c)
+        row = result.iloc[0]
+        assert row['baseline_mean_ci_lower'] < row['baseline_mean']
+        assert row['baseline_mean_ci_upper'] > row['baseline_mean']
+        assert row['candidate_mean_ci_lower'] < row['candidate_mean']
+        assert row['candidate_mean_ci_upper'] > row['candidate_mean']
+
+
 # Test discovery for pytest
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
