@@ -53,7 +53,7 @@ The following user stories capture what each persona requires from CORTEX. Statu
 | ID | User Story | Required Capabilities | Status |
 | --- | --- | --- | --- |
 | AR-1 | I need to evaluate my algorithm's accuracy AND know if a C implementation can meet real-time constraints. | Efficacy benchmarking, labeled datasets, latency measurement, oracle validation | Planned |
-| AR-2 | I want to contribute my Python algorithm as an oracle so others can implement and benchmark optimized versions. | Oracle contribution workflow, spec generation, validation pipeline | Planned |
+| AR-2 | I want to contribute my Python algorithm as an oracle so others can implement and benchmark optimized versions. | Oracle contribution workflow, spec generation, validation pipeline | Partial |
 
 Implementation Note: AR efficacy benchmarking is deferred—MOABB [1] serves this need for offline accuracy evaluation. CORTEX complements MOABB by adding latency/correctness validation currently missing from BCI workflows.
 
@@ -61,7 +61,7 @@ Implementation Note: AR efficacy benchmarking is deferred—MOABB [1] serves thi
 
 | ID | User Story | Required Capabilities | Status |
 | --- | --- | --- | --- |
-| SE-1 | I have an oracle-validated C kernel. I need to characterize its latency distribution on a target device to determine if it meets a real-time deadline at P99. | Device adapters, latency distribution capture, deadline analysis | Partial |
+| SE-1 | I have an oracle-validated C kernel. I need to characterize its latency distribution on a target device to determine if it meets a real-time deadline at P99. | Device adapters, latency distribution capture, deadline analysis | Exists |
 | SE-2 | I'm choosing between two filter implementations. I need to compare their latency tradeoffs on the target deployment platform. | Comparative benchmarking, diff reports | Exists |
 | SE-3 | I'm porting a float32 kernel to fixed16. I need to validate numerical correctness against the float32 oracle before measuring latency. | Multi-dtype oracle validation, degradation metrics | Exists |
 | SE-4 | I need to characterize how platform state (idle vs. loaded) affects kernel latency on my target device. | Load profiles, platform effect isolation | Exists |
@@ -86,9 +86,9 @@ Implementation Note: HE workflows are planned for device adapter expansion. The 
 
 | Persona | Total | Exists | Partial | Planned | Coverage (Exists + Partial) |
 | --- | --- | --- | --- | --- | --- |
-| Algorithm Researcher | 2 | 0 | 0 | 2 | 0% |
-| Software Engineer | 11 | 10 | 1 | 0 | 100% |
+| Algorithm Researcher | 2 | 0 | 1 | 1 | 50% |
+| Software Engineer | 11 | 11 | 0 | 0 | 100% |
 | Hardware Engineer | 2 | 0 | 0 | 2 | 0% |
-| Total | 15 | 10 | 1 | 4 | 73% |
+| Total | 15 | 11 | 1 | 3 | 80% |
 
 These 15 user stories across three personas represent the chaotic surface of BCI deployment needs. The next section distills the methodological principles that unify them.
