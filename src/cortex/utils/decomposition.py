@@ -9,11 +9,11 @@ import json
 import logging
 import platform
 from itertools import combinations
-from math import log1p
+from math import factorial
 
 import yaml
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Literal, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 
 import numpy as np
@@ -148,7 +148,7 @@ class CovariateComparison:
     typical_median: float
     mann_whitney_p: float
     significant: bool        # p < 0.05
-    direction: str           # "higher_in_tail" | "lower_in_tail" | "no_difference"
+    direction: Literal["higher_in_tail", "lower_in_tail", "no_difference"]
 
 
 @dataclass
@@ -161,15 +161,15 @@ class TailAttribution:
     tail_ratio: float                          # P99 / P50
     noop_tail_ratio: Optional[float]           # noop P99 / P50
     normalized_ratio: Optional[float]          # kernel / noop
-    verdict: str                               # "platform-dominated" | "mixed" | "algorithmic"
-    tier: int                                  # Highest tier achieved (1, 2, or 3)
+    verdict: Literal["platform-dominated", "mixed", "algorithmic"]
+    tier: Literal[1, 2, 3]                     # Highest tier achieved
 
     # Tier 2: Cohort comparison (None if < Tier 2)
     tail_cohort_size: Optional[int] = None     # Windows > P95
     typical_cohort_size: Optional[int] = None  # Windows P25-P75
 
     # Per-covariate comparison: {covariate_name: CovariateComparison}
-    covariate_comparisons: dict = field(default_factory=dict)
+    covariate_comparisons: Dict[str, CovariateComparison] = field(default_factory=dict)
 
     # Tier 2: Frequency stratification (None if no freq data or < Tier 2)
     stable_freq_p99_us: Optional[float] = None
@@ -178,10 +178,10 @@ class TailAttribution:
 
     # Tier 3: Shapley variance decomposition (None if < Tier 3)
     model_r_squared: Optional[float] = None
-    shapley_pct: Optional[dict] = None         # {covariate: pct}
+    shapley_pct: Optional[Dict[str, float]] = None
     algorithmic_residual_pct: Optional[float] = None
 
-    provenance: dict = field(default_factory=dict)
+    provenance: Dict[str, str] = field(default_factory=dict)
 
 
 def _verdict_from_ratio(normalized_ratio: Optional[float], tail_ratio: float) -> str:
@@ -218,7 +218,10 @@ def _shapley_r_squared(
     Uses numpy.linalg.lstsq — no external dependencies beyond numpy.
     """
     n, k = X.shape
-    assert k == len(covariate_names)
+    if k != len(covariate_names):
+        raise ValueError(
+            f"X has {k} columns but {len(covariate_names)} covariate names provided"
+        )
 
     def _r_squared(indices: tuple) -> float:
         if not indices:
@@ -242,15 +245,7 @@ def _shapley_r_squared(
     # Full model R²
     full_r2 = r2_cache[tuple(all_indices)]
 
-    # Shapley values: average marginal contribution across all orderings
-    shapley = {name: 0.0 for name in covariate_names}
-    from math import factorial
-    for i, name in enumerate(covariate_names):
-        for subset in combinations([j for j in all_indices if j != i], k - 1):
-            # This misses subsets — need all subsets not containing i
-            pass
-
-    # Correct Shapley computation: for each feature i, iterate over all subsets S
+    # Shapley values: for each feature i, iterate over all subsets S
     # that don't contain i, compute weight, and add marginal contribution
     shapley = {name: 0.0 for name in covariate_names}
     for i, name in enumerate(covariate_names):
@@ -265,8 +260,10 @@ def _shapley_r_squared(
 
     # Normalize to percentages of full R²
     total_shapley = sum(shapley.values())
-    if total_shapley > 0 and full_r2 > 0:
-        shapley_pct = {name: (val / full_r2) * 100 for name, val in shapley.items()}
+    if total_shapley > 0:
+        # Normalize to percentages of total variance (not just explained variance)
+        # so that shapley_pct + algorithmic_residual_pct sums to 100%.
+        shapley_pct = {name: val * 100 for name, val in shapley.items()}
     else:
         shapley_pct = {name: 0.0 for name in covariate_names}
 
@@ -280,9 +277,8 @@ def attribute_tail(
     per_window_cpu_freq_mhz: Optional[list] = None,
     per_window_osnoise_ns: Optional[list] = None,
     per_window_cycle_counts: Optional[list] = None,
-    per_window_instruction_counts: Optional[list] = None,
     per_window_backend_stall_counts: Optional[list] = None,
-) -> TailAttribution:
+) -> Optional[TailAttribution]:
     """Attribute tail latency to platform vs algorithmic causes.
 
     Three-tier analysis:
@@ -292,6 +288,11 @@ def attribute_tail(
     """
     lat = np.array(latencies_us, dtype=float)
     n_windows = len(lat)
+
+    if n_windows == 0:
+        logger.warning("No latency samples for kernel %s, cannot attribute tail", kernel_name)
+        return None
+
     provenance = {}
 
     # --- Tier 1: Always available ---
@@ -374,7 +375,8 @@ def attribute_tail(
                     stat, p_val = mannwhitneyu(
                         tail_vals, typical_vals, alternative='two-sided'
                     )
-                except ValueError:
+                except ValueError as e:
+                    logger.info("Mann-Whitney test for %s: %s (treating as non-significant)", cov_name, e)
                     p_val = 1.0
 
                 significant = bool(p_val < 0.05)
@@ -410,7 +412,8 @@ def attribute_tail(
                     try:
                         _, ks_p = ks_2samp(stable_lats, unstable_lats)
                         result.freq_ks_pvalue = float(ks_p)
-                    except ValueError:
+                    except ValueError as e:
+                        logger.info("KS test for freq stratification: %s (treating as non-significant)", e)
                         result.freq_ks_pvalue = 1.0
                     provenance["freq_stratification"] = "measured/stratification/KS"
 
@@ -427,7 +430,7 @@ def attribute_tail(
                 safe = np.where(arr > 0, arr, 1.0)
                 X_cols.append(1.0 / safe)
             elif name == "osnoise_total_ns":
-                X_cols.append(np.array([log1p(v) for v in arr]))
+                X_cols.append(np.log1p(arr))
             else:
                 X_cols.append(arr)
 

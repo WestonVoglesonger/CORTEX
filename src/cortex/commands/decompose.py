@@ -7,13 +7,12 @@ Every platform gets a characterization; richer platforms get richer output.
 import json
 from dataclasses import asdict
 
-from cortex.core import ConsoleLogger, RealFileSystemService, YamlConfigLoader
+from cortex.core import ConsoleLogger, RealFileSystemService
 from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
     load_device_spec, load_kernel_specs, characterize_kernel,
-    attribute_tail, TailAttribution, CovariateComparison,
-    _pmu_unavailable_reason,
+    attribute_tail, TailAttribution, _pmu_unavailable_reason,
 )
 
 
@@ -137,27 +136,31 @@ def execute(args):
         if kernel_df.empty:
             continue
 
+        outer_lats = kernel_df['latency_us'].tolist()
         device_lats = (kernel_df['device_latency_us'].tolist()
                        if has_device_ts else None)
+        cycle_counts = (kernel_df['pmu_cycle_count'].tolist()
+                        if has_pmu else None)
+        insn_counts = (kernel_df['pmu_instruction_count'].tolist()
+                       if has_pmu else None)
+        stall_counts = (kernel_df['pmu_backend_stall_cycles'].tolist()
+                        if has_stall else None)
 
         # Best-available latency array for attribution (device > outer)
-        attr_lats = device_lats if device_lats else kernel_df['latency_us'].tolist()
+        attr_lats = device_lats if device_lats else outer_lats
 
         char_result = characterize_kernel(
             plugin_name,
-            outer_latencies_us=kernel_df['latency_us'].tolist(),
+            outer_latencies_us=outer_lats,
             device_latencies_us=device_lats,
             device_spec=device_spec,
             kernel_specs=kernel_specs,
             window_length=window_length,
             channels=channels,
             noop_latencies_us=noop_latencies,
-            per_window_cycle_counts=(kernel_df['pmu_cycle_count'].tolist()
-                                     if has_pmu else None),
-            per_window_instruction_counts=(kernel_df['pmu_instruction_count'].tolist()
-                                           if has_pmu else None),
-            per_window_backend_stall_counts=(kernel_df['pmu_backend_stall_cycles'].tolist()
-                                             if has_stall else None),
+            per_window_cycle_counts=cycle_counts,
+            per_window_instruction_counts=insn_counts,
+            per_window_backend_stall_counts=stall_counts,
         )
 
         # Tail attribution (SE-7)
@@ -169,15 +172,11 @@ def execute(args):
                                      if has_cpu_freq else None),
             per_window_osnoise_ns=(kernel_df['osnoise_total_ns'].tolist()
                                    if has_osnoise else None),
-            per_window_cycle_counts=(kernel_df['pmu_cycle_count'].tolist()
-                                     if has_pmu else None),
-            per_window_instruction_counts=(kernel_df['pmu_instruction_count'].tolist()
-                                           if has_pmu else None),
-            per_window_backend_stall_counts=(kernel_df['pmu_backend_stall_cycles'].tolist()
-                                             if has_stall else None),
+            per_window_cycle_counts=cycle_counts,
+            per_window_backend_stall_counts=stall_counts,
         )
 
-        if char_result:
+        if char_result and tail_result:
             results.append((char_result, tail_result))
 
     if not results:
@@ -289,6 +288,18 @@ def _output_table(results, dev):
         print("-" * 68)
 
 
+def _fmt_pvalue(p, prefix="p="):
+    """Format a p-value for display (e.g. 'p=0.032' or 'p<0.001').
+
+    Args:
+        p: The p-value.
+        prefix: Text before the value. Use 'p=' for inline, '' for table cells.
+    """
+    if p >= 0.001:
+        return f"{prefix}{p:.3g}"
+    return f"{prefix.rstrip('=')}<0.001" if prefix else "<0.001"
+
+
 def _print_tail_attribution(ta):
     """Print tail attribution section for a single kernel."""
     print(f"\n  Tail ratio (P99/P50): {ta.tail_ratio:>5.1f}x"
@@ -309,15 +320,14 @@ def _print_tail_attribution(ta):
                 arrow = " ^"
             elif comp.direction == "lower_in_tail":
                 arrow = " v"
-            sig = f"p={comp.mann_whitney_p:.3g}" if comp.mann_whitney_p >= 0.001 else f"p<0.001"
+            sig = _fmt_pvalue(comp.mann_whitney_p)
             print(f"    {name}: tail median={comp.tail_median:.1f},"
                   f" typical median={comp.typical_median:.1f}"
                   f"  ({sig}){arrow}")
 
         # Frequency stratification
         if ta.stable_freq_p99_us is not None:
-            ks_str = (f"KS p={ta.freq_ks_pvalue:.3g}"
-                      if ta.freq_ks_pvalue >= 0.001 else "KS p<0.001")
+            ks_str = _fmt_pvalue(ta.freq_ks_pvalue, prefix="KS p=")
             print(f"\n  Frequency stratification:")
             print(f"    P99 at stable freq:      {ta.stable_freq_p99_us:>8.1f} us")
             print(f"    P99 during transitions:  {ta.unstable_freq_p99_us:>8.1f} us"
@@ -465,7 +475,7 @@ def _generate_markdown(results, dev):
                 "|-----------|-------------|----------------|---------|-----------|",
             ])
             for name, comp in sorted(ta.covariate_comparisons.items()):
-                p_str = f"{comp.mann_whitney_p:.3g}" if comp.mann_whitney_p >= 0.001 else "<0.001"
+                p_str = _fmt_pvalue(comp.mann_whitney_p, prefix="")
                 lines.append(
                     f"| {name} | {comp.tail_median:.1f} | {comp.typical_median:.1f}"
                     f" | {p_str} | {comp.direction} |"
@@ -499,5 +509,5 @@ def _write_report(results, dev, output_dir, fs):
         with fs.open(report_path, 'w') as f:
             f.write(md)
         print(f"\nReport written to: {report_path}")
-    except Exception as e:
-        print(f"\nWarning: Could not write report: {e}")
+    except (OSError, IOError) as e:
+        print(f"\nWarning: Could not write report to {output_dir}: {e}")

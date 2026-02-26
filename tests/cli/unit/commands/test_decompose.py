@@ -6,10 +6,29 @@ from unittest.mock import patch, MagicMock
 
 from cortex.utils.decomposition import (
     CharacterizationResult, characterize_kernel,
-    TailAttribution, CovariateComparison,
-    attribute_tail, _shapley_r_squared,
+    TailAttribution, attribute_tail, _shapley_r_squared,
 )
 
+# Shared test fixtures — single source of truth for device + kernel specs
+M1_DEVICE_SPEC = {
+    "device": {
+        "name": "Apple M1",
+        "cpu_peak_gflops": 100.0,
+        "memory_bandwidth_gb_s": 68.25,
+        "l1_cache_kb": 192,
+        "frequency": {"max_hz": 3_228_000_000},
+    }
+}
+
+GOERTZEL_KERNEL_SPECS = {
+    "goertzel": {
+        "computational": {
+            "flops_per_sample": 12,
+            "memory_loads_per_sample": 1,
+            "memory_stores_per_sample": 1,
+        }
+    }
+}
 
 
 # ===========================================================================
@@ -22,25 +41,8 @@ class TestCharacterizeKernel:
     # Goertzel spec: flops_per_sample=12, loads=1, stores=1
     # M1 device: cpu_peak_gflops=100, memory_bw=68.25 GB/s, l1=192 KB, max_hz=3.228 GHz
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_roofline_floor_compute_bound(self):
         """Correct roofline floor from spec + device."""
@@ -172,25 +174,8 @@ class TestCharacterizeKernel:
 class TestCharacterizeKernelPMU:
     """Tests for PMU enrichment in characterize_kernel()."""
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_ipc_populated(self):
         """IPC populated when cycle_counts + instruction_counts provided."""
@@ -296,25 +281,8 @@ class TestCharacterizeKernelPMU:
 class TestCharacterizeKernelNoop:
     """Tests for noop cross-validation in characterize_kernel()."""
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_noop_p50_populated(self):
         """noop_p50_us populated when noop provided."""
@@ -391,22 +359,8 @@ class TestCharacterizeDecomposeExecute:
         mock_fs.exists.return_value = True
         mock_fs_cls.return_value = mock_fs
 
-        mock_load_dev.return_value = {
-            "device": {
-                "name": "Apple M1", "cpu_peak_gflops": 100.0,
-                "memory_bandwidth_gb_s": 68.25, "l1_cache_kb": 192,
-                "frequency": {"max_hz": 3_228_000_000},
-            }
-        }
-        mock_load_specs.return_value = {
-            "goertzel": {
-                "computational": {
-                    "flops_per_sample": 12,
-                    "memory_loads_per_sample": 1,
-                    "memory_stores_per_sample": 1,
-                }
-            }
-        }
+        mock_load_dev.return_value = M1_DEVICE_SPEC
+        mock_load_specs.return_value = GOERTZEL_KERNEL_SPECS
 
         df = self._make_telemetry_df(has_device_ts=True)
         mock_analyzer = MagicMock()
@@ -566,24 +520,10 @@ class TestCharacterizeDecomposeExecute:
             assert kw.get('per_window_cycle_counts') is None
 
     def _device_spec(self):
-        return {
-            "device": {
-                "name": "Apple M1", "cpu_peak_gflops": 100.0,
-                "memory_bandwidth_gb_s": 68.25, "l1_cache_kb": 192,
-                "frequency": {"max_hz": 3_228_000_000},
-            }
-        }
+        return M1_DEVICE_SPEC
 
     def _kernel_specs(self):
-        return {
-            "goertzel": {
-                "computational": {
-                    "flops_per_sample": 12,
-                    "memory_loads_per_sample": 1,
-                    "memory_stores_per_sample": 1,
-                }
-            }
-        }
+        return GOERTZEL_KERNEL_SPECS
 
     def _mock_result(self, ipc=3.2, unavailable=None):
         return CharacterizationResult(
@@ -878,8 +818,8 @@ class TestAttributeTailTier3:
         assert result.model_r_squared > 0
         assert result.shapley_pct is not None
         assert result.algorithmic_residual_pct is not None
-        # Shapley percentages should sum to ~100%
-        total = sum(result.shapley_pct.values())
+        # Shapley pct + algorithmic residual should sum to ~100% (total variance)
+        total = sum(result.shapley_pct.values()) + result.algorithmic_residual_pct
         assert total == pytest.approx(100.0, abs=1.0)
 
     def test_insufficient_windows_falls_back(self):
@@ -952,8 +892,8 @@ class TestShapleyRSquared:
         assert shapley_pct["x2"] > 0
         # x2 has larger coefficient → should get larger share
         assert shapley_pct["x2"] > shapley_pct["x1"]
-        # Should sum to ~100%
-        assert sum(shapley_pct.values()) == pytest.approx(100.0, abs=1.0)
+        # Should sum to ~R² * 100 (percentages of total variance)
+        assert sum(shapley_pct.values()) == pytest.approx(full_r2 * 100, abs=1.0)
 
     def test_single_predictor(self):
         """1 covariate → Shapley = full R²."""
@@ -966,7 +906,8 @@ class TestShapleyRSquared:
         shapley_pct, full_r2 = _shapley_r_squared(y, X, ["x"])
 
         assert full_r2 > 0.95
-        assert shapley_pct["x"] == pytest.approx(100.0, abs=1.0)
+        # Single predictor: Shapley = R² * 100 (pct of total variance)
+        assert shapley_pct["x"] == pytest.approx(full_r2 * 100, abs=1.0)
 
     def test_uncorrelated_predictors(self):
         """Independent covariates → Shapley ≈ marginal R²."""
@@ -981,31 +922,14 @@ class TestShapleyRSquared:
 
         # Equal coefficients, uncorrelated → roughly equal shares
         assert abs(shapley_pct["x1"] - shapley_pct["x2"]) < 15
-        assert sum(shapley_pct.values()) == pytest.approx(100.0, abs=1.0)
+        assert sum(shapley_pct.values()) == pytest.approx(full_r2 * 100, abs=1.0)
 
 
 class TestCharacterizationTailFields:
     """Tests for tail_ratio and platform_tail_verdict in CharacterizationResult."""
 
-    DEVICE_SPEC = {
-        "device": {
-            "name": "Apple M1",
-            "cpu_peak_gflops": 100.0,
-            "memory_bandwidth_gb_s": 68.25,
-            "l1_cache_kb": 192,
-            "frequency": {"max_hz": 3_228_000_000},
-        }
-    }
-
-    KERNEL_SPECS = {
-        "goertzel": {
-            "computational": {
-                "flops_per_sample": 12,
-                "memory_loads_per_sample": 1,
-                "memory_stores_per_sample": 1,
-            }
-        }
-    }
+    DEVICE_SPEC = M1_DEVICE_SPEC
+    KERNEL_SPECS = GOERTZEL_KERNEL_SPECS
 
     def test_tail_ratio_populated(self):
         """characterize_kernel populates tail_ratio."""
