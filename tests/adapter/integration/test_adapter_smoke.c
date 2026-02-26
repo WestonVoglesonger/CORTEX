@@ -72,6 +72,7 @@ int main(void)
         input,
         window_samples,
         channels,
+        sizeof(float),
         output,
         total_samples * sizeof(float),
         &timing

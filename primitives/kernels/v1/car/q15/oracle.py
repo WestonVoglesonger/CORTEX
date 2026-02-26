@@ -51,7 +51,8 @@ def car_q15_oracle(input_data):
         row = q15_in[t, :].astype(np.int32)
         channel_sum = np.sum(row)
         # Integer division truncates toward zero (matches C)
-        mean = np.int16(int(channel_sum) // int(C))
+        # Use int() truncation, not Python // (which is floor division)
+        mean = np.int16(int(int(channel_sum) / int(C)))
 
         # Saturating subtraction per channel
         for c in range(C):
@@ -116,9 +117,9 @@ if __name__ == "__main__":
     for t in range(W):
         row = q15_in[t, :].astype(np.int32)
         s = np.sum(row)
-        mean = int(s) // int(C)
+        mean = int(int(s) / int(C))
         # After subtracting mean, residual sum = sum - C*mean
-        # With integer truncation, |residual| < C
+        # With integer truncation toward zero, |residual| < C
         residual = s - int(C) * mean
         assert abs(residual) < C, f"Residual {residual} >= C={C} at t={t}"
 

@@ -101,6 +101,7 @@ static int test_kernel(const char *plugin_name, const char *plugin_params)
         input,
         WINDOW_SAMPLES,
         CHANNELS,
+        sizeof(float),
         output,
         total_samples * sizeof(float),
         &timing

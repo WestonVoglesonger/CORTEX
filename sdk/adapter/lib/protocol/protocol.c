@@ -286,19 +286,11 @@ int cortex_protocol_send_window_chunked(
     uint32_t sequence,
     const void *samples,
     uint32_t window_samples,
-    uint32_t channels
+    uint32_t channels,
+    size_t element_size
 )
 {
-    /* Wire protocol is byte-oriented: total_bytes computed by caller's element_size.
-     * For backward compatibility, we compute from the raw buffer.
-     * The caller must pass (W * C * element_size) bytes worth of data.
-     * We use sizeof(float) here as the wire format total_bytes field for f32;
-     * for Q15, the caller's data is already the correct size.
-     * NOTE: total_bytes is transmitted as a wire field so the receiver knows
-     * the reassembly size. We compute it based on sizeof(float) for backward
-     * compatibility with existing adapters. New adapters use the received
-     * total_bytes directly. */
-    uint32_t total_bytes = window_samples * channels * sizeof(float);
+    uint32_t total_bytes = window_samples * channels * (uint32_t)element_size;
     uint32_t offset = 0;
 
     /* Allocate buffer for chunk payload (header + data) */
@@ -384,10 +376,11 @@ int cortex_protocol_send_result_chunked(
     uint32_t output_channels,
     uint64_t pmu_cycle_count,
     uint64_t pmu_instruction_count,
-    uint64_t pmu_backend_stall_cycles
+    uint64_t pmu_backend_stall_cycles,
+    size_t element_size
 )
 {
-    uint32_t total_bytes = output_length_samples * output_channels * sizeof(float);
+    uint32_t total_bytes = output_length_samples * output_channels * (uint32_t)element_size;
     uint32_t offset = 0;
 
     /* Allocate buffer for chunk payload (header + data) */

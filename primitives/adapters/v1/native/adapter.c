@@ -396,7 +396,8 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
             kernel_plugin.output_channels,
             pmu.cycle_count,
             pmu.instruction_count,
-            pmu.backend_stall_cycles
+            pmu.backend_stall_cycles,
+            elem_size
         );
         uint64_t tlast_tx = get_timestamp_ns();
 

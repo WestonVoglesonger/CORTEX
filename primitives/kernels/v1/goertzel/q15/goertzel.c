@@ -43,14 +43,17 @@ typedef struct {
     uint32_t beta_end_bin;
     uint32_t total_bins;
     int16_t *coeffs_q14;  /* Pre-computed 2*cos(2*pi*k/N) in Q14 format */
+    int32_t *scratch_s1;  /* Goertzel recurrence state [total_bins × C] */
+    int32_t *scratch_s2;  /* Goertzel recurrence state [total_bins × C] */
 } goertzel_q15_state_t;
 
-/* Q14 helpers — coefficient range [-2, +2) */
+/* Q14 helpers — coefficient range [-2, +2) stored in int16_t with scale 16384 */
 static inline int16_t double_to_q14(double x) {
     double scaled = x * 16384.0;
     int32_t rounded = (int32_t)round(scaled);
-    if (rounded > 16383) rounded = 16383;
-    else if (rounded < -16384) rounded = -16384;
+    /* int16_t range [-32768, 32767] maps to [-2.0, ~2.0) in Q14 */
+    if (rounded > 32767) rounded = 32767;
+    else if (rounded < -32768) rounded = -32768;
     return (int16_t)rounded;
 }
 
@@ -107,6 +110,18 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
         return result;
     }
 
+    /* Pre-allocate scratch buffers for Goertzel recurrence (no alloca in process) */
+    size_t scratch_count = (size_t)state->total_bins * config->channels;
+    state->scratch_s1 = calloc(scratch_count, sizeof(int32_t));
+    state->scratch_s2 = calloc(scratch_count, sizeof(int32_t));
+    if (!state->scratch_s1 || !state->scratch_s2) {
+        free(state->coeffs_q14);
+        free(state->scratch_s1);
+        free(state->scratch_s2);
+        free(state);
+        return result;
+    }
+
     for (uint32_t k = state->alpha_start_bin; k <= state->beta_end_bin; k++) {
         double omega = 2.0 * M_PI * (double)k / (double)state->window_length;
         double coeff = 2.0 * cos(omega);
@@ -131,16 +146,12 @@ void cortex_process(void *handle, const void *input, void *output) {
     const uint32_t C = s->channels;
     const uint32_t total = s->total_bins;
 
-    /*
-     * Scratch arrays for Goertzel recurrence state.
-     * s1[bin][ch] and s2[bin][ch] hold Q15 values in int32_t to prevent
-     * intermediate overflow from the recurrence: s0 = x + coeff*s1 - s2
-     */
-    const size_t scratch_count = total * C;
-    int32_t *s1 = (int32_t *)alloca(scratch_count * sizeof(int32_t));
-    int32_t *s2 = (int32_t *)alloca(scratch_count * sizeof(int32_t));
-    memset(s1, 0, scratch_count * sizeof(int32_t));
-    memset(s2, 0, scratch_count * sizeof(int32_t));
+    /* Use pre-allocated scratch buffers (allocated in cortex_init) */
+    const size_t scratch_bytes = (size_t)total * C * sizeof(int32_t);
+    int32_t *s1 = s->scratch_s1;
+    int32_t *s2 = s->scratch_s2;
+    memset(s1, 0, scratch_bytes);
+    memset(s2, 0, scratch_bytes);
 
     /* Goertzel recurrence: s0 = x[n] + coeff*s1 - s2 */
     for (uint32_t n = 0; n < s->window_length; n++) {
@@ -225,5 +236,7 @@ void cortex_teardown(void *handle) {
     if (!handle) return;
     goertzel_q15_state_t *s = (goertzel_q15_state_t *)handle;
     free(s->coeffs_q14);
+    free(s->scratch_s1);
+    free(s->scratch_s2);
     free(s);
 }

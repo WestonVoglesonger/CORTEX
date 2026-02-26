@@ -147,6 +147,7 @@ int device_comm_execute_window(
     const void *input_samples,
     uint32_t window_samples,
     uint32_t channels,
+    size_t element_size,
     void *output_samples,
     size_t output_buf_size,
     cortex_device_timing_t *out_timing

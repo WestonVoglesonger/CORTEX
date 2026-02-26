@@ -515,6 +515,7 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const void *window_da
             input,
             (uint32_t)scheduler->config.window_length_samples,
             (uint32_t)scheduler->config.channels,
+            scheduler->element_size,
             output,
             entry->output_bytes,
             &device_timing
@@ -730,6 +731,7 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const void *window_dat
             current_input,
             current_W,
             current_C,
+            scheduler->element_size,
             output,
             entry->output_bytes,
             &device_timing

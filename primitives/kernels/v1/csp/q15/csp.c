@@ -52,6 +52,8 @@ cortex_calibration_result_t cortex_calibrate(
  * ============================================================================ */
 
 cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
+    if (!config) return (cortex_init_result_t){NULL, 0, 0, 0};
+
     if (config->abi_version != CORTEX_ABI_VERSION) {
         fprintf(stderr, "[csp@q15] ERROR: ABI mismatch (got %u, want %u)\n",
                 config->abi_version, CORTEX_ABI_VERSION);

@@ -106,6 +106,7 @@ int cortex_protocol_send_frame(
  *   samples:       Sample buffer (W×C elements, dtype-agnostic)
  *   window_samples: Number of samples per channel (W)
  *   channels:      Number of channels (C)
+ *   element_size:  Size of each element in bytes (sizeof(float) for f32, sizeof(int16_t) for Q15)
  *
  * Returns:
  *    0: Success (all chunks sent)
@@ -122,7 +123,8 @@ int cortex_protocol_send_window_chunked(
     uint32_t sequence,
     const void *samples,
     uint32_t window_samples,
-    uint32_t channels
+    uint32_t channels,
+    size_t element_size
 );
 
 /*
@@ -192,7 +194,8 @@ int cortex_protocol_send_result_chunked(
     uint32_t output_channels,
     uint64_t pmu_cycle_count,
     uint64_t pmu_instruction_count,
-    uint64_t pmu_backend_stall_cycles
+    uint64_t pmu_backend_stall_cycles,
+    size_t element_size
 );
 
 /*

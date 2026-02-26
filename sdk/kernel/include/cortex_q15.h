@@ -43,7 +43,7 @@ static inline int16_t q15_sat_sub(int16_t a, int16_t b) {
  * Q15 multiply with round-to-nearest:
  *   result = (a * b + 0x4000) >> 15
  *
- * Product is Q31 (int32_t), shifted right by 15 to produce Q15.
+ * Product is Q30 (int32_t), shifted right by 15 to produce Q15.
  * Rounding bias 0x4000 = 1 << 14 gives round-to-nearest behavior.
  */
 static inline int16_t q15_mul(int16_t a, int16_t b) {
@@ -80,7 +80,7 @@ static inline size_t cortex_dtype_element_size(uint32_t dtype) {
         case 1u: return sizeof(float);    /* CORTEX_DTYPE_FLOAT32 */
         case 2u: return sizeof(int16_t);  /* CORTEX_DTYPE_Q15 */
         case 4u: return sizeof(int8_t);   /* CORTEX_DTYPE_Q7 */
-        default: return sizeof(float);    /* fallback */
+        default: return 0;               /* unknown dtype — caller must check */
     }
 }
 
