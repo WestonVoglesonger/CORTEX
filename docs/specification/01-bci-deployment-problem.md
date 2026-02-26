@@ -62,7 +62,7 @@ Implementation Note: AR efficacy benchmarking is deferred—MOABB [1] serves thi
 | ID | User Story | Required Capabilities | Status |
 | --- | --- | --- | --- |
 | SE-1 | I have an oracle-validated C kernel. I need to characterize its latency distribution on a target device to determine if it meets a real-time deadline at P99. | Device adapters, latency distribution capture, deadline analysis | Partial |
-| SE-2 | I'm choosing between two filter implementations. I need to compare their latency tradeoffs on the target deployment platform. | Comparative benchmarking, diff reports | Partial |
+| SE-2 | I'm choosing between two filter implementations. I need to compare their latency tradeoffs on the target deployment platform. | Comparative benchmarking, diff reports | Exists |
 | SE-3 | I'm porting a float32 kernel to fixed16. I need to validate numerical correctness against the float32 oracle before measuring latency. | Multi-dtype oracle validation, degradation metrics | Partial |
 | SE-4 | I need to characterize how platform state (idle vs. loaded) affects kernel latency on my target device. | Load profiles, platform effect isolation | Partial |
 | SE-5 | My kernel runs slower than expected. I need to determine if it's compute-bound, memory-bound, or platform-effect-bound. | Static analysis, performance counters, platform-state capture, bottleneck attribution | Exists |
@@ -87,8 +87,8 @@ Implementation Note: HE workflows are planned for device adapter expansion. The 
 | Persona | Total | Exists | Partial | Planned | Coverage (Exists + Partial) |
 | --- | --- | --- | --- | --- | --- |
 | Algorithm Researcher | 2 | 0 | 0 | 2 | 0% |
-| Software Engineer | 11 | 7 | 4 | 0 | 100% |
+| Software Engineer | 11 | 8 | 3 | 0 | 100% |
 | Hardware Engineer | 2 | 0 | 0 | 2 | 0% |
-| Total | 15 | 7 | 4 | 4 | 73% |
+| Total | 15 | 8 | 3 | 4 | 73% |
 
 These 15 user stories across three personas represent the chaotic surface of BCI deployment needs. The next section distills the methodological principles that unify them.
