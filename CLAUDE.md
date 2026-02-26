@@ -571,9 +571,10 @@ CLI commands → HarnessRunner (DI: FileSystemService, ProcessExecutor, ConfigLo
 - ✅ Generator dataset support in pipeline mode (SE-8 follow-up)
 - ✅ C engine hardening (chain failure telemetry, cleanup paths)
 - ✅ Removed dead `cortex profile` orchestrator command
+- ✅ SE-7: Tail-latency attribution (3-tier: diagnostic ratios, Mann-Whitney U, Shapley R²)
+- ✅ Statistical confidence intervals (95% CI on mean via t-distribution)
 
 **Next Up:**
-- SE-7: Tail-latency attribution (P99/P50 platform vs algorithmic decomposition)
 - Advanced kernel optimization (SIMD, hardware-specific — due Mar 30)
 - Extended device adapter support (due Apr 15)
 
