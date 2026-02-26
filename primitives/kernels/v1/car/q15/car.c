@@ -70,7 +70,7 @@ void cortex_process(void *handle, const void *input, void *output) {
 
         /* 2) Subtract mean with saturation */
         for (uint32_t c = 0; c < C; ++c) {
-            row_out[c] = q15_sat_sub(row_in[c], mean);
+            row_out[c] = cortex_q15_sat_sub(row_in[c], mean);
         }
     }
 }

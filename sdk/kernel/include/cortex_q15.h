@@ -24,7 +24,7 @@
 #define Q15_SHIFT    15
 
 /* Saturating addition: clamp to [-32768, 32767] */
-static inline int16_t q15_sat_add(int16_t a, int16_t b) {
+static inline int16_t cortex_q15_sat_add(int16_t a, int16_t b) {
     int32_t sum = (int32_t)a + (int32_t)b;
     if (sum > 32767)  return 32767;
     if (sum < -32768) return -32768;
@@ -32,7 +32,7 @@ static inline int16_t q15_sat_add(int16_t a, int16_t b) {
 }
 
 /* Saturating subtraction: clamp to [-32768, 32767] */
-static inline int16_t q15_sat_sub(int16_t a, int16_t b) {
+static inline int16_t cortex_q15_sat_sub(int16_t a, int16_t b) {
     int32_t diff = (int32_t)a - (int32_t)b;
     if (diff > 32767)  return 32767;
     if (diff < -32768) return -32768;
@@ -46,7 +46,7 @@ static inline int16_t q15_sat_sub(int16_t a, int16_t b) {
  * Product is Q30 (int32_t), shifted right by 15 to produce Q15.
  * Rounding bias 0x4000 = 1 << 14 gives round-to-nearest behavior.
  */
-static inline int16_t q15_mul(int16_t a, int16_t b) {
+static inline int16_t cortex_q15_mul(int16_t a, int16_t b) {
     int32_t product = (int32_t)a * (int32_t)b;
     int32_t rounded = (product + (1 << 14)) >> 15;
     if (rounded > 32767)  return 32767;
@@ -55,7 +55,7 @@ static inline int16_t q15_mul(int16_t a, int16_t b) {
 }
 
 /* Convert float [-1.0, 1.0] to Q15. Clamps out-of-range values. */
-static inline int16_t float_to_q15(float x) {
+static inline int16_t cortex_float_to_q15(float x) {
     if (x >= 1.0f)  return Q15_ONE;
     if (x <= -1.0f) return Q15_MINUS_ONE;
     /* Scale by 32768 (not 32767) to match standard Q15 conversion.
@@ -67,33 +67,8 @@ static inline int16_t float_to_q15(float x) {
 }
 
 /* Convert Q15 to float. Result in [-1.0, +0.999969482]. */
-static inline float q15_to_float(int16_t x) {
+static inline float cortex_q15_to_float(int16_t x) {
     return (float)x / 32768.0f;
-}
-
-/*
- * Helper: derive element size from dtype bitmask.
- * Returns sizeof(float) for float32, sizeof(int16_t) for Q15, etc.
- */
-static inline size_t cortex_dtype_element_size(uint32_t dtype) {
-    switch (dtype) {
-        case 1u: return sizeof(float);    /* CORTEX_DTYPE_FLOAT32 */
-        case 2u: return sizeof(int16_t);  /* CORTEX_DTYPE_Q15 */
-        case 4u: return sizeof(int8_t);   /* CORTEX_DTYPE_Q7 */
-        default: return 0;               /* unknown dtype — caller must check */
-    }
-}
-
-/*
- * Helper: dtype bitmask to string name.
- */
-static inline const char *cortex_dtype_name(uint32_t dtype) {
-    switch (dtype) {
-        case 1u: return "float32";
-        case 2u: return "q15";
-        case 4u: return "q7";
-        default: return "unknown";
-    }
 }
 
 #endif /* CORTEX_Q15_H */

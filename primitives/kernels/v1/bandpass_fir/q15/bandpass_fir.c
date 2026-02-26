@@ -191,7 +191,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
 
     /* Quantize coefficients to Q15 at init time */
     for (int i = 0; i < FIR_NUMTAPS; i++) {
-        state->coeff_q15[i] = float_to_q15((float)FIR_COEFFICIENTS[i]);
+        state->coeff_q15[i] = cortex_float_to_q15((float)FIR_COEFFICIENTS[i]);
     }
 
     result.handle = state;

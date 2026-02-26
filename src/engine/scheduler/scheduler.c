@@ -3,7 +3,6 @@
 #endif
 
 #include "scheduler.h"
-#include "cortex_q15.h"
 
 #include <errno.h>
 #include <pthread.h>

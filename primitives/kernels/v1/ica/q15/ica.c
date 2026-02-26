@@ -92,10 +92,10 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     const float *f32_W = (const float *)(bytes + sizeof(uint32_t) + C * sizeof(float));
 
     for (uint32_t i = 0; i < C; i++) {
-        state->mean_q15[i] = float_to_q15(f32_mean[i]);
+        state->mean_q15[i] = cortex_float_to_q15(f32_mean[i]);
     }
     for (uint32_t i = 0; i < C * C; i++) {
-        state->W_unmix_q15[i] = float_to_q15(f32_W[i]);
+        state->W_unmix_q15[i] = cortex_float_to_q15(f32_W[i]);
     }
 
     fprintf(stderr, "[ica@q15] Loaded: C=%u (mean + unmixing matrix quantized to Q15)\n", C);
@@ -124,7 +124,7 @@ void cortex_process(void *handle, const void *input, void *output) {
             int64_t acc = 0;
             for (uint32_t in_c = 0; in_c < C; in_c++) {
                 /* Subtract mean with saturation */
-                int16_t centered = q15_sat_sub(x[t * C + in_c], state->mean_q15[in_c]);
+                int16_t centered = cortex_q15_sat_sub(x[t * C + in_c], state->mean_q15[in_c]);
                 /* Q15 × Q15 → Q30, accumulate in int64 */
                 acc += (int64_t)centered * (int64_t)state->W_unmix_q15[out_c * C + in_c];
             }

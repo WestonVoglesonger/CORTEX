@@ -81,6 +81,7 @@ typedef struct {
     void *kernel_handle;         /* Kernel instance from init() */
     uint32_t output_window_length_samples;  /* Actual output shape */
     uint32_t output_channels;
+    size_t elem_size;            /* Element size in bytes (detected from dtype) */
 } kernel_plugin_t;
 
 /* Generate random boot ID */
@@ -229,6 +230,11 @@ static int load_kernel_plugin(
 
     void *kernel_handle = result.handle;
 
+    /* Derive element size from detected dtype */
+    size_t detected_elem_size = sizeof(float);
+    if (dtype == 2) detected_elem_size = sizeof(int16_t);
+    else if (dtype == 4) detected_elem_size = sizeof(int8_t);
+
     /* Populate output */
     out_plugin->dl_handle = dl;
     out_plugin->init = init_fn;
@@ -237,6 +243,7 @@ static int load_kernel_plugin(
     out_plugin->kernel_handle = kernel_handle;
     out_plugin->output_window_length_samples = result.output_window_length_samples;
     out_plugin->output_channels = result.output_channels;
+    out_plugin->elem_size = detected_elem_size;
 
     return 0;
 }
@@ -271,7 +278,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     float *output_buf = NULL;
     kernel_plugin_t kernel_plugin = {0};
     int pmu_initialized = 0;
-    size_t elem_size = sizeof(float);  /* Updated after kernel load based on dtype */
+    size_t elem_size = sizeof(float);  /* Updated from kernel_plugin.elem_size after load */
 
     /* 1. Send HELLO */
     if (cortex_adapter_send_hello(tp, boot_id, "native", "noop@f32", 1024, 64) < 0) {
@@ -281,7 +288,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 
     /* 2. Receive CONFIG */
     uint32_t sample_rate_hz, window_samples, hop_samples, channels;
-    char plugin_name[64], plugin_params[256];
+    char plugin_name[256], plugin_params[256];
     uint32_t calibration_state_size = 0;
 
     if (cortex_adapter_recv_config(tp, &session_id, &sample_rate_hz, &window_samples,
@@ -316,12 +323,8 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     /* 5. Initialize PMU counters (per-thread, measured around kernel process()) */
     pmu_initialized = (cortex_inscount_init() == 0) ? 1 : 0;
 
-    /* 6. Allocate window buffers (dtype-aware sizing) */
-    if (strstr(plugin_name, "/q15") || strstr(plugin_name, "@q15")) {
-        elem_size = sizeof(int16_t);
-    } else if (strstr(plugin_name, "/q7") || strstr(plugin_name, "@q7")) {
-        elem_size = sizeof(int8_t);
-    }
+    /* 6. Allocate window buffers (dtype-aware sizing from kernel load) */
+    elem_size = kernel_plugin.elem_size;
     window_buf = (float *)malloc(window_samples * channels * elem_size);
 
     /* Allocate output buffer based on kernel's actual output shape */
@@ -333,10 +336,10 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 
         /* Send ERROR frame to harness */
         char error_msg[256];
-        size_t window_buf_size = window_samples * channels * sizeof(float);
+        size_t window_buf_size = window_samples * channels * elem_size;
         snprintf(error_msg, sizeof(error_msg),
                  "Failed to allocate window buffers (window: %zu bytes, output: %zu bytes)",
-                 window_buf_size, output_samples * sizeof(float));
+                 window_buf_size, output_samples * elem_size);
         cortex_adapter_send_error(tp, CORTEX_ERROR_KERNEL_INIT_FAILED, error_msg);
 
         goto cleanup;

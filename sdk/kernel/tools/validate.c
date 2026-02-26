@@ -345,7 +345,7 @@ static tolerance_t load_tolerances(const char *kernel_name, int is_q15) {
   return tol;
 }
 
-/* Convert float32 array to Q15 (int16_t) — matches cortex_q15.h float_to_q15() */
+/* Convert float32 array to Q15 (int16_t) — matches cortex_q15.h cortex_float_to_q15() */
 static void convert_f32_to_q15(const float *in, int16_t *out, size_t count) {
   for (size_t i = 0; i < count; i++) {
     float clamped = fmaxf(-1.0f, fminf(1.0f, in[i]));

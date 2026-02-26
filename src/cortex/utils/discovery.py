@@ -57,7 +57,7 @@ def discover_kernels() -> List[Dict]:
                             spec = yaml.safe_load(f)
                             if 'kernel' in spec and 'version' in spec['kernel']:
                                 spec_version = spec['kernel']['version']
-                    except:
+                    except (yaml.YAMLError, IOError):
                         pass
 
                 kernels.append({
@@ -72,16 +72,27 @@ def discover_kernels() -> List[Dict]:
 
     return kernels
 
-def find_kernel(kernel_name: str) -> Optional[Dict]:
-    """Find a specific kernel by name (handles v1/v2 variants)"""
-    kernels = discover_kernels()
+def find_kernel(kernel_name: str, dtype: Optional[str] = None) -> Optional[Dict]:
+    """Find a specific kernel by name (handles v1/v2 variants and dtype selection).
 
-    # Exact match first
+    Args:
+        kernel_name: Kernel name (e.g., "car", "noop")
+        dtype: Optional dtype filter (e.g., "f32", "q15"). Defaults to "f32"
+               when multiple dtypes exist for the same kernel.
+    """
+    kernels = discover_kernels()
+    target_dtype = dtype or "f32"
+
+    # Exact match with dtype preference
     for k in kernels:
-        if k['display_name'] == kernel_name or k['name'] == kernel_name:
+        if (k['display_name'] == kernel_name or k['name'] == kernel_name) and k['dtype'] == target_dtype:
             return k
 
-    # Try matching just the base name (prefer v1)
+    # If explicit dtype was requested and not found, don't fall back
+    if dtype is not None:
+        return None
+
+    # No explicit dtype: try any dtype match (prefer v1)
     for k in kernels:
         if k['name'] == kernel_name and k['version'] == 'v1':
             return k

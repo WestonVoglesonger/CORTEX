@@ -100,7 +100,7 @@ cortex_init_result_t cortex_init(const cortex_plugin_config_t *config) {
     /* Convert float32 filters to Q15 */
     const float *f32_filters = (const float *)bytes;
     for (uint32_t i = 0; i < C * n_components; i++) {
-        state->W_filters_q15[i] = float_to_q15(f32_filters[i]);
+        state->W_filters_q15[i] = cortex_float_to_q15(f32_filters[i]);
     }
 
     fprintf(stderr, "[csp@q15] Loaded: C=%u, n_components=%u (filters quantized to Q15)\n",
