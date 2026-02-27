@@ -1,6 +1,6 @@
 """Generate synthetic dataset primitive instances
 
-Creates self-describing dataset directories with spec.yaml and binary data.
+Reads a spec.yaml with generation_parameters and produces binary data alongside it.
 """
 import sys
 from pathlib import Path
@@ -12,61 +12,9 @@ import shutil
 def setup_parser(parser):
     """Setup argument parser for generate command"""
     parser.add_argument(
-        '--signal',
-        default='pink_noise',
-        choices=['pink_noise', 'sine_wave'],
-        help='Signal type (default: pink_noise)'
-    )
-    parser.add_argument(
-        '--channels',
-        type=int,
+        '--spec',
         required=True,
-        help='Number of channels'
-    )
-    parser.add_argument(
-        '--duration',
-        type=float,
-        required=True,
-        help='Duration in seconds'
-    )
-    parser.add_argument(
-        '--output-dir',
-        required=True,
-        help='Output directory (creates dataset primitive instance)'
-    )
-    parser.add_argument(
-        '--window-length',
-        type=int,
-        default=160,
-        help='Window length in samples (default: 160)'
-    )
-    parser.add_argument(
-        '--sample-rate',
-        type=float,
-        default=160.0,
-        help='Sample rate in Hz (default: 160.0)'
-    )
-    parser.add_argument(
-        '--seed',
-        type=int,
-        default=42,
-        help='Random seed for reproducibility (default: 42)'
-    )
-    parser.add_argument(
-        '--amplitude',
-        type=float,
-        default=100.0,
-        help='Amplitude in µV RMS (default: 100.0)'
-    )
-    parser.add_argument(
-        '--frequency',
-        type=float,
-        help='Frequency in Hz (required for sine signal)'
-    )
-    parser.add_argument(
-        '--overwrite',
-        action='store_true',
-        help='Overwrite existing dataset directory'
+        help='Path to spec.yaml with generation_parameters'
     )
 
 
@@ -76,38 +24,69 @@ def execute(args):
     print("CORTEX Synthetic Dataset Generator")
     print("=" * 80)
 
-    # Validate sine requires frequency
-    if args.signal == 'sine_wave' and args.frequency is None:
-        print("\n✗ --frequency required for sine_wave signal")
+    # Read spec.yaml
+    spec_path = Path(args.spec)
+    if not spec_path.exists():
+        print(f"\n✗ Spec not found: {args.spec}")
         return 1
 
-    # Check output directory
-    output_dir = Path(args.output_dir)
-    if output_dir.exists():
-        if not args.overwrite:
-            print(f"\n✗ Directory exists: {args.output_dir}")
-            print("  Use --overwrite to replace")
-            return 1
-        print(f"\n⚠ Overwriting existing directory: {args.output_dir}")
-        shutil.rmtree(output_dir)
+    try:
+        with open(spec_path) as f:
+            spec = yaml.safe_load(f)
+    except Exception as e:
+        print(f"\n✗ Failed to parse spec: {e}")
+        return 1
 
-    # Create output directory
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Validate required sections
+    fmt = spec.get('format')
+    gen_params = spec.get('generation_parameters')
 
-    print(f"\nSignal:       {args.signal}")
-    print(f"Channels:     {args.channels}")
-    print(f"Duration:     {args.duration}s")
-    print(f"Sample Rate:  {args.sample_rate} Hz")
-    print(f"Seed:         {args.seed}")
-    if args.signal == 'sine_wave':
-        print(f"Frequency:    {args.frequency} Hz")
+    if not fmt:
+        print("\n✗ Spec missing 'format' section")
+        return 1
+    if not gen_params:
+        print("\n✗ Spec missing 'generation_parameters' section")
+        return 1
+
+    # Extract generation inputs from spec
+    channels = fmt.get('channels')
+    sample_rate = fmt.get('sample_rate_hz', 160.0)
+    window_length = fmt.get('window_length', 160)
+    signal_type = gen_params.get('signal_type')
+    duration = gen_params.get('duration_s')
+    seed = gen_params.get('seed', 42)
+
+    if not channels:
+        print("\n✗ format.channels is required")
+        return 1
+    if not signal_type:
+        print("\n✗ generation_parameters.signal_type is required")
+        return 1
+    if not duration:
+        print("\n✗ generation_parameters.duration_s is required")
+        return 1
+
+    # Validate sine requires frequency
+    if signal_type == 'sine_wave' and 'frequency_hz' not in gen_params:
+        print("\n✗ generation_parameters.frequency_hz required for sine_wave signal")
+        return 1
+
+    output_dir = spec_path.parent
+
+    print(f"\nSpec:         {args.spec}")
+    print(f"Signal:       {signal_type}")
+    print(f"Channels:     {channels}")
+    print(f"Duration:     {duration}s")
+    print(f"Sample Rate:  {sample_rate} Hz")
+    print(f"Seed:         {seed}")
+    if signal_type == 'sine_wave':
+        print(f"Frequency:    {gen_params.get('frequency_hz')} Hz")
     else:
-        print(f"Amplitude:    {args.amplitude} µV RMS")
+        print(f"Amplitude:    {gen_params.get('amplitude_uv_rms', 100.0)} µV RMS")
     print()
 
     # Import generator
     try:
-        # Get absolute path to generator module
         generator_path = Path(__file__).resolve().parents[3] / 'primitives' / 'datasets' / 'v1' / 'synthetic'
         if not generator_path.exists():
             raise ImportError(f"Generator path does not exist: {generator_path}")
@@ -118,110 +97,71 @@ def execute(args):
         print("  Ensure primitives/datasets/v1/synthetic/generator.py exists")
         return 1
 
-    # Build generation parameters
-    params = {
-        'seed': args.seed
-    }
-
-    if args.signal == 'sine_wave':
-        params['frequency_hz'] = args.frequency
-        params['amplitude_peak'] = args.amplitude
-    else:  # pink_noise
-        params['amplitude_uv_rms'] = args.amplitude
+    # Build params for generator (pass through everything from generation_parameters)
+    params = {k: v for k, v in gen_params.items() if k not in ('signal_type', 'duration_s')}
 
     # Generate data
     print("Generating data...")
     try:
         gen = SyntheticGenerator()
         result = gen.generate(
-            signal_type=args.signal,
-            channels=args.channels,
-            sample_rate_hz=int(args.sample_rate),
-            duration_s=args.duration,
+            signal_type=signal_type,
+            channels=channels,
+            sample_rate_hz=int(sample_rate),
+            duration_s=duration,
             params=params
         )
     except Exception as e:
         print(f"\n✗ Generation failed: {e}")
-        shutil.rmtree(output_dir)  # Clean up
         return 1
 
-    # Handle result (ndarray or file path for high-channel)
+    # Write data file next to spec.yaml
     data_path = output_dir / "data.float32"
 
     if isinstance(result, str):
-        # High-channel mode returned temp file - move it
         shutil.move(result, data_path)
-        file_size_bytes = data_path.stat().st_size
     else:
-        # Low-channel mode returned ndarray - write it
         import numpy as np
         result.tofile(data_path)
-        file_size_bytes = data_path.stat().st_size
 
-    # Calculate actual samples
-    samples_per_channel = int(args.duration * args.sample_rate)
+    file_size_bytes = data_path.stat().st_size
+    samples_per_channel = int(duration * sample_rate)
 
-    # Build reproducibility command
-    repro_cmd = (
-        f"cortex generate --signal {args.signal} "
-        f"--channels {args.channels} "
-        f"--duration {args.duration} "
-        f"--sample-rate {args.sample_rate} "
-        f"--seed {args.seed} "
-    )
-    if args.signal == 'sine_wave':
-        repro_cmd += f"--frequency {args.frequency} "
-    repro_cmd += f"--output-dir {args.output_dir}"
+    # Backfill computed fields into spec
+    if 'dataset' not in spec:
+        spec['dataset'] = {}
+    spec['dataset']['type'] = 'generated'
+    spec['dataset']['generator_primitive'] = 'primitives/datasets/v1/synthetic'
+    spec['dataset']['generation_timestamp'] = datetime.utcnow().isoformat() + 'Z'
 
-    # Build spec.yaml
-    spec = {
-        'dataset': {
-            'name': f"synthetic-{args.signal}-{args.channels}ch",
-            'version': 1,
-            'type': 'generated',
-            'description': f"Synthetic {args.signal} for {args.channels}-channel calibration",
-            'generator_primitive': 'primitives/datasets/v1/synthetic',
-            'generator_version': 1,
-            'generation_timestamp': datetime.utcnow().isoformat() + 'Z'
-        },
-        'format': {
-            'type': 'float32',
-            'channels': args.channels,
-            'sample_rate_hz': args.sample_rate,
-            'window_length': args.window_length,
-            'layout': 'interleaved',
-            'endian': 'little'
-        },
-        'recordings': [{
-            'id': 'data',
-            'path': 'data.float32',
-            'duration_seconds': args.duration,
-            'samples_per_channel': samples_per_channel,
-            'units': 'microvolts (µV)'
-        }],
-        'generation_parameters': params.copy(),
-        'reproducibility': {
-            'command': repro_cmd,
-            'notes': 'Reproducible with same seed and parameters'
-        }
-    }
-    spec['generation_parameters']['signal_type'] = args.signal
-    spec['generation_parameters']['duration_s'] = args.duration
+    # Ensure format defaults are written
+    fmt['type'] = 'float32'
+    fmt['sample_rate_hz'] = sample_rate
+    fmt['window_length'] = window_length
+    fmt['layout'] = 'interleaved'
+    fmt['endian'] = 'little'
 
-    # Write spec.yaml
-    spec_path = output_dir / "spec.yaml"
+    spec['recordings'] = [{
+        'id': 'data',
+        'path': 'data.float32',
+        'duration_seconds': duration,
+        'samples_per_channel': samples_per_channel,
+        'units': 'microvolts (µV)'
+    }]
+
+    # Write updated spec.yaml
     with open(spec_path, 'w') as f:
         yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
 
     # Print success
     file_size_mb = file_size_bytes / (1024 * 1024)
-    print(f"✓ Generated dataset primitive: {args.output_dir}/")
+    print(f"✓ Generated dataset: {output_dir}/")
     print(f"  Files:        spec.yaml, data.float32")
     print(f"  Data Size:    {file_size_mb:.2f} MB ({file_size_bytes:,} bytes)")
     print(f"  Samples:      {samples_per_channel:,} per channel")
     print()
     print("Usage:")
-    print(f"  cortex calibrate --kernel csp --dataset {args.output_dir} --output state.cortex_state")
+    print(f"  cortex calibrate --kernel csp --dataset {output_dir} --output state.cortex_state")
     print("=" * 80)
 
     return 0
