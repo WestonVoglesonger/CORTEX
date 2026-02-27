@@ -122,7 +122,13 @@ def setup_parser(parser):
         help='Output path for calibration state file (.cortex_state)'
     )
     parser.add_argument(
+        '--labels',
+        help='Label pattern for supervised kernels (e.g., "125x0,124x1"). '
+             'Read from spec.yaml label_pattern if available.'
+    )
+    parser.add_argument(
         '--dtype',
+        choices=['f32', 'q15'],
         default='f32',
         help='Data type (default: f32)'
     )
@@ -146,19 +152,35 @@ def execute(args):
         print(f"\n✗ Dataset error: {e}")
         return 1
 
+    # Warn if using defaults for raw .float32 (no spec.yaml)
+    if spec.get('channels') is None:
+        print("\nWarning: No spec.yaml found, using defaults (C=64, W=160, Fs=160Hz)")
+        print("  For accurate calibration, use a dataset directory with spec.yaml")
+
     # Use spec values
-    channels = spec.get('channels', 64)
-    window_length = spec.get('window_length', 160)
-    sample_rate = spec.get('sample_rate_hz', 160)
+    channels = spec.get('channels') or 64
+    window_length = spec.get('window_length') or 160
+    sample_rate = spec.get('sample_rate_hz') or 160
 
     # Derive window count and labels from dataset
+    # Priority: CLI --labels > spec.yaml label_pattern > file-size fallback
     labels_str = None
-    label_pattern = spec.get('label_pattern')
+    label_pattern = args.labels or spec.get('label_pattern')
     if label_pattern:
         try:
             labels_str, num_windows = _parse_label_pattern(label_pattern)
         except ValueError as e:
             print(f"\n✗ Label parsing error: {e}")
+            return 1
+
+        # Validate label count against actual file size
+        file_size = spec['data_path'].stat().st_size
+        samples_per_channel = file_size // (channels * 4)
+        max_windows = samples_per_channel // window_length
+        if num_windows > max_windows:
+            print(f"\n✗ Label pattern specifies {num_windows} windows, "
+                  f"but dataset only has {max_windows} windows "
+                  f"({file_size} bytes / {channels}ch / 4B / W={window_length})")
             return 1
     else:
         # Compute from file size: total_samples / window_length

@@ -1,8 +1,9 @@
 """Tests for calibrate command helpers."""
+import argparse
 import pytest
 from pathlib import Path
 
-from cortex.commands.calibrate import _parse_label_pattern, _read_dataset_spec
+from cortex.commands.calibrate import _parse_label_pattern, _read_dataset_spec, setup_parser
 
 
 class TestParseLabelPattern:
@@ -138,3 +139,45 @@ class TestReadDatasetSpec:
 
         assert result['channels'] is None
         assert result['window_length'] == 160
+
+
+class TestCalibrateParser:
+    """Tests for calibrate command parser."""
+
+    def test_dtype_choices_enforced(self):
+        """--dtype only accepts f32 and q15."""
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args([
+            '--kernel', 'csp', '--dataset', '/tmp/ds', '--output', 'out.cortex_state',
+            '--dtype', 'q15',
+        ])
+        assert args.dtype == 'q15'
+
+        with pytest.raises(SystemExit):
+            parser.parse_args([
+                '--kernel', 'csp', '--dataset', '/tmp/ds', '--output', 'out.cortex_state',
+                '--dtype', 'invalid',
+            ])
+
+    def test_labels_flag_optional(self):
+        """--labels is optional, defaults to None."""
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args([
+            '--kernel', 'csp', '--dataset', '/tmp/ds', '--output', 'out.cortex_state',
+        ])
+        assert args.labels is None
+
+    def test_labels_flag_accepted(self):
+        """--labels accepts a pattern string."""
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args([
+            '--kernel', 'csp', '--dataset', '/tmp/ds', '--output', 'out.cortex_state',
+            '--labels', '125x0,124x1',
+        ])
+        assert args.labels == '125x0,124x1'

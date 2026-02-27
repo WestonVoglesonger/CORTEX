@@ -78,8 +78,8 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--device',
-        help='Device connection string (auto-deploy or manual). '
-             'Examples: m1 | rpi4 | nvidia@192.168.1.123 | tcp://192.168.1.123:9000'
+        help='Device primitive or deployment string. '
+             'Examples: m1-macos | rpi4 | nvidia@192.168.1.123 | tcp://192.168.1.123:9000'
     )
 
 
