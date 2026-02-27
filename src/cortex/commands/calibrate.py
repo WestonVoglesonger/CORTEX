@@ -59,19 +59,18 @@ def _read_dataset_spec(dataset_path):
         raise ValueError(f"Invalid dataset: {dataset_path} (expected directory with spec.yaml or .float32 file)")
 
 
-def _parse_label_pattern(pattern, num_windows):
+def _parse_label_pattern(pattern):
     """
-    Parse label pattern like '100x0,100x1' into comma-separated string.
+    Parse label pattern like '100x0,100x1' into (labels_str, num_windows).
 
     Args:
         pattern: Pattern like "100x0,100x1" (100 class-0, 100 class-1)
-        num_windows: Expected total windows
 
     Returns:
-        str: "0,0,0,...,1,1,1"
+        tuple: (comma-separated labels string, total window count)
 
     Raises:
-        ValueError: If pattern is malformed or count doesn't match windows
+        ValueError: If pattern is malformed
     """
     parts = pattern.split(',')
     labels = []
@@ -100,13 +99,7 @@ def _parse_label_pattern(pattern, num_windows):
         labels.extend([str(label)] * count)
         total += count
 
-    if total != num_windows:
-        raise ValueError(
-            f"Label count mismatch: pattern specifies {total} windows, but --windows is {num_windows}\n"
-            f"  Adjust pattern or --windows to match"
-        )
-
-    return ','.join(labels)
+    return ','.join(labels), total
 
 
 def setup_parser(parser):
@@ -122,12 +115,6 @@ def setup_parser(parser):
         help='Path to calibration dataset (directory with spec.yaml or .float32 file)'
     )
     parser.add_argument(
-        '--windows',
-        type=int,
-        default=500,
-        help='Number of windows to use for calibration (default: 500)'
-    )
-    parser.add_argument(
         '--output',
         required=True,
         help='Output path for calibration state file (.cortex_state)'
@@ -136,21 +123,6 @@ def setup_parser(parser):
         '--dtype',
         default='f32',
         help='Data type (default: f32)'
-    )
-    parser.add_argument(
-        '--channels',
-        type=int,
-        help='Override channels from dataset spec (optional)'
-    )
-    parser.add_argument(
-        '--window-length',
-        type=int,
-        help='Override window length from dataset spec (optional)'
-    )
-    parser.add_argument(
-        '--sample-rate',
-        type=float,
-        help='Override sample rate from dataset spec (optional)'
     )
     parser.add_argument(
         '--verbose', '-v',
@@ -172,20 +144,25 @@ def execute(args):
         print(f"\n✗ Dataset error: {e}")
         return 1
 
-    # Use spec values, allow CLI overrides
-    channels = args.channels if args.channels is not None else spec.get('channels', 64)
-    window_length = args.window_length if args.window_length is not None else spec.get('window_length', 160)
-    sample_rate = args.sample_rate if args.sample_rate is not None else spec.get('sample_rate_hz', 160)
+    # Use spec values
+    channels = spec.get('channels', 64)
+    window_length = spec.get('window_length', 160)
+    sample_rate = spec.get('sample_rate_hz', 160)
 
-    # Parse labels from dataset spec if present
+    # Derive window count and labels from dataset
     labels_str = None
     label_pattern = spec.get('label_pattern')
     if label_pattern:
         try:
-            labels_str = _parse_label_pattern(label_pattern, args.windows)
+            labels_str, num_windows = _parse_label_pattern(label_pattern)
         except ValueError as e:
             print(f"\n✗ Label parsing error: {e}")
             return 1
+    else:
+        # Compute from file size: total_samples / window_length
+        file_size = spec['data_path'].stat().st_size
+        samples_per_channel = file_size // (channels * 4)  # 4 bytes per float32
+        num_windows = samples_per_channel // window_length
 
     # Validate output path
     output_path = Path(args.output)
@@ -210,7 +187,7 @@ def execute(args):
     if spec.get('channels'):
         print(f"  (from spec: {spec['channels']}ch @ {spec['sample_rate_hz']}Hz, W={spec['window_length']})")
     print(f"Config:       C={channels}, W={window_length}, Fs={sample_rate}Hz")
-    print(f"Windows:      {args.windows}")
+    print(f"Windows:      {num_windows}")
     if labels_str:
         # Show abbreviated labels
         label_preview = labels_str if len(labels_str) < 60 else labels_str[:57] + "..."
@@ -223,7 +200,7 @@ def execute(args):
         str(calib_binary),
         '--plugin', spec_uri,
         '--dataset', str(spec['data_path']),
-        '--windows', str(args.windows),
+        '--windows', str(num_windows),
         '--channels', str(channels),
         '--window-length', str(window_length),
         '--sample-rate', str(int(sample_rate)),
