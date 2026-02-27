@@ -208,8 +208,8 @@ def execute(args):
     print(f"\nKernel:       {args.kernel}")
     print(f"Spec URI:     {spec_uri}")
     print(f"Dataset:      {args.dataset}")
-    if spec.get('channels'):
-        print(f"  (from spec: {spec['channels']}ch @ {spec['sample_rate_hz']}Hz, W={spec['window_length']})")
+    if spec.get('channels') is not None:
+        print(f"  (from spec: {channels}ch @ {sample_rate}Hz, W={window_length})")
     print(f"Config:       C={channels}, W={window_length}, Fs={sample_rate}Hz")
     print(f"Windows:      {num_windows}")
     if labels_str:
