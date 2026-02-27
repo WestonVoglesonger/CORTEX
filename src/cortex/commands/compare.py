@@ -30,18 +30,6 @@ def setup_parser(parser):
         default=0.05,
         help='Significance level for statistical tests (default: 0.05)'
     )
-    parser.add_argument(
-        '--format', '-f',
-        choices=['png', 'pdf', 'svg'],
-        default='png',
-        help='Output format for plots (default: png)'
-    )
-    parser.add_argument(
-        '--telemetry-format', '-t',
-        choices=['ndjson', 'csv', 'auto'],
-        default='ndjson',
-        help='Preferred telemetry format to load (default: ndjson)'
-    )
 
 
 def _resolve_run_dir(name_or_path):
@@ -86,10 +74,10 @@ def execute(args):
     analyzer = TelemetryAnalyzer(filesystem=filesystem, logger=logger)
 
     # Load both runs
-    df_baseline = analyzer.load_telemetry(str(baseline_dir), prefer_format=args.telemetry_format)
+    df_baseline = analyzer.load_telemetry(str(baseline_dir), prefer_format='ndjson')
     analyzer.system_info = {}  # Reset for candidate
 
-    df_candidate = analyzer.load_telemetry(str(candidate_dir), prefer_format=args.telemetry_format)
+    df_candidate = analyzer.load_telemetry(str(candidate_dir), prefer_format='ndjson')
 
     if df_baseline is None or df_baseline.empty:
         print("Error: No telemetry data in baseline run")
@@ -110,14 +98,14 @@ def execute(args):
     # Generate CDF overlay
     try:
         _generate_cdf_overlay(analyzer, df_baseline, df_candidate,
-                              f"{output_dir}/cdf_comparison.{args.format}", args.format)
+                              f"{output_dir}/cdf_comparison.png", 'png')
     except Exception as e:
         logger.warning(f"Failed to generate CDF overlay: {e}")
 
     # Generate comparison bar chart
     try:
-        _generate_comparison_chart(comparison, f"{output_dir}/latency_comparison.{args.format}",
-                                   args.format, filesystem)
+        _generate_comparison_chart(comparison, f"{output_dir}/latency_comparison.png",
+                                   'png', filesystem)
     except Exception as e:
         logger.warning(f"Failed to generate comparison chart: {e}")
 

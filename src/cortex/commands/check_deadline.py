@@ -23,12 +23,6 @@ def setup_parser(parser):
         default='table',
         help='Output format (default: table)'
     )
-    parser.add_argument(
-        '--telemetry-format', '-t',
-        choices=['ndjson', 'csv', 'auto'],
-        default='ndjson',
-        help='Preferred telemetry format to load (default: ndjson)'
-    )
 
 
 def execute(args):
@@ -56,7 +50,7 @@ def execute(args):
     analyzer = TelemetryAnalyzer(filesystem=filesystem, logger=logger)
 
     # Load telemetry
-    df = analyzer.load_telemetry(str(run_dir), prefer_format=args.telemetry_format)
+    df = analyzer.load_telemetry(str(run_dir), prefer_format='ndjson')
     if df is None or df.empty:
         print("Error: No telemetry data found")
         return 1

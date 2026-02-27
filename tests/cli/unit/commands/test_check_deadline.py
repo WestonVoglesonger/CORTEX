@@ -17,7 +17,6 @@ class TestSetupParser:
         args = parser.parse_args([])
         assert args.threshold == 1.0
         assert args.format == 'table'
-        assert args.telemetry_format == 'ndjson'
         assert args.run_name is None
 
     def test_custom_args(self):
@@ -36,7 +35,6 @@ class TestExecute:
             'run_name': 'test-run',
             'threshold': 1.0,
             'format': 'table',
-            'telemetry_format': 'ndjson',
         }
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)
