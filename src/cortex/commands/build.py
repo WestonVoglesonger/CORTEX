@@ -1,4 +1,5 @@
 """Build command"""
+import os
 import subprocess
 import sys
 
@@ -19,12 +20,7 @@ def setup_parser(parser):
         action='store_true',
         help='Only build kernel plugins'
     )
-    parser.add_argument(
-        '--jobs', '-j',
-        type=int,
-        default=None,
-        help='Number of parallel jobs (default: auto)'
-    )
+
 
 def execute(args):
     """Execute build command"""
@@ -52,10 +48,8 @@ def execute(args):
     else:
         target = 'all'
 
-    # Build make command
-    cmd = ['make', target]
-    if args.jobs:
-        cmd.extend(['-j', str(args.jobs)])
+    # Build make command — always parallelize
+    cmd = ['make', target, f'-j{os.cpu_count() or 1}']
 
     # Execute build
     result = subprocess.run(

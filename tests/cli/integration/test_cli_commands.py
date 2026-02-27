@@ -28,24 +28,21 @@ class TestBuildCommand:
         assert hasattr(args, 'clean')
         assert hasattr(args, 'verbose')
         assert hasattr(args, 'kernels_only')
-        assert hasattr(args, 'jobs')
 
         assert args.clean is False
         assert args.verbose is False
         assert args.kernels_only is False
-        assert args.jobs is None
 
     def test_parser_accepts_all_arguments(self):
         """Test that parser correctly parses all arguments."""
         parser = argparse.ArgumentParser()
         build.setup_parser(parser)
 
-        args = parser.parse_args(['--clean', '--verbose', '--kernels-only', '--jobs', '8'])
+        args = parser.parse_args(['--clean', '--verbose', '--kernels-only'])
 
         assert args.clean is True
         assert args.verbose is True
         assert args.kernels_only is True
-        assert args.jobs == 8
 
     def test_execute_with_mock_subprocess(self):
         """Test execute command with mocked subprocess."""
@@ -53,7 +50,6 @@ class TestBuildCommand:
             clean=False,
             verbose=False,
             kernels_only=False,
-            jobs=None
         )
 
         # Mock subprocess.run
