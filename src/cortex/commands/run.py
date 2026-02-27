@@ -94,6 +94,17 @@ def setup_parser(parser):
         help='Override warmup duration (seconds)'
     )
     parser.add_argument(
+        '--dtype',
+        choices=['f32', 'q15'],
+        default='f32',
+        help='Data type variant to run (default: f32)'
+    )
+    parser.add_argument(
+        '--load-profile',
+        choices=['idle', 'medium', 'heavy'],
+        help='CPU load profile for DVFS control (default: from config)'
+    )
+    parser.add_argument(
         '--state',
         help='Path to calibration state file (.cortex_state) for trainable kernels'
     )
@@ -336,13 +347,19 @@ def execute(args):
 
     # Single kernel mode
     if args.kernel:
+        # Resolve kernel name with dtype qualifier
+        kernel_qualified = args.kernel
+        if args.dtype != 'f32':
+            kernel_qualified = f"{args.kernel}/{args.dtype}"
+
         def run_fn(transport_uri):
             return runner.run_single_kernel(
-                args.kernel, run_name=run_name,
+                kernel_qualified, run_name=run_name,
                 duration=args.duration, repeats=args.repeats,
                 warmup=args.warmup, calibration_state=args.state,
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
+                load_profile=args.load_profile,
             )
         return _run_with_deploy(deploy_string, run_fn, args.verbose)
 
@@ -355,6 +372,7 @@ def execute(args):
                 warmup=args.warmup, calibration_state=args.state,
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
+                load_profile=args.load_profile,
             )
         return _run_with_deploy(deploy_string, run_fn, args.verbose)
 

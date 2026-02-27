@@ -386,18 +386,20 @@ class HarnessRunner:
         calibration_state: Optional[str] = None,
         verbose: bool = False,
         transport_uri: Optional[str] = None,
-        device_spec: Optional[dict] = None
+        device_spec: Optional[dict] = None,
+        load_profile: Optional[str] = None
     ) -> Optional[str]:
         """Run benchmark for a single kernel using temp YAML generation.
 
         Args:
-            kernel_name: Name of kernel to benchmark
+            kernel_name: Name of kernel to benchmark (e.g., 'car' or 'car/q15')
             run_name: Name of the run for organizing results
             duration: Override duration (seconds)
             repeats: Override number of repeats
             warmup: Override warmup duration (seconds)
             calibration_state: Path to .cortex_state file for trainable kernels
             verbose: Show verbose output
+            load_profile: CPU load profile ('idle', 'medium', 'heavy')
 
         Returns:
             Run directory path if successful, None otherwise
@@ -415,7 +417,8 @@ class HarnessRunner:
             duration=duration,
             repeats=repeats,
             warmup=warmup,
-            calibration_state=calibration_state
+            calibration_state=calibration_state,
+            load_profile=load_profile
         )
 
         try:
@@ -446,7 +449,8 @@ class HarnessRunner:
         verbose: bool = False,
         transport_uri: Optional[str] = None,
         chain_kernels=None,
-        device_spec: Optional[dict] = None
+        device_spec: Optional[dict] = None,
+        load_profile: Optional[str] = None
     ) -> Optional[str]:
         """Run benchmarks for all available kernels in a single harness invocation.
 
@@ -492,7 +496,8 @@ class HarnessRunner:
             duration=duration,
             repeats=repeats,
             warmup=warmup,
-            calibration_state=calibration_state
+            calibration_state=calibration_state,
+            load_profile=load_profile
         )
 
         try:

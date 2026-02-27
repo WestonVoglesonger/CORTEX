@@ -154,6 +154,7 @@ class TestRunExecuteDeviceDeploy:
             run_name='test-run', duration=None, repeats=None,
             warmup=None, state=None, verbose=False,
             device=None, deploy=None,
+            dtype='f32', load_profile=None,
         )
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)

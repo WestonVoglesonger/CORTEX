@@ -263,7 +263,9 @@ def execute(args):
 
         validate_args = argparse.Namespace(
             kernel=None,
-            verbose=args.verbose
+            verbose=args.verbose,
+            dtype='f32',
+            calibration_state=None
         )
 
         result = validate.execute(validate_args)

@@ -51,7 +51,8 @@ def generate_temp_config(
     duration: Optional[int] = None,
     repeats: Optional[int] = None,
     warmup: Optional[int] = None,
-    calibration_state: Optional[str] = None
+    calibration_state: Optional[str] = None,
+    load_profile: Optional[str] = None
 ) -> str:
     """Generate temporary YAML config with runtime overrides.
 
@@ -64,6 +65,7 @@ def generate_temp_config(
         repeats: Override number of repeats
         warmup: Override warmup duration (seconds)
         calibration_state: Path to .cortex_state file for trainable kernels
+        load_profile: CPU load profile ('idle', 'medium', 'heavy')
 
     Returns:
         Path to generated temp config file (caller must clean up)
@@ -94,6 +96,11 @@ def generate_temp_config(
         if 'parameters' not in config['benchmark']:
             config['benchmark']['parameters'] = {}
         config['benchmark']['parameters']['warmup_seconds'] = warmup
+
+    if load_profile is not None:
+        if 'benchmark' not in config:
+            config['benchmark'] = {}
+        config['benchmark']['load_profile'] = load_profile
 
     # Apply kernel filter (single kernel or list of kernels for pipeline)
     if kernel_filter is not None:
