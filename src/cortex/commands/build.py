@@ -1,7 +1,6 @@
 """Build command"""
 import os
 import subprocess
-import sys
 
 def setup_parser(parser):
     """Setup argument parser for build command"""

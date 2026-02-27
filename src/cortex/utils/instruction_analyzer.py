@@ -1,9 +1,7 @@
 """Instruction-level analysis of compiled kernel binaries.
 
 Disassembles compiled kernel .dylib/.so files using otool (macOS) or objdump (Linux)
-and counts instruction types in cortex_process() for Roofline prediction.
-
-Also provides hardware PMU-based dynamic instruction counting via cortex_inscount.
+and counts instruction types in cortex_process() for latency decomposition.
 """
 import platform
 import re

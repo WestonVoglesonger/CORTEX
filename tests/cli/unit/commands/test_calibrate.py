@@ -1,7 +1,6 @@
 """Tests for calibrate command helpers."""
 import argparse
 import pytest
-from pathlib import Path
 
 from cortex.commands.calibrate import _parse_label_pattern, _read_dataset_spec, setup_parser
 

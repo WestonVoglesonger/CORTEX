@@ -118,7 +118,6 @@ def execute(args):
     if isinstance(result, str):
         shutil.move(result, data_path)
     else:
-        import numpy as np
         result.tofile(data_path)
 
     file_size_bytes = data_path.stat().st_size
@@ -138,13 +137,20 @@ def execute(args):
     fmt['layout'] = 'interleaved'
     fmt['endian'] = 'little'
 
-    spec['recordings'] = [{
+    recording = {
         'id': 'data',
         'path': 'data.float32',
         'duration_seconds': duration,
         'samples_per_channel': samples_per_channel,
         'units': 'microvolts (µV)'
-    }]
+    }
+    # Preserve user-added fields (e.g., label_pattern) from existing recording
+    if spec.get('recordings') and len(spec['recordings']) > 0:
+        existing = spec['recordings'][0]
+        for key, value in existing.items():
+            if key not in recording:
+                recording[key] = value
+    spec['recordings'] = [recording]
 
     # Write updated spec.yaml
     with open(spec_path, 'w') as f:

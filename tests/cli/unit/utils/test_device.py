@@ -1,5 +1,4 @@
 """Tests for device resolution and capability validation utilities."""
-import pytest
 from unittest.mock import patch
 
 
