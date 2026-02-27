@@ -29,9 +29,6 @@ class TestPipelineCommand:
         assert hasattr(args, 'run_name')
         assert hasattr(args, 'skip_build')
         assert hasattr(args, 'skip_validate')
-        assert hasattr(args, 'duration')
-        assert hasattr(args, 'repeats')
-        assert hasattr(args, 'warmup')
         assert hasattr(args, 'verbose')
         assert hasattr(args, 'skip_system_check')
 
@@ -39,9 +36,6 @@ class TestPipelineCommand:
         assert args.run_name is None
         assert args.skip_build is False
         assert args.skip_validate is False
-        assert args.duration is None
-        assert args.repeats is None
-        assert args.warmup is None
         assert args.verbose is False
         assert args.skip_system_check is False
 
@@ -54,9 +48,6 @@ class TestPipelineCommand:
             '--run-name', 'test-run-001',
             '--skip-build',
             '--skip-validate',
-            '--duration', '30',
-            '--repeats', '5',
-            '--warmup', '10',
             '--verbose',
             '--skip-system-check',
         ])
@@ -64,9 +55,6 @@ class TestPipelineCommand:
         assert args.run_name == 'test-run-001'
         assert args.skip_build is True
         assert args.skip_validate is True
-        assert args.duration == 30
-        assert args.repeats == 5
-        assert args.warmup == 10
         assert args.verbose is True
         assert args.skip_system_check is True
 
@@ -88,9 +76,6 @@ class TestPipelineCommand:
             skip_build=False,  # Don't skip build
             skip_validate=True,
             skip_system_check=True,
-            duration=None,
-            repeats=None,
-            warmup=None,
             verbose=False
         )
 
@@ -123,9 +108,6 @@ class TestPipelineCommand:
             skip_build=True,
             skip_validate=True,
             skip_system_check=True,
-            duration=None,
-            repeats=None,
-            warmup=None,
             verbose=False
         )
 
@@ -146,9 +128,6 @@ class TestPipelineCommand:
             skip_build=True,
             skip_validate=True,
             skip_system_check=True,
-            duration=None,
-            repeats=None,
-            warmup=None,
             verbose=False
         )
 
@@ -187,9 +166,6 @@ class TestPipelineCommand:
             skip_build=True,
             skip_validate=False,  # Don't skip validate
             skip_system_check=True,
-            duration=None,
-            repeats=None,
-            warmup=None,
             verbose=False
         )
 
@@ -215,9 +191,6 @@ class TestPipelineCommand:
             skip_build=True,
             skip_validate=True,
             skip_system_check=False,  # Test the default path
-            duration=None,
-            repeats=None,
-            warmup=None,
             verbose=False
         )
 

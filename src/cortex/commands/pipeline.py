@@ -36,21 +36,6 @@ def setup_parser(parser):
         help='Skip kernel validation step'
     )
     parser.add_argument(
-        '--duration',
-        type=int,
-        help='Override benchmark duration (seconds)'
-    )
-    parser.add_argument(
-        '--repeats',
-        type=int,
-        help='Override number of repeats'
-    )
-    parser.add_argument(
-        '--warmup',
-        type=int,
-        help='Override warmup duration (seconds)'
-    )
-    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Show verbose output'
@@ -325,9 +310,6 @@ def execute(args):
         # Run all kernels with default config
         results_dir = runner.run_all_kernels(
             run_name=run_name,
-            duration=args.duration,
-            repeats=args.repeats,
-            warmup=args.warmup,
             verbose=args.verbose,
             transport_uri=transport_uri,
             chain_kernels=chain_kernels

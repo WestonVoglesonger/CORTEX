@@ -92,7 +92,7 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     compare_parser = subparsers.add_parser('compare', help='Compare two benchmark runs')
     compare.setup_parser(compare_parser)
 
-    # Decompose command (SE-5 Step 3: post-benchmark decomposition)
+    # Decompose command
     decompose_parser = subparsers.add_parser('decompose', help='Decompose measured latency into components')
     decompose.setup_parser(decompose_parser)
 

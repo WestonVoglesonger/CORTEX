@@ -132,8 +132,7 @@ cortex run --config <yaml>  # Run benchmarks (single kernel or pipeline mode)
 cortex analyze --run-name <name>  # Generate reports from existing telemetry
 cortex validate --kernel <name>   # Oracle validation (--kernel is REQUIRED)
 
-# Analysis & prediction
-cortex predict        # Static pre-benchmark latency prediction
+# Analysis
 cortex decompose      # Post-benchmark latency decomposition
 cortex compare        # Compare benchmark runs across kernels or devices
 cortex check-deadline # CI gating for real-time deadline compliance
@@ -222,7 +221,7 @@ src/
 │   ├── inscount/          # PMU instruction counting
 │   └── osnoise/           # OS noise measurement
 └── cortex/                # Python CLI and analysis tools
-    ├── commands/          # CLI subcommands (run, analyze, predict, plot, etc.)
+    ├── commands/          # CLI subcommands (run, analyze, decompose, plot, etc.)
     ├── core/              # DI protocols (ProcessHandle, FileSystemService, etc.)
     │   ├── protocols.py   # Abstract interfaces
     │   └── implementations.py  # Production implementations
@@ -291,7 +290,6 @@ results/                   # Generated benchmark outputs (gitignored)
 
 **Latency Analysis (SE-5):**
 - Device profiles in `primitives/devices/` (rpi4, jetson-nano, m1-macos, m1-asahi)
-- `cortex predict` — static pre-benchmark latency prediction
 - `cortex decompose` — compute/memory/overhead breakdown with PMU data
 - `cortex compare` — cross-run comparison
 - `cortex plot` — latency distribution visualizations

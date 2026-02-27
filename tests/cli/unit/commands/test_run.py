@@ -108,8 +108,18 @@ class TestRunParser:
         parser = argparse.ArgumentParser()
         setup_parser(parser)
 
-        assert not hasattr(parser.parse_args(['--kernel', 'noop']), 'deploy') or \
-               parser.parse_args(['--kernel', 'noop']).deploy is None if hasattr(parser.parse_args(['--kernel', 'noop']), 'deploy') else True
+        with pytest.raises(SystemExit):
+            parser.parse_args(['--kernel', 'noop', '--deploy', 'ssh://pi@rpi'])
+
+    def test_no_load_profile_flag(self):
+        """--load-profile flag removed (use config instead)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args(['--kernel', 'noop'])
+        assert not hasattr(args, 'load_profile')
 
     def test_no_duration_flag(self):
         """--duration flag removed (use config instead)."""
@@ -195,3 +205,37 @@ class TestRunExecuteDevice:
         assert result == 0
         call_kwargs = mock_runner.run_single_kernel.call_args
         assert call_kwargs.kwargs.get('device_spec') == device_spec
+
+    @patch('cortex.commands.run.generate_run_name', return_value='test-run')
+    @patch('cortex.commands.run.resolve_device', return_value=None)
+    def test_invalid_device_name_errors(self, mock_resolve, mock_gen_name):
+        """--device with unrecognized name (not a URI) errors instead of silent fallback."""
+        from cortex.commands.run import execute
+
+        args = self._make_args(device='m1')  # 'm1' not found by resolve_device
+        result = execute(args)
+
+        assert result == 1
+
+    @patch('cortex.commands.run.HarnessRunner')
+    @patch('cortex.commands.run.generate_run_name', return_value='test-run')
+    @patch('cortex.commands.run.resolve_device', return_value=None)
+    @patch('cortex.commands.run.DeployerFactory')
+    def test_deployment_uri_triggers_deployer(self, mock_factory, mock_resolve, mock_gen_name, mock_runner_cls):
+        """--device with URI (contains ://) triggers deployment, not device resolution."""
+        from cortex.commands.run import execute
+
+        mock_deployer = MagicMock()
+        mock_deployer.deploy.return_value = MagicMock(transport_uri='tcp://192.168.1.100:9000')
+        mock_deployer.cleanup.return_value = MagicMock(success=True)
+        mock_factory.from_device_string.return_value = mock_deployer
+
+        mock_runner = MagicMock()
+        mock_runner.run_single_kernel.return_value = 'results/test-run'
+        mock_runner_cls.return_value = mock_runner
+
+        args = self._make_args(device='ssh://pi@rpi')
+        result = execute(args)
+
+        assert result == 0
+        mock_factory.from_device_string.assert_called_once_with('ssh://pi@rpi')

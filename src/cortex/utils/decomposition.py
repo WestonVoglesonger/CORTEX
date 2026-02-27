@@ -1,11 +1,9 @@
-"""Roofline-based latency prediction and characterization (SE-5).
+"""Latency characterization and tail-attribution (SE-5, SE-7).
 
 Provides:
-1. Predict: static pre-benchmark prediction using instruction analysis
-2. Characterize: post-hoc characterization with distribution landmarks + provenance
-3. Attribute: tail-latency attribution (SE-7) — platform vs algorithmic decomposition
+1. Characterize: post-hoc characterization with distribution landmarks + provenance
+2. Attribute: tail-latency attribution — platform vs algorithmic decomposition
 """
-import json
 import logging
 import platform
 from itertools import combinations
@@ -14,7 +12,7 @@ from math import factorial
 import yaml
 from pathlib import Path
 from typing import Dict, Literal, Optional, List, Tuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.stats import mannwhitneyu, ks_2samp
@@ -34,34 +32,6 @@ def _pmu_unavailable_reason() -> str:
     elif system == 'Linux':
         return "no PMU data (one-time fix: sudo setcap cap_perfmon=ep <adapter_path>)"
     return "no PMU data"
-
-
-# ---------------------------------------------------------------------------
-# Prediction dataclasses
-# ---------------------------------------------------------------------------
-
-@dataclass
-class PredictionResult:
-    """Static prediction for a single kernel (pre-benchmark)."""
-    kernel_name: str
-    theoretical_compute_us: float    # instruction_count / (freq * throughput)
-    theoretical_memory_us: float     # (loads + stores) * dtype_bytes / bandwidth
-    theoretical_io_us: float         # noop baseline (0 in predict, filled in attribute)
-    theoretical_peak_us: float       # max(compute, memory) + io
-    bound: str                       # "compute", "memory", or "io"
-    operational_intensity: float
-    instruction_profile: Optional[InstructionProfile]
-    source: str                      # "objdump" or "spec.yaml"
-    instruction_count: Optional[int] = None      # retired instructions (from PMU)
-    probe_freq_hz: Optional[int] = None          # CPU freq at probe time (from PMU)
-
-
-@dataclass
-class ChainPrediction:
-    """Prediction for a chained kernel pipeline."""
-    stages: List[PredictionResult]
-    cumulative_peak_us: float
-    stage_names: List[str]
 
 
 # ---------------------------------------------------------------------------
@@ -692,243 +662,6 @@ def characterize_kernel(
     )
 
 
-# ---------------------------------------------------------------------------
-# RooflineDecomposer (extended with predict methods)
-# ---------------------------------------------------------------------------
-
-class RooflineDecomposer:
-    """Decomposes/predicts latency using the Roofline performance model.
-
-    The Roofline model bounds achievable performance by two limits:
-    1. Peak compute throughput (GFLOPS)
-    2. Memory bandwidth x operational intensity
-
-    Args:
-        device_spec: Parsed device YAML dict
-        kernel_specs: Dict mapping kernel_name -> parsed spec YAML dict
-    """
-
-    def __init__(self, device_spec: dict, kernel_specs: Dict[str, dict]):
-        dev = device_spec.get('device', device_spec)
-        self.device_name = dev.get('name', 'Unknown')
-        self.peak_gflops = dev.get('cpu_peak_gflops', dev.get('peak_gflops', 1.0))
-        self.memory_bw_gb_s = dev.get('memory_bandwidth_gb_s', 1.0)
-        self.kernel_specs = kernel_specs
-
-    # -------------------------------------------------------------------
-    # Predict methods (pre-benchmark, static analysis)
-    # -------------------------------------------------------------------
-
-    def _compute_from_spec(
-        self,
-        kernel_name: str,
-        window_length: int,
-        channels: int,
-        dtype_bytes: int,
-    ) -> Optional[tuple]:
-        """Compute theoretical times from spec.yaml annotations.
-
-        Returns (compute_us, memory_us, oi, total_flops, total_bytes) or None.
-        """
-        spec = self.kernel_specs.get(kernel_name)
-        if spec is None:
-            return None
-        comp = spec.get('computational')
-        if comp is None:
-            return None
-
-        flops_per_sample = comp.get('flops_per_sample', 0)
-        loads_per_sample = comp.get('memory_loads_per_sample', 0)
-        stores_per_sample = comp.get('memory_stores_per_sample', 0)
-
-        total_samples = window_length * channels
-        total_flops = flops_per_sample * total_samples
-        total_bytes = (loads_per_sample + stores_per_sample) * total_samples * dtype_bytes
-
-        oi = total_flops / total_bytes if total_bytes > 0 else 0.0
-
-        compute_s = total_flops / (self.peak_gflops * 1e9) if self.peak_gflops > 0 and total_flops > 0 else 0.0
-        memory_s = total_bytes / (self.memory_bw_gb_s * 1e9) if self.memory_bw_gb_s > 0 and total_bytes > 0 else 0.0
-
-        return (compute_s * 1e6, memory_s * 1e6, oi, total_flops, total_bytes)
-
-    def predict(
-        self,
-        kernel_name: str,
-        window_length: int = 160,
-        channels: int = 64,
-        dtype_bytes: int = 4,
-    ) -> Optional[PredictionResult]:
-        """Predict kernel latency before benchmarking.
-
-        Attempts to use hardware PMU instruction counting first (exact retired
-        instruction count from a real cortex_process() invocation). Falls back
-        to spec.yaml per-sample annotations if PMU is unavailable.
-
-        PMU model: compute_time = instruction_count / (cpu_freq_hz * IPC)
-          - IPC=1.0 as conservative lower bound (actual IPC higher due to
-            superscalar execution, making predictions pessimistic/safe)
-          - cpu_freq_hz self-reported by cortex_inscount from OS (sysctl/sysfs)
-
-        Memory time always comes from spec.yaml (PMU only gives instruction
-        count, not memory traffic).
-
-        Args:
-            kernel_name: Name of the kernel
-            window_length: Samples per window (W)
-            channels: Number of channels (C)
-            dtype_bytes: Bytes per element (4 for float32)
-
-        Returns:
-            PredictionResult or None if no data available.
-        """
-        spec_result = self._compute_from_spec(kernel_name, window_length, channels, dtype_bytes)
-        if spec_result is None:
-            return None
-
-        _, memory_us, oi, _, _ = spec_result
-
-        # Attach instruction profile as supplementary metadata (best-effort)
-        profile = analyze_kernel(kernel_name)
-
-        # Try hardware PMU instruction count first
-        pmu_insn_count = None
-        pmu_freq_hz = None
-        pmu_result = count_dynamic_instructions(kernel_name, window_length, channels)
-        if pmu_result is not None:
-            insn_count = pmu_result["instruction_count"]
-            cpu_freq_hz = pmu_result["cpu_freq_hz"]
-            cycle_count = pmu_result.get("cycle_count", 0)
-            if insn_count > 0 and cpu_freq_hz > 0:
-                pmu_insn_count = insn_count
-                pmu_freq_hz = cpu_freq_hz
-                if cycle_count > 0:
-                    compute_us = cycle_count / cpu_freq_hz * 1e6  # exact, no IPC
-                else:
-                    ipc = 1.0  # conservative lower bound
-                    compute_us = insn_count / (cpu_freq_hz * ipc) * 1e6
-                source = "pmu"
-            else:
-                # PMU available but freq unknown — fall back to spec
-                compute_us, _, _, _, _ = spec_result
-                source = "spec.yaml"
-        else:
-            compute_us, _, _, _, _ = spec_result
-            source = "spec.yaml"
-
-        theoretical_peak_us = max(compute_us, memory_us)
-
-        if theoretical_peak_us == 0:
-            bound = "io"
-        elif compute_us >= memory_us:
-            bound = "compute"
-        else:
-            bound = "memory"
-
-        return PredictionResult(
-            kernel_name=kernel_name,
-            theoretical_compute_us=compute_us,
-            theoretical_memory_us=memory_us,
-            theoretical_io_us=0.0,  # filled during attribution
-            theoretical_peak_us=theoretical_peak_us,
-            bound=bound,
-            operational_intensity=oi,
-            instruction_profile=profile,
-            source=source,
-            instruction_count=pmu_insn_count,
-            probe_freq_hz=pmu_freq_hz,
-        )
-
-    def predict_all(
-        self,
-        kernel_names: List[str],
-        window_length: int = 160,
-        channels: int = 64,
-        dtype_bytes: int = 4,
-    ) -> List[PredictionResult]:
-        """Predict latency for multiple kernels."""
-        results = []
-        for name in kernel_names:
-            result = self.predict(name, window_length, channels, dtype_bytes)
-            if result is not None:
-                results.append(result)
-        return results
-
-    def predict_chain(
-        self,
-        kernel_names: List[str],
-        window_length: int = 160,
-        channels: int = 64,
-        dtype_bytes: int = 4,
-    ) -> Optional[ChainPrediction]:
-        """Predict cumulative latency for a kernel chain.
-
-        Note: inter-kernel overhead is unknown at prediction time.
-        """
-        stages = self.predict_all(kernel_names, window_length, channels, dtype_bytes)
-        if not stages:
-            return None
-
-        cumulative = sum(s.theoretical_peak_us for s in stages)
-        return ChainPrediction(
-            stages=stages,
-            cumulative_peak_us=cumulative,
-            stage_names=[s.kernel_name for s in stages],
-        )
-
-
-# ---------------------------------------------------------------------------
-# Prediction I/O
-# ---------------------------------------------------------------------------
-
-def save_prediction(
-    results: List[PredictionResult],
-    device_spec: dict,
-    params: dict,
-    output_path: str,
-) -> None:
-    """Write prediction results to JSON for later attribution.
-
-    Args:
-        results: List of PredictionResult
-        device_spec: Device specification dict
-        params: Dict with window_length, channels, dtype_bytes
-        output_path: Path to write prediction.json
-    """
-    dev = device_spec.get('device', device_spec)
-    data = {
-        "device": dev.get("name", "Unknown"),
-        "params": params,
-        "predictions": [],
-    }
-    for r in results:
-        entry = {
-            "kernel_name": r.kernel_name,
-            "theoretical_compute_us": round(r.theoretical_compute_us, 6),
-            "theoretical_memory_us": round(r.theoretical_memory_us, 6),
-            "theoretical_io_us": round(r.theoretical_io_us, 6),
-            "theoretical_peak_us": round(r.theoretical_peak_us, 6),
-            "bound": r.bound,
-            "operational_intensity": round(r.operational_intensity, 6),
-            "source": r.source,
-        }
-        if r.instruction_count is not None:
-            entry["instruction_count"] = r.instruction_count
-        if r.probe_freq_hz is not None:
-            entry["probe_freq_hz"] = r.probe_freq_hz
-        if r.instruction_profile is not None:
-            entry["instruction_profile"] = asdict(r.instruction_profile)
-        data["predictions"].append(entry)
-
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'w') as f:
-        json.dump(data, f, indent=2)
-
-
-def load_prediction(path: str) -> dict:
-    """Load a prediction.json file."""
-    with open(path) as f:
-        return json.load(f)
 
 
 # ---------------------------------------------------------------------------

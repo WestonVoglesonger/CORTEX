@@ -1,7 +1,4 @@
-"""Run experiments command with dependency injection.
-
-CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
-"""
+"""Run experiments command."""
 import sys
 import argparse
 from pathlib import Path
@@ -261,6 +258,12 @@ def execute(args):
     deploy_string = None
     if device_arg and ('://' in device_arg or '@' in device_arg):
         deploy_string = device_arg
+    elif device_arg and device_spec is None:
+        # Not a known device spec and not a deployment URI — likely a typo
+        print(f"Error: '{device_arg}' is not a recognized device spec or deployment string.")
+        print("  Device specs: primitives/devices/*.yaml (e.g., m1-macos, rpi4)")
+        print("  Deployment: user@host, tcp://host:port, ssh://user@host")
+        return 1
 
     # Create production runner
     process_executor = SubprocessExecutor()

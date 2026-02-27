@@ -12,7 +12,8 @@ def _read_dataset_spec(dataset_path):
         - data_path: Path to .float32 file
         - channels: Number of channels (from spec)
         - sample_rate_hz: Sample rate (from spec)
-        - window_length: Window length (from spec)
+        - window_length: Window length (from spec, default 160)
+        - label_pattern: Label pattern string if present in first recording
     """
     dataset_path = Path(dataset_path)
 
@@ -35,11 +36,12 @@ def _read_dataset_spec(dataset_path):
         if not data_path.exists():
             raise ValueError(f"Data file not found: {data_path}")
 
+        fmt = spec.get('format', {})
         result = {
             'data_path': data_path,
-            'channels': spec['format']['channels'],
-            'sample_rate_hz': spec['format']['sample_rate_hz'],
-            'window_length': spec['format']['window_length']
+            'channels': fmt.get('channels'),
+            'sample_rate_hz': fmt.get('sample_rate_hz'),
+            'window_length': fmt.get('window_length', 160),
         }
 
         # Include label_pattern from first recording if present

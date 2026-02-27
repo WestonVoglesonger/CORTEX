@@ -1,10 +1,7 @@
-"""Generate synthetic dataset primitive instances
-
-Reads a spec.yaml with generation_parameters and produces binary data alongside it.
-"""
+"""Generate synthetic dataset from spec.yaml."""
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import yaml
 import shutil
 
@@ -56,13 +53,13 @@ def execute(args):
     duration = gen_params.get('duration_s')
     seed = gen_params.get('seed', 42)
 
-    if not channels:
+    if channels is None:
         print("\n✗ format.channels is required")
         return 1
-    if not signal_type:
+    if signal_type is None:
         print("\n✗ generation_parameters.signal_type is required")
         return 1
-    if not duration:
+    if duration is None:
         print("\n✗ generation_parameters.duration_s is required")
         return 1
 
@@ -132,7 +129,7 @@ def execute(args):
         spec['dataset'] = {}
     spec['dataset']['type'] = 'generated'
     spec['dataset']['generator_primitive'] = 'primitives/datasets/v1/synthetic'
-    spec['dataset']['generation_timestamp'] = datetime.utcnow().isoformat() + 'Z'
+    spec['dataset']['generation_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     # Ensure format defaults are written
     fmt['type'] = 'float32'
