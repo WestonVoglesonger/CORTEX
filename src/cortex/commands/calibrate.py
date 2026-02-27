@@ -35,12 +35,19 @@ def _read_dataset_spec(dataset_path):
         if not data_path.exists():
             raise ValueError(f"Data file not found: {data_path}")
 
-        return {
+        result = {
             'data_path': data_path,
             'channels': spec['format']['channels'],
             'sample_rate_hz': spec['format']['sample_rate_hz'],
             'window_length': spec['format']['window_length']
         }
+
+        # Include label_pattern from first recording if present
+        label_pattern = spec['recordings'][0].get('label_pattern')
+        if label_pattern:
+            result['label_pattern'] = label_pattern
+
+        return result
 
     # If it's a .float32 file directly, return minimal info
     elif dataset_path.suffix == '.float32':
@@ -126,12 +133,9 @@ def setup_parser(parser):
         help='Output path for calibration state file (.cortex_state)'
     )
     parser.add_argument(
-        '--spec-uri',
-        help='Plugin spec_uri (default: primitives/kernels/v1/{kernel}/f32)'
-    )
-    parser.add_argument(
-        '--labels',
-        help='Labels for CSP (pattern syntax: "100x0,100x1" = 100 class-0, 100 class-1)'
+        '--dtype',
+        default='f32',
+        help='Data type (default: f32)'
     )
     parser.add_argument(
         '--channels',
@@ -173,11 +177,12 @@ def execute(args):
     window_length = args.window_length if args.window_length is not None else spec.get('window_length', 160)
     sample_rate = args.sample_rate if args.sample_rate is not None else spec.get('sample_rate_hz', 160)
 
-    # Parse labels if provided
+    # Parse labels from dataset spec if present
     labels_str = None
-    if args.labels:
+    label_pattern = spec.get('label_pattern')
+    if label_pattern:
         try:
-            labels_str = _parse_label_pattern(args.labels, args.windows)
+            labels_str = _parse_label_pattern(label_pattern, args.windows)
         except ValueError as e:
             print(f"\n✗ Label parsing error: {e}")
             return 1
@@ -196,8 +201,8 @@ def execute(args):
         print("  Run 'make all' to build it")
         return 1
 
-    # Build spec_uri if not provided
-    spec_uri = args.spec_uri or f"primitives/kernels/v1/{args.kernel}/f32"
+    # Build spec_uri from kernel name and dtype
+    spec_uri = f"primitives/kernels/v1/{args.kernel}/{args.dtype}"
 
     print(f"\nKernel:       {args.kernel}")
     print(f"Spec URI:     {spec_uri}")

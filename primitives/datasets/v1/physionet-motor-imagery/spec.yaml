@@ -15,11 +15,14 @@ recordings:
   - id: "S001R03"
     description: "Subject 001, Run 03 - Open and close left or right fist"
     duration_seconds: 125.0
+    label_pattern: "125x0,124x1"
 
   - id: "S001R07"
     description: "Subject 001, Run 07 - Imagine opening and closing left or right fist"
     duration_seconds: 125.0
+    label_pattern: "125x0,124x1"
 
   - id: "S001R11"
     description: "Subject 001, Run 11 - Open and close both fists or both feet"
     duration_seconds: 125.0
+    label_pattern: "125x0,124x1"
