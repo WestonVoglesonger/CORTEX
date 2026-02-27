@@ -1,16 +1,15 @@
-"""Tests for run command device/deploy resolution (Phase 2)."""
+"""Tests for run command device resolution."""
 import argparse
 import pytest
 from unittest.mock import patch, MagicMock, Mock
 
 from cortex.commands.run import (
     resolve_device_arg,
-    resolve_deploy_arg,
 )
 
 
 class TestResolveDeviceArg:
-    """Tests for resolve_device_arg() — resolves device primitive name/path."""
+    """Tests for resolve_device_arg() — resolves device/deployment string."""
 
     def test_cli_wins_over_config(self):
         """CLI --device rpi4 wins over config device: m1."""
@@ -56,105 +55,102 @@ class TestResolveDeviceArg:
 
         assert result == 'm1'
 
-
-class TestResolveDeployArg:
-    """Tests for resolve_deploy_arg() — resolves deployment strategy."""
-
-    def test_cli_wins_over_config(self):
-        """CLI --deploy ssh://pi@rpi wins over config deploy: tcp://host:9000."""
-        args = argparse.Namespace(deploy='ssh://pi@rpi')
-        config = {'deploy': 'tcp://host:9000'}
-
-        result = resolve_deploy_arg(args, config)
-
+    def test_deployment_string_passed_through(self):
+        """Deployment strings like ssh://pi@rpi are valid --device values."""
+        args = argparse.Namespace(device='ssh://pi@rpi')
+        result = resolve_device_arg(args, None)
         assert result == 'ssh://pi@rpi'
 
-    def test_config_used_when_no_cli(self):
-        """Config deploy: ssh://pi@rpi used when no CLI flag."""
-        args = argparse.Namespace(deploy=None)
-        config = {'deploy': 'ssh://pi@rpi'}
-
-        result = resolve_deploy_arg(args, config)
-
-        assert result == 'ssh://pi@rpi'
-
-    def test_none_when_both_absent(self):
-        """Returns None when both CLI and config absent (local execution)."""
-        args = argparse.Namespace(deploy=None)
-        config = {}
-
-        result = resolve_deploy_arg(args, config)
-
-        assert result is None
-
-    def test_none_when_no_config(self):
-        """Returns None when config is None and no CLI flag."""
-        args = argparse.Namespace(deploy=None)
-
-        result = resolve_deploy_arg(args, None)
-
-        assert result is None
-
-    def test_cli_empty_string_ignored(self):
-        """Empty string CLI --deploy treated as absent."""
-        args = argparse.Namespace(deploy='')
-        config = {'deploy': 'ssh://pi@rpi'}
-
-        result = resolve_deploy_arg(args, config)
-
-        assert result == 'ssh://pi@rpi'
+    def test_tcp_transport_passed_through(self):
+        """TCP transport URIs are valid --device values."""
+        args = argparse.Namespace(device='tcp://192.168.1.100:9000')
+        result = resolve_device_arg(args, None)
+        assert result == 'tcp://192.168.1.100:9000'
 
 
 class TestRunParser:
-    """Tests for run command parser updates."""
+    """Tests for run command parser."""
 
-    def test_deploy_flag_exists(self):
-        """Parser accepts --deploy flag."""
+    def test_device_flag_exists(self):
+        """Parser accepts --device flag."""
         from cortex.commands.run import setup_parser
 
         parser = argparse.ArgumentParser()
         setup_parser(parser)
 
-        args = parser.parse_args(['--kernel', 'noop', '--deploy', 'ssh://pi@rpi'])
-        assert args.deploy == 'ssh://pi@rpi'
-
-    def test_device_and_deploy_separate(self):
-        """--device and --deploy are independent flags."""
-        from cortex.commands.run import setup_parser
-
-        parser = argparse.ArgumentParser()
-        setup_parser(parser)
-
-        args = parser.parse_args([
-            '--kernel', 'noop',
-            '--device', 'rpi4',
-            '--deploy', 'ssh://pi@rpi',
-        ])
+        args = parser.parse_args(['--kernel', 'noop', '--device', 'rpi4'])
         assert args.device == 'rpi4'
-        assert args.deploy == 'ssh://pi@rpi'
 
-    def test_deploy_defaults_to_none(self):
-        """--deploy defaults to None when not specified."""
+    def test_device_accepts_deployment_strings(self):
+        """--device accepts deployment strings (ssh, tcp)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args(['--kernel', 'noop', '--device', 'nvidia@192.168.1.123'])
+        assert args.device == 'nvidia@192.168.1.123'
+
+    def test_device_defaults_to_none(self):
+        """--device defaults to None when not specified."""
         from cortex.commands.run import setup_parser
 
         parser = argparse.ArgumentParser()
         setup_parser(parser)
 
         args = parser.parse_args(['--kernel', 'noop'])
-        assert args.deploy is None
+        assert args.device is None
+
+    def test_no_deploy_flag(self):
+        """--deploy flag no longer exists (merged into --device)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        assert not hasattr(parser.parse_args(['--kernel', 'noop']), 'deploy') or \
+               parser.parse_args(['--kernel', 'noop']).deploy is None if hasattr(parser.parse_args(['--kernel', 'noop']), 'deploy') else True
+
+    def test_no_duration_flag(self):
+        """--duration flag removed (use config instead)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args(['--kernel', 'noop'])
+        assert not hasattr(args, 'duration')
+
+    def test_no_repeats_flag(self):
+        """--repeats flag removed (use config instead)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args(['--kernel', 'noop'])
+        assert not hasattr(args, 'repeats')
+
+    def test_no_warmup_flag(self):
+        """--warmup flag removed (use config instead)."""
+        from cortex.commands.run import setup_parser
+
+        parser = argparse.ArgumentParser()
+        setup_parser(parser)
+
+        args = parser.parse_args(['--kernel', 'noop'])
+        assert not hasattr(args, 'warmup')
 
 
-class TestRunExecuteDeviceDeploy:
-    """Tests for refactored execute() with device/deploy separation."""
+class TestRunExecuteDevice:
+    """Tests for execute() with unified device flag."""
 
     def _make_args(self, **kwargs):
         """Create a Namespace with defaults for execute()."""
         defaults = dict(
             kernel='noop', all=False, config=None,
-            run_name='test-run', duration=None, repeats=None,
-            warmup=None, state=None, verbose=False,
-            device=None, deploy=None,
-            dtype='f32', load_profile=None,
+            run_name='test-run', state=None, verbose=False,
+            device=None, dtype='f32',
         )
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)
@@ -163,8 +159,8 @@ class TestRunExecuteDeviceDeploy:
     @patch('cortex.commands.run.generate_run_name', return_value='test-run')
     @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'Apple M1'}})
     @patch('cortex.commands.run.validate_capabilities', side_effect=lambda x: x)
-    def test_device_only_resolves_local(self, mock_validate, mock_resolve, mock_gen_name, mock_runner_cls):
-        """--device m1 with no --deploy = local execution, resolve_device called."""
+    def test_device_spec_resolves_local(self, mock_validate, mock_resolve, mock_gen_name, mock_runner_cls):
+        """--device m1 = local execution, resolve_device called."""
         from cortex.commands.run import execute
 
         mock_runner = MagicMock()
@@ -177,35 +173,7 @@ class TestRunExecuteDeviceDeploy:
         assert result == 0
         mock_resolve.assert_called_once_with('m1')
         mock_validate.assert_called_once()
-        # No deployer should be created (local execution)
         mock_runner.run_single_kernel.assert_called_once()
-        call_kwargs = mock_runner.run_single_kernel.call_args
-        assert call_kwargs.kwargs.get('transport_uri') is None or 'transport_uri' not in call_kwargs.kwargs
-
-    @patch('cortex.commands.run.HarnessRunner')
-    @patch('cortex.commands.run.generate_run_name', return_value='test-run')
-    @patch('cortex.commands.run.DeployerFactory')
-    @patch('cortex.commands.run.resolve_device', return_value={'device': {'name': 'RPi4'}})
-    @patch('cortex.commands.run.validate_capabilities', side_effect=lambda x: x)
-    def test_device_plus_deploy_ssh(self, mock_validate, mock_resolve, mock_factory, mock_gen_name, mock_runner_cls):
-        """--device rpi4 --deploy ssh://pi@rpi triggers deployer AND resolves device."""
-        from cortex.commands.run import execute
-
-        mock_deployer = MagicMock()
-        mock_deployer.deploy.return_value = MagicMock(transport_uri='tcp://192.168.1.100:9000')
-        mock_deployer.cleanup.return_value = MagicMock(success=True)
-        mock_factory.from_device_string.return_value = mock_deployer
-
-        mock_runner = MagicMock()
-        mock_runner.run_single_kernel.return_value = 'results/test-run'
-        mock_runner_cls.return_value = mock_runner
-
-        args = self._make_args(device='rpi4', deploy='ssh://pi@rpi')
-        result = execute(args)
-
-        assert result == 0
-        mock_resolve.assert_called_once_with('rpi4')
-        mock_factory.from_device_string.assert_called_once_with('ssh://pi@rpi')
 
     @patch('cortex.commands.run.HarnessRunner')
     @patch('cortex.commands.run.generate_run_name', return_value='test-run')
