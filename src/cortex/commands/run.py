@@ -1,7 +1,4 @@
-"""Run experiments command with dependency injection.
-
-CRIT-004: Updated to use new HarnessRunner class with injected dependencies.
-"""
+"""Run experiments command."""
 import sys
 import argparse
 from pathlib import Path
@@ -22,35 +19,21 @@ from cortex.core import (
 
 
 def resolve_device_arg(args, config):
-    """Resolve device primitive name/path.
+    """Resolve device/deployment string.
+
+    Handles both device spec names (m1, rpi4) and deployment strings
+    (ssh://pi@rpi, tcp://host:9000). DeployerFactory distinguishes them.
 
     Priority: CLI --device > config device: > None (auto-detect).
 
     Returns:
-        Device primitive name/path or None for auto-detect.
+        Device string or None for auto-detect/local.
     """
     if hasattr(args, 'device') and args.device:
         return args.device
 
     if config and config.get('device'):
         return config['device']
-
-    return None
-
-
-def resolve_deploy_arg(args, config):
-    """Resolve deployment strategy.
-
-    Priority: CLI --deploy > config deploy: > None (local execution).
-
-    Returns:
-        Deploy string or None for local execution.
-    """
-    if hasattr(args, 'deploy') and args.deploy:
-        return args.deploy
-
-    if config and config.get('deploy'):
-        return config['deploy']
 
     return None
 
@@ -79,30 +62,10 @@ def setup_parser(parser):
         help='Custom name for this run (default: auto-generated run-YYYY-MM-DD-NNN)'
     )
     parser.add_argument(
-        '--duration',
-        type=int,
-        help='Override benchmark duration (seconds)'
-    )
-    parser.add_argument(
-        '--repeats',
-        type=int,
-        help='Override number of repeats'
-    )
-    parser.add_argument(
-        '--warmup',
-        type=int,
-        help='Override warmup duration (seconds)'
-    )
-    parser.add_argument(
         '--dtype',
         choices=['f32', 'q15'],
         default='f32',
         help='Data type variant to run (default: f32)'
-    )
-    parser.add_argument(
-        '--load-profile',
-        choices=['idle', 'medium', 'heavy'],
-        help='CPU load profile for DVFS control (default: from config)'
     )
     parser.add_argument(
         '--state',
@@ -115,11 +78,8 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--device',
-        help='Device primitive name or YAML path (e.g., m1, rpi4). Auto-detects if omitted.'
-    )
-    parser.add_argument(
-        '--deploy',
-        help='Deployment strategy (e.g., ssh://pi@rpi, tcp://host:9000). Omit for local.'
+        help='Device primitive or deployment string. '
+             'Examples: m1-macos | rpi4 | nvidia@192.168.1.123 | tcp://192.168.1.123:9000'
     )
 
 
@@ -271,7 +231,7 @@ def execute(args):
 
     print()
 
-    # Load config if config mode (needed for device/deploy resolution)
+    # Load config if config mode (needed for device resolution)
     filesystem = RealFileSystemService()
     config_loader = YamlConfigLoader(filesystem)
     config_dict = None
@@ -283,7 +243,7 @@ def execute(args):
             print(f"Error loading config: {e}")
             return 1
 
-    # Resolve device primitive (--device = what hardware)
+    # Resolve device (--device handles both device specs and deployment strings)
     device_arg = resolve_device_arg(args, config_dict)
     device_spec = resolve_device(device_arg)
     if device_spec is not None:
@@ -291,11 +251,24 @@ def execute(args):
         dev = device_spec.get('device', device_spec)
         print(f"Device: {dev.get('name', 'Unknown')}")
     elif device_arg:
-        print(f"Error: Device not found: {device_arg}")
-        return 1
+        # Not a device spec — might be a deployment string, pass through
+        device_spec = None
 
-    # Resolve deploy strategy (--deploy = how to reach it)
-    deploy_string = resolve_deploy_arg(args, config_dict)
+    # Determine deploy string: if device_arg looks like a deployment URI, use it.
+    # Let DeployerFactory validate unknown strings before treating as typo —
+    # this handles non-URI formats like serial:///dev/ttyUSB0.
+    deploy_string = None
+    if device_arg and ('://' in device_arg or '@' in device_arg):
+        deploy_string = device_arg
+    elif device_arg and device_spec is None:
+        try:
+            DeployerFactory.from_device_string(device_arg)
+            deploy_string = device_arg
+        except ValueError:
+            print(f"Error: '{device_arg}' is not a recognized device spec or deployment string.")
+            print("  Device specs: primitives/devices/*.yaml (e.g., m1-macos, rpi4)")
+            print("  Deployment: user@host, tcp://host:port, ssh://user@host")
+            return 1
 
     # Create production runner
     process_executor = SubprocessExecutor()
@@ -324,8 +297,6 @@ def execute(args):
                 results_dir = runner.run_pipelines(
                     args.config, run_name=run_name, verbose=args.verbose,
                     transport_uri=transport_uri, device_spec=device_spec,
-                    duration=args.duration, repeats=args.repeats,
-                    warmup=args.warmup,
                 )
                 captured['results_dir'] = results_dir
                 return results_dir
@@ -355,11 +326,9 @@ def execute(args):
         def run_fn(transport_uri):
             return runner.run_single_kernel(
                 kernel_qualified, run_name=run_name,
-                duration=args.duration, repeats=args.repeats,
-                warmup=args.warmup, calibration_state=args.state,
+                calibration_state=args.state,
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
-                load_profile=args.load_profile,
             )
         return _run_with_deploy(deploy_string, run_fn, args.verbose)
 
@@ -368,11 +337,9 @@ def execute(args):
         def run_fn(transport_uri):
             return runner.run_all_kernels(
                 run_name=run_name,
-                duration=args.duration, repeats=args.repeats,
-                warmup=args.warmup, calibration_state=args.state,
+                calibration_state=args.state,
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
-                load_profile=args.load_profile,
             )
         return _run_with_deploy(deploy_string, run_fn, args.verbose)
 

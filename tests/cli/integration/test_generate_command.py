@@ -3,13 +3,13 @@ Integration tests for 'cortex generate' CLI command.
 
 Tests the CLI wrapper for synthetic dataset generation, including:
 - Argument parsing
-- File creation and validation
+- Spec-driven generation
 - Error handling
-- Overwrite behavior
 """
 
 import pytest
 import argparse
+import yaml
 from pathlib import Path
 
 # Add project root to path
@@ -20,96 +20,55 @@ sys.path.insert(0, str(project_root))
 from src.cortex.commands import generate
 
 
+def _write_spec(output_dir, signal_type='pink_noise', channels=64,
+                duration_s=1, sample_rate_hz=160.0, seed=42, **extra_params):
+    """Helper to write a spec.yaml for testing."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    spec = {
+        'dataset': {
+            'name': f'synthetic-{signal_type}-{channels}ch',
+        },
+        'format': {
+            'channels': channels,
+            'sample_rate_hz': sample_rate_hz,
+            'window_length': 160,
+        },
+        'generation_parameters': {
+            'signal_type': signal_type,
+            'duration_s': duration_s,
+            'seed': seed,
+        },
+    }
+    if signal_type == 'pink_noise':
+        spec['generation_parameters']['amplitude_uv_rms'] = extra_params.get('amplitude_uv_rms', 100.0)
+    if signal_type == 'sine_wave':
+        spec['generation_parameters']['frequency_hz'] = extra_params.get('frequency_hz', 10.0)
+        spec['generation_parameters']['amplitude_uv_peak'] = extra_params.get('amplitude_uv_peak', 100.0)
+
+    spec_path = output_dir / 'spec.yaml'
+    with open(spec_path, 'w') as f:
+        yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
+    return spec_path
+
+
 class TestGenerateCommandParser:
     """Test argument parser setup."""
 
-    def test_setup_parser_configures_all_arguments(self):
-        """Verify parser has all required arguments."""
+    def test_setup_parser_configures_spec_argument(self):
+        """Verify parser has --spec argument."""
         parser = argparse.ArgumentParser()
         generate.setup_parser(parser)
 
-        # Test with minimal required arguments
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '10',
-            '--output-dir', '/tmp/test'
-        ])
+        args = parser.parse_args(['--spec', '/tmp/test/spec.yaml'])
+        assert args.spec == '/tmp/test/spec.yaml'
 
-        assert args.signal == 'pink_noise'
-        assert args.channels == 64
-        assert args.duration == 10
-        assert args.output_dir == '/tmp/test'
-
-    def test_parser_defaults(self):
-        """Verify default values are set correctly."""
+    def test_spec_is_required(self):
+        """Verify --spec is required."""
         parser = argparse.ArgumentParser()
         generate.setup_parser(parser)
 
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '10',
-            '--output-dir', '/tmp/test'
-        ])
-
-        # Check defaults
-        assert args.window_length == 160
-        assert args.sample_rate == 160.0
-        assert args.seed == 42
-        assert args.amplitude == 100.0
-        assert args.overwrite is False
-
-    def test_parser_accepts_all_optional_arguments(self):
-        """Verify all optional arguments can be parsed."""
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-
-        args = parser.parse_args([
-            '--signal', 'sine_wave',
-            '--channels', '128',
-            '--duration', '5',
-            '--output-dir', '/tmp/test',
-            '--window-length', '256',
-            '--sample-rate', '250.0',
-            '--seed', '1234',
-            '--amplitude', '50.0',
-            '--frequency', '10.0',
-            '--overwrite'
-        ])
-
-        assert args.signal == 'sine_wave'
-        assert args.channels == 128
-        assert args.duration == 5
-        assert args.window_length == 256
-        assert args.sample_rate == 250.0
-        assert args.seed == 1234
-        assert args.amplitude == 50.0
-        assert args.frequency == 10.0
-        assert args.overwrite is True
-
-    def test_signal_type_choices(self):
-        """Verify signal type is restricted to valid choices."""
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-
-        # Valid choice
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '10',
-            '--output-dir', '/tmp/test'
-        ])
-        assert args.signal == 'pink_noise'
-
-        # Invalid choice should raise error
         with pytest.raises(SystemExit):
-            parser.parse_args([
-                '--signal', 'invalid_signal',
-                '--channels', '64',
-                '--duration', '10',
-                '--output-dir', '/tmp/test'
-            ])
+            parser.parse_args([])
 
 
 class TestGenerateCommandExecution:
@@ -118,21 +77,12 @@ class TestGenerateCommandExecution:
     def test_generate_creates_dataset_primitive(self, tmp_path):
         """Verify dataset primitive structure is created."""
         output_dir = tmp_path / "test_dataset"
+        spec_path = _write_spec(output_dir)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir),
-            '--sample-rate', '160'
-        ])
-
-        # Execute command
+        args = argparse.Namespace(spec=str(spec_path))
         result = generate.execute(args)
 
-        assert result == 0  # Success
+        assert result == 0
         assert output_dir.exists()
         assert (output_dir / "data.float32").exists()
         assert (output_dir / "spec.yaml").exists()
@@ -140,17 +90,9 @@ class TestGenerateCommandExecution:
     def test_generate_correct_file_size(self, tmp_path):
         """Verify generated file has correct size."""
         output_dir = tmp_path / "test_dataset"
+        spec_path = _write_spec(output_dir, channels=64, duration_s=1, sample_rate_hz=160.0)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',  # 1 second
-            '--output-dir', str(output_dir),
-            '--sample-rate', '160'
-        ])
-
+        args = argparse.Namespace(spec=str(spec_path))
         generate.execute(args)
 
         data_file = output_dir / "data.float32"
@@ -162,17 +104,9 @@ class TestGenerateCommandExecution:
     def test_generate_high_channel_count(self, tmp_path):
         """Verify high channel counts work (>512)."""
         output_dir = tmp_path / "test_dataset"
+        spec_path = _write_spec(output_dir, channels=1024, duration_s=1)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '1024',
-            '--duration', '1',
-            '--output-dir', str(output_dir),
-            '--sample-rate', '160'
-        ])
-
+        args = argparse.Namespace(spec=str(spec_path))
         result = generate.execute(args)
 
         assert result == 0
@@ -182,102 +116,66 @@ class TestGenerateCommandExecution:
         assert actual_size == expected_size
 
     def test_generate_sine_wave_requires_frequency(self, tmp_path):
-        """Verify sine wave signal requires frequency argument."""
+        """Verify sine wave signal requires frequency_hz in spec."""
         output_dir = tmp_path / "test_dataset"
+        output_dir.mkdir(parents=True)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-        args = parser.parse_args([
-            '--signal', 'sine_wave',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir)
-        ])
+        # Write spec without frequency_hz
+        spec = {
+            'format': {'channels': 64, 'sample_rate_hz': 160.0, 'window_length': 160},
+            'generation_parameters': {
+                'signal_type': 'sine_wave',
+                'duration_s': 1,
+                'seed': 42,
+            },
+        }
+        spec_path = output_dir / 'spec.yaml'
+        with open(spec_path, 'w') as f:
+            yaml.dump(spec, f)
 
-        # Should fail without frequency
+        args = argparse.Namespace(spec=str(spec_path))
         result = generate.execute(args)
-        assert result != 0  # Error
+        assert result != 0
 
     def test_generate_sine_wave_with_frequency(self, tmp_path):
         """Verify sine wave generation with frequency."""
         output_dir = tmp_path / "test_dataset"
+        spec_path = _write_spec(output_dir, signal_type='sine_wave', frequency_hz=10.0)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
-        args = parser.parse_args([
-            '--signal', 'sine_wave',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir),
-            '--frequency', '10.0'
-        ])
-
+        args = argparse.Namespace(spec=str(spec_path))
         result = generate.execute(args)
         assert result == 0
 
-    def test_overwrite_flag_behavior(self, tmp_path):
-        """Verify overwrite flag prevents/allows overwriting existing directory."""
+    def test_generate_regenerates_data(self, tmp_path):
+        """Verify running generate again overwrites data.float32."""
         output_dir = tmp_path / "test_dataset"
-        output_dir.mkdir()
-        (output_dir / "existing_file.txt").write_text("test")
+        spec_path = _write_spec(output_dir)
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
+        args = argparse.Namespace(spec=str(spec_path))
+        generate.execute(args)
 
-        # Without overwrite - should fail
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir)
-        ])
-        result = generate.execute(args)
-        assert result != 0  # Should fail
+        size1 = (output_dir / "data.float32").stat().st_size
 
-        # With overwrite - should succeed
-        args = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir),
-            '--overwrite'
-        ])
-        result = generate.execute(args)
-        assert result == 0  # Should succeed
+        # Re-read spec (it was updated by generate) and run again
+        generate.execute(args)
+
+        size2 = (output_dir / "data.float32").stat().st_size
+        assert size1 == size2
 
     def test_reproducibility_with_seed(self, tmp_path):
         """Verify same seed produces identical output."""
         output_dir1 = tmp_path / "dataset1"
         output_dir2 = tmp_path / "dataset2"
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
+        spec_path1 = _write_spec(output_dir1, seed=42)
+        spec_path2 = _write_spec(output_dir2, seed=42)
 
-        # Generate first dataset
-        args1 = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir1),
-            '--seed', '42'
-        ])
-        generate.execute(args1)
+        generate.execute(argparse.Namespace(spec=str(spec_path1)))
+        generate.execute(argparse.Namespace(spec=str(spec_path2)))
 
-        # Generate second dataset with same seed
-        args2 = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir2),
-            '--seed', '42'
-        ])
-        generate.execute(args2)
-
-        # Read both files
         data1 = (output_dir1 / "data.float32").read_bytes()
         data2 = (output_dir2 / "data.float32").read_bytes()
 
-        # Should be identical
         assert data1 == data2
 
     def test_different_seeds_produce_different_output(self, tmp_path):
@@ -285,35 +183,65 @@ class TestGenerateCommandExecution:
         output_dir1 = tmp_path / "dataset1"
         output_dir2 = tmp_path / "dataset2"
 
-        parser = argparse.ArgumentParser()
-        generate.setup_parser(parser)
+        spec_path1 = _write_spec(output_dir1, seed=42)
+        spec_path2 = _write_spec(output_dir2, seed=123)
 
-        # Generate with seed 42
-        args1 = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir1),
-            '--seed', '42'
-        ])
-        generate.execute(args1)
+        generate.execute(argparse.Namespace(spec=str(spec_path1)))
+        generate.execute(argparse.Namespace(spec=str(spec_path2)))
 
-        # Generate with seed 123
-        args2 = parser.parse_args([
-            '--signal', 'pink_noise',
-            '--channels', '64',
-            '--duration', '1',
-            '--output-dir', str(output_dir2),
-            '--seed', '123'
-        ])
-        generate.execute(args2)
-
-        # Read both files
         data1 = (output_dir1 / "data.float32").read_bytes()
         data2 = (output_dir2 / "data.float32").read_bytes()
 
-        # Should be different
         assert data1 != data2
+
+    def test_spec_backfilled_with_recordings(self, tmp_path):
+        """Verify spec.yaml is updated with recordings after generation."""
+        output_dir = tmp_path / "test_dataset"
+        spec_path = _write_spec(output_dir, channels=64, duration_s=1)
+
+        generate.execute(argparse.Namespace(spec=str(spec_path)))
+
+        with open(spec_path) as f:
+            updated = yaml.safe_load(f)
+
+        assert 'recordings' in updated
+        assert updated['recordings'][0]['path'] == 'data.float32'
+        assert updated['recordings'][0]['samples_per_channel'] == 160
+        assert updated['dataset']['type'] == 'generated'
+
+    def test_missing_spec_fails(self):
+        """Verify missing spec file fails gracefully."""
+        args = argparse.Namespace(spec='/nonexistent/spec.yaml')
+        result = generate.execute(args)
+        assert result == 1
+
+    def test_missing_format_section_fails(self, tmp_path):
+        """Verify spec without format section fails."""
+        output_dir = tmp_path / "test_dataset"
+        output_dir.mkdir(parents=True)
+
+        spec = {'generation_parameters': {'signal_type': 'pink_noise', 'duration_s': 1}}
+        spec_path = output_dir / 'spec.yaml'
+        with open(spec_path, 'w') as f:
+            yaml.dump(spec, f)
+
+        args = argparse.Namespace(spec=str(spec_path))
+        result = generate.execute(args)
+        assert result == 1
+
+    def test_missing_generation_parameters_fails(self, tmp_path):
+        """Verify spec without generation_parameters fails."""
+        output_dir = tmp_path / "test_dataset"
+        output_dir.mkdir(parents=True)
+
+        spec = {'format': {'channels': 64, 'sample_rate_hz': 160.0}}
+        spec_path = output_dir / 'spec.yaml'
+        with open(spec_path, 'w') as f:
+            yaml.dump(spec, f)
+
+        args = argparse.Namespace(spec=str(spec_path))
+        result = generate.execute(args)
+        assert result == 1
 
 
 # Mark as integration test

@@ -1,11 +1,8 @@
 """Instruction-level analysis of compiled kernel binaries.
 
 Disassembles compiled kernel .dylib/.so files using otool (macOS) or objdump (Linux)
-and counts instruction types in cortex_process() for Roofline prediction.
-
-Also provides hardware PMU-based dynamic instruction counting via cortex_inscount.
+and counts instruction types in cortex_process() for latency decomposition.
 """
-import json
 import platform
 import re
 import subprocess
@@ -287,73 +284,6 @@ def _classify_x86_64(instructions: list[str]) -> InstructionProfile:
         estimated_flops=max(estimated_flops, 0),
         arch="x86_64",
     )
-
-
-def count_dynamic_instructions(
-    kernel_name: str,
-    window_length: int = 160,
-    channels: int = 64,
-) -> Optional[dict]:
-    """Count retired instructions for a single cortex_process() call via hardware PMU.
-
-    Runs the cortex_inscount tool as a subprocess. Returns the median instruction
-    count and CPU frequency, or None if PMU is unavailable or the tool isn't built.
-
-    Args:
-        kernel_name: Kernel name (e.g., 'bandpass_fir')
-        window_length: Samples per window
-        channels: Number of channels
-
-    Returns:
-        Dict with {"instruction_count": int, "cpu_freq_hz": int} or None.
-    """
-    # Find the cortex_inscount binary relative to project root
-    tool_path = Path(__file__).resolve().parents[3] / "sdk" / "kernel" / "tools" / "cortex_inscount"
-    if not tool_path.exists():
-        return None
-
-    kernel_info = find_kernel(kernel_name)
-    if kernel_info is None:
-        return None
-
-    spec_uri = kernel_info['spec_uri']
-
-    try:
-        result = subprocess.run(
-            [
-                str(tool_path),
-                "--plugin", spec_uri,
-                "--channels", str(channels),
-                "--window-length", str(window_length),
-            ],
-            capture_output=True, text=True, timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    except OSError:
-        return None
-
-    if result.returncode != 0:
-        return None
-
-    try:
-        data = json.loads(result.stdout)
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-    if not data.get("available", False):
-        return None
-
-    count = data.get("instruction_count", 0)
-    if count <= 0:
-        return None
-
-    return {
-        "instruction_count": count,
-        "cycle_count": data.get("cycle_count", 0),
-        "backend_stall_cycles": data.get("backend_stall_cycles", 0),
-        "cpu_freq_hz": data.get("cpu_freq_hz", 0),
-    }
 
 
 def analyze_kernel(kernel_name: str) -> Optional[InstructionProfile]:

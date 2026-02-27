@@ -1,14 +1,9 @@
 """Build command"""
+import os
 import subprocess
-import sys
 
 def setup_parser(parser):
     """Setup argument parser for build command"""
-    parser.add_argument(
-        '--clean',
-        action='store_true',
-        help='Clean before building'
-    )
     parser.add_argument(
         '--verbose', '-v',
         action='store_true',
@@ -19,12 +14,7 @@ def setup_parser(parser):
         action='store_true',
         help='Only build kernel plugins'
     )
-    parser.add_argument(
-        '--jobs', '-j',
-        type=int,
-        default=None,
-        help='Number of parallel jobs (default: auto)'
-    )
+
 
 def execute(args):
     """Execute build command"""
@@ -32,30 +22,15 @@ def execute(args):
     print("CORTEX Build")
     print("=" * 80)
 
-    # Clean if requested
-    if args.clean:
-        print("\n[1/2] Cleaning...")
-        result = subprocess.run(['make', 'clean'], capture_output=not args.verbose)
-        if result.returncode != 0:
-            print("Error: Clean failed")
-            return 1
-        print("✓ Clean complete")
-
-    # Build
-    step_num = 2 if args.clean else 1
-    total_steps = 2 if args.clean else 1
-
-    print(f"\n[{step_num}/{total_steps}] Building...")
+    print("\nBuilding...")
 
     if args.kernels_only:
         target = 'plugins'
     else:
         target = 'all'
 
-    # Build make command
-    cmd = ['make', target]
-    if args.jobs:
-        cmd.extend(['-j', str(args.jobs)])
+    # Build make command — always parallelize
+    cmd = ['make', target, f'-j{os.cpu_count() or 1}']
 
     # Execute build
     result = subprocess.run(

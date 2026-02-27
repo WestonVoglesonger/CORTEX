@@ -15,7 +15,7 @@ def main():
     from cortex.commands import (
         build, run, analyze, pipeline,
         list_kernels, validate, clean, check_system, calibrate, generate,
-        check_deadline, compare, predict, decompose,
+        check_deadline, compare, decompose,
     )
 
     parser = argparse.ArgumentParser(
@@ -34,8 +34,8 @@ Examples:
   cortex check-system               # Check system configuration
 
   # Calibration workflow (trainable kernels)
-  cortex generate --channels 64 --duration 60 --output-dir calib_64ch
-  cortex calibrate --kernel csp --dataset calib_64ch --labels "100x0,100x1" --output state.cortex_state
+  cortex generate --spec calib_64ch/spec.yaml
+  cortex calibrate --kernel csp --dataset calib_64ch --output state.cortex_state
   cortex run --kernel csp --state state.cortex_state
 
 For more info: https://github.com/WestonVoglesonger/CORTEX
@@ -92,11 +92,7 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     compare_parser = subparsers.add_parser('compare', help='Compare two benchmark runs')
     compare.setup_parser(compare_parser)
 
-    # Predict command (SE-5 Step 1: static pre-benchmark prediction)
-    predict_parser = subparsers.add_parser('predict', help='Static latency prediction (pre-benchmark)')
-    predict.setup_parser(predict_parser)
-
-    # Decompose command (SE-5 Step 3: post-benchmark decomposition)
+    # Decompose command
     decompose_parser = subparsers.add_parser('decompose', help='Decompose measured latency into components')
     decompose.setup_parser(decompose_parser)
 
@@ -132,8 +128,6 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(check_deadline.execute(args))
         elif args.command == 'compare':
             sys.exit(compare.execute(args))
-        elif args.command == 'predict':
-            sys.exit(predict.execute(args))
         elif args.command == 'decompose':
             sys.exit(decompose.execute(args))
     except KeyboardInterrupt:

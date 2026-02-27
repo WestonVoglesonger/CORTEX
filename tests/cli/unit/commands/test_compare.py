@@ -16,7 +16,7 @@ class TestSetupParser:
         assert args.baseline == 'run_a'
         assert args.candidate == 'run_b'
         assert args.alpha == 0.05
-        assert args.format == 'png'
+
 
     def test_custom_alpha(self):
         parser = argparse.ArgumentParser()
@@ -294,8 +294,6 @@ class TestExecute:
             'candidate': 'run_b',
             'output': '/tmp/test_compare_out',
             'alpha': 0.05,
-            'format': 'png',
-            'telemetry_format': 'ndjson',
         }
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)

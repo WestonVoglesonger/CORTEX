@@ -15,23 +15,11 @@ def setup_parser(parser):
         help='Output directory for plots and summary (default: <run_dir>/analysis)'
     )
     parser.add_argument(
-        '--format', '-f',
-        choices=['png', 'pdf', 'svg'],
-        default='png',
-        help='Output format for plots (default: png)'
-    )
-    parser.add_argument(
         '--plots', '-p',
         nargs='+',
         choices=['latency', 'deadline', 'throughput', 'cdf', 'all'],
         default=['all'],
         help='Which plots to generate (default: all)'
-    )
-    parser.add_argument(
-        '--telemetry-format', '-t',
-        choices=['ndjson', 'csv', 'auto'],
-        default='ndjson',
-        help='Preferred telemetry format to load (default: ndjson)'
     )
 
 def execute(args):
@@ -67,8 +55,6 @@ def execute(args):
 
     print(f"Results directory: {run_dir}")
     print(f"Output directory: {output_dir}")
-    print(f"Plot format: {args.format}")
-    print(f"Telemetry format: {args.telemetry_format}")
     print()
 
     # Create analyzer with production dependencies
@@ -82,8 +68,8 @@ def execute(args):
         str(run_dir),
         output_dir=output_dir,
         plots=args.plots,
-        format=args.format,
-        telemetry_format=args.telemetry_format
+        format='png',
+        telemetry_format='ndjson'
     )
 
     # Detect and analyze pipeline subdirectories
@@ -103,8 +89,8 @@ def execute(args):
                 str(pipe_dir),
                 output_dir=pipe_output,
                 plots=args.plots,
-                format=args.format,
-                telemetry_format=args.telemetry_format
+                format='png',
+                telemetry_format='ndjson'
             )
             status = "OK" if ok else "no data"
             print(f"  {pipe_dir.name}: {status}")
