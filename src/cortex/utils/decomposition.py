@@ -18,7 +18,7 @@ import numpy as np
 from scipy.stats import mannwhitneyu, ks_2samp
 
 from cortex.utils.instruction_analyzer import (
-    InstructionProfile, analyze_kernel, count_dynamic_instructions,
+    InstructionProfile, analyze_kernel,
 )
 
 logger = logging.getLogger(__name__)
