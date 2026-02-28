@@ -229,7 +229,7 @@ def attribute_tail(
     kernel_name: str,
     latencies_us: list,
     noop_latencies_us: Optional[list] = None,
-    per_window_cpu_freq_mhz: Optional[list] = None,
+    per_window_freq_mhz: Optional[list] = None,
     per_window_osnoise_ns: Optional[list] = None,
     per_window_cycle_counts: Optional[list] = None,
     per_window_backend_stall_counts: Optional[list] = None,
@@ -285,9 +285,9 @@ def attribute_tail(
         return arr is not None and len(arr) > 0 and np.any(np.array(arr) != 0)
 
     covariates = {}  # name -> (array, transform_for_regression)
-    if _has_data(per_window_cpu_freq_mhz):
-        freq_arr = np.array(per_window_cpu_freq_mhz, dtype=float)[:n_windows]
-        covariates["cpu_freq_mhz"] = freq_arr
+    if _has_data(per_window_freq_mhz):
+        freq_arr = np.array(per_window_freq_mhz, dtype=float)[:n_windows]
+        covariates["freq_mhz"] = freq_arr
     if _has_data(per_window_osnoise_ns):
         noise_arr = np.array(per_window_osnoise_ns, dtype=float)[:n_windows]
         covariates["osnoise_total_ns"] = noise_arr
@@ -352,8 +352,8 @@ def attribute_tail(
                 )
 
             # Frequency stratification (if freq data available)
-            if "cpu_freq_mhz" in covariates:
-                freq = covariates["cpu_freq_mhz"]
+            if "freq_mhz" in covariates:
+                freq = covariates["freq_mhz"]
                 freq_median = float(np.median(freq))  # Use median as "stable" freq
                 stable_mask = np.abs(freq - freq_median) < (freq_median * 0.02)
                 unstable_mask = ~stable_mask
@@ -380,7 +380,7 @@ def attribute_tail(
         X_cols = []
         for name in cov_names:
             arr = non_zero_covariates[name]
-            if name == "cpu_freq_mhz":
+            if name == "freq_mhz":
                 # 1/freq: higher latency when freq is lower
                 safe = np.where(arr > 0, arr, 1.0)
                 X_cols.append(1.0 / safe)
@@ -498,7 +498,7 @@ def characterize_kernel(
         # PMU counters are measured around kernel process() in the adapter,
         # so pair with device_latencies_us (device_tstart/device_tend).
         #
-        # Guard: skip effective_freq when kernel P50 is below 50 µs.
+        # Guard 1: skip effective_freq when kernel P50 is below 50 µs.
         # At sub-50 µs latencies, PMU counter read overhead (kpc/perf
         # start+stop) is a significant fraction of total cycles, making
         # cycles/wall_time exceed physical CPU frequency. IPC and stall
@@ -510,7 +510,7 @@ def characterize_kernel(
                 "PMU overhead dominates cycle count"
             )
             unavailable["frequency_tax_pct"] = unavailable["effective_freq_ghz"]
-        elif True:
+        else:
             if device_latencies_us is not None and len(device_latencies_us) > 0:
                 device_wall_s = np.array(device_latencies_us, dtype=float) * 1e-6
             else:
@@ -523,13 +523,25 @@ def characterize_kernel(
                 per_window_freq = c[valid_freq] / w[valid_freq]
                 effective_freq_hz = float(np.median(per_window_freq))
                 effective_freq_ghz = effective_freq_hz / 1e9
-                provenance["effective_freq_ghz"] = "measured/PMU+timing"
 
+                # Guard 2: detect fixed reference clock (e.g., Apple Silicon
+                # CNTPCT_EL0). If measured "frequency" exceeds device spec max
+                # by >20%, the PMU counter is not tracking actual CPU frequency.
                 max_freq_hz = dev.get('frequency', {}).get('max_hz', 0)
-                if max_freq_hz > 0:
+                if max_freq_hz > 0 and effective_freq_hz > max_freq_hz * 1.2:
+                    unavailable["effective_freq_ghz"] = (
+                        f"PMU cycle counter uses fixed reference clock "
+                        f"({effective_freq_ghz:.1f} GHz > max {max_freq_hz/1e9:.1f} GHz)"
+                    )
+                    effective_freq_ghz = None
+                    frequency_tax_pct = None
+                    unavailable["frequency_tax_pct"] = "effective freq unavailable (reference clock)"
+                elif max_freq_hz > 0:
+                    provenance["effective_freq_ghz"] = "measured/PMU+timing"
                     frequency_tax_pct = (1 - effective_freq_hz / max_freq_hz) * 100
                     provenance["frequency_tax_pct"] = "measured/PMU+timing"
                 else:
+                    provenance["effective_freq_ghz"] = "measured/PMU+timing"
                     unavailable["frequency_tax_pct"] = "no max_hz in device spec"
             else:
                 unavailable["effective_freq_ghz"] = "no valid cycle/wall-time pairs"

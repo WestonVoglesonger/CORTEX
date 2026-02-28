@@ -215,13 +215,24 @@ class TelemetryAnalyzer:
         # Combine all telemetry (real pandas concat)
         df = pd.concat(dataframes, ignore_index=True)
 
-        # Derive end-to-end latency from timestamps if not already present
+        # Derive latency from timestamps if not already present
+        # Prefer device timestamps (kernel-only timing) when available from adapter telemetry
         if 'latency_ns' not in df.columns:
-            if 'start_ts_ns' in df.columns and 'end_ts_ns' in df.columns:
+            if 'device_tstart_ns' in df.columns and 'device_tend_ns' in df.columns:
+                valid = df['device_tstart_ns'] > 0
+                if valid.any():
+                    df.loc[valid, 'latency_ns'] = df.loc[valid, 'device_tend_ns'] - df.loc[valid, 'device_tstart_ns']
+                    if (~valid).any():
+                        df.loc[~valid, 'latency_ns'] = df.loc[~valid, 'end_ts_ns'] - df.loc[~valid, 'start_ts_ns']
+                    self.log.info("Derived latency_ns from device timestamps (kernel-only)")
+                else:
+                    df['latency_ns'] = df['end_ts_ns'] - df['start_ts_ns']
+                    self.log.info("Derived latency_ns from harness timestamps (pre-adapter)")
+            elif 'start_ts_ns' in df.columns and 'end_ts_ns' in df.columns:
                 df['latency_ns'] = df['end_ts_ns'] - df['start_ts_ns']
-                self.log.info("Derived latency_ns from start_ts_ns/end_ts_ns")
+                self.log.info("Derived latency_ns from harness timestamps")
             else:
-                self.log.error("Cannot derive latency: missing start_ts_ns/end_ts_ns columns")
+                self.log.error("Cannot derive latency: missing timestamp columns")
                 return None
 
         # Calculate end-to-end latency in microseconds
@@ -245,6 +256,31 @@ class TelemetryAnalyzer:
                     (df.loc[valid, 'device_tlast_tx_ns'] - df.loc[valid, 'device_tin_ns']) / 1000.0
                 )
                 self.log.info("Derived adapter_latency_us from device_tin_ns/device_tlast_tx_ns")
+
+        # Derive per-window frequency: prefer PMU-derived (ground truth) over cpufreq
+        # PMU: cycles / wall_time gives actual frequency during kernel execution
+        # cpufreq: sysfs point sample, can be wrong (Asahi) or absent (macOS)
+        has_pmu_freq = ('pmu_cycle_count' in df.columns
+                        and 'device_tstart_ns' in df.columns
+                        and 'device_tend_ns' in df.columns)
+        if has_pmu_freq:
+            device_wall_ns = df['device_tend_ns'] - df['device_tstart_ns']
+            valid_pmu = (df['pmu_cycle_count'] > 0) & (device_wall_ns > 0)
+            df['freq_mhz'] = 0.0
+            if valid_pmu.any():
+                df.loc[valid_pmu, 'freq_mhz'] = (
+                    df.loc[valid_pmu, 'pmu_cycle_count'] / (device_wall_ns[valid_pmu] * 1e-3)
+                )
+                # Fall back to cpufreq for windows without PMU data
+                if (~valid_pmu).any() and 'cpu_freq_mhz' in df.columns:
+                    df.loc[~valid_pmu, 'freq_mhz'] = df.loc[~valid_pmu, 'cpu_freq_mhz']
+                self.log.info("Derived freq_mhz from PMU cycle counts (ground truth)")
+            elif 'cpu_freq_mhz' in df.columns:
+                df['freq_mhz'] = df['cpu_freq_mhz']
+                self.log.info("PMU cycles all zero; using cpufreq fallback for freq_mhz")
+        elif 'cpu_freq_mhz' in df.columns:
+            df['freq_mhz'] = df['cpu_freq_mhz']
+            self.log.info("No PMU data; using cpufreq for freq_mhz")
 
         self.log.info(f"Loaded {len(df)} telemetry records from {len(dataframes)} kernel(s)")
         return df
@@ -834,7 +870,7 @@ class TelemetryAnalyzer:
                                   format: str = 'png') -> bool:
         """Generate scatter plot of CPU frequency vs latency, colored by kernel.
 
-        Requires 'cpu_freq_mhz' column in telemetry (SE-4). Skips if not present
+        Requires 'freq_mhz' column in telemetry (SE-4). Skips if not present
         or all values are 0 (macOS).
 
         Args:
@@ -845,11 +881,11 @@ class TelemetryAnalyzer:
         Returns:
             True if plot saved successfully, False otherwise
         """
-        if 'cpu_freq_mhz' not in df.columns:
-            self.log.info("No cpu_freq_mhz column; skipping freq-latency scatter")
+        if 'freq_mhz' not in df.columns:
+            self.log.info("No freq_mhz column; skipping freq-latency scatter")
             return False
 
-        df_plot = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)]
+        df_plot = df[(df['warmup'] == 0) & (df['freq_mhz'] > 0)]
         if df_plot.empty:
             self.log.info("No non-zero CPU frequency data; skipping freq-latency scatter")
             return False
@@ -862,7 +898,7 @@ class TelemetryAnalyzer:
 
         for plugin, color in zip(plugins, colors):
             subset = df_plot[df_plot['plugin'] == plugin]
-            ax.scatter(subset['cpu_freq_mhz'], subset['latency_us'],
+            ax.scatter(subset['freq_mhz'], subset['latency_us'],
                        label=plugin, color=color, alpha=0.4, s=10)
 
         ax.set_xlabel('CPU Frequency (MHz)')
@@ -886,22 +922,22 @@ class TelemetryAnalyzer:
         """Detect windows where CPU frequency changed and compute latency delta.
 
         Args:
-            df: Telemetry DataFrame with cpu_freq_mhz column
+            df: Telemetry DataFrame with freq_mhz column
 
         Returns:
             DataFrame with transition points and latency deltas, or None
         """
-        if 'cpu_freq_mhz' not in df.columns:
+        if 'freq_mhz' not in df.columns:
             return None
 
-        df_real = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)].copy()
+        df_real = df[(df['warmup'] == 0) & (df['freq_mhz'] > 0)].copy()
         if df_real.empty:
             return None
 
         rows = []
         for plugin in df_real['plugin'].unique():
             pdata = df_real[df_real['plugin'] == plugin].sort_values('window_index')
-            freqs = pdata['cpu_freq_mhz'].values
+            freqs = pdata['freq_mhz'].values
             latencies = pdata['latency_us'].values
             indices = pdata['window_index'].values
 
@@ -933,11 +969,11 @@ class TelemetryAnalyzer:
         Returns:
             True if plot saved successfully, False otherwise
         """
-        if 'cpu_freq_mhz' not in df.columns:
-            self.log.info("No cpu_freq_mhz column; skipping platform state timeline")
+        if 'freq_mhz' not in df.columns:
+            self.log.info("No freq_mhz column; skipping platform state timeline")
             return False
 
-        df_plot = df[(df['warmup'] == 0) & (df['cpu_freq_mhz'] > 0)]
+        df_plot = df[(df['warmup'] == 0) & (df['freq_mhz'] > 0)]
         if df_plot.empty:
             self.log.info("No non-zero CPU frequency data; skipping platform state timeline")
             return False
@@ -961,7 +997,7 @@ class TelemetryAnalyzer:
 
         # Plot CPU frequency on secondary axis (use first kernel's data)
         first_kernel = df_plot[df_plot['plugin'] == plugins[0]].sort_values('window_index')
-        ax2.plot(first_kernel['window_index'], first_kernel['cpu_freq_mhz'],
+        ax2.plot(first_kernel['window_index'], first_kernel['freq_mhz'],
                  label='CPU Freq', color='red', linewidth=1.5, alpha=0.8)
 
         ax1.set_xlabel('Window Index')
@@ -1208,7 +1244,7 @@ class TelemetryAnalyzer:
             plot_results['throughput'] = self.plot_throughput_comparison(stats, output_path, format)
 
         # Platform correlation plots (SE-7): auto-generate when freq data present
-        if 'cpu_freq_mhz' in df.columns and (df['cpu_freq_mhz'] > 0).any():
+        if 'freq_mhz' in df.columns and (df['freq_mhz'] > 0).any():
             self.log.info("CPU frequency data detected — generating platform correlation plots")
 
             freq_scatter_path = f"{output_dir}/freq_latency_scatter.{format}"

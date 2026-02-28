@@ -185,6 +185,8 @@ logs/
 
 # Calibration state files (ABI v3) - generated artifacts
 *.cortex_state
+# EXCEPT: Calibration states deployed to kernel directories (auto-discovery convention)
+!primitives/kernels/**/calibration.cortex_state
 
 # EXCEPT: Validation runs for publication (frozen, published results)
 !results/validation-*/

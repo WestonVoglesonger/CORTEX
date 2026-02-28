@@ -1,10 +1,24 @@
 device:
   name: "Apple M1 (Asahi Linux)"
   adapters: [native]
+  # NOTE: cpu_peak_gflops and memory_bandwidth_gb_s are theoretical M1 maximums.
+  # Asahi Linux achieves lower effective throughput (~10-60% of theoretical)
+  # due to incomplete power management and DVFS support.
+  # Roofline floor estimates will significantly underestimate actual latency.
+  # TODO: Calibrate with STREAM/DGEMM benchmarks under Asahi for accurate values.
+  peak_gflops: 2600.0       # ~2.6 TFLOPS FP32 (GPU), CPU ~100 GFLOPS
+  cpu_peak_gflops: 100.0    # 4 Firestorm cores × ~3.2 GHz × 8 FLOP/cycle
+  memory_bandwidth_gb_s: 68.25  # LPDDR4X unified memory
+  l1_cache_kb: 192          # 192 KB per Firestorm core (128 data + 64 inst)
+  l2_cache_kb: 12288        # 12 MB shared L2
   frequency:
     model: fixed
     max_hz: 3228000000
     per_sample: false
+    # NOTE: Asahi cpufreq driver reports ~2064 MHz, but PMU cycle counters
+    # show ~3.2 GHz (matching M1 Firestorm spec). The driver underreports
+    # because Apple's DVFS interface isn't fully reverse-engineered.
+    # Trust PMU-derived frequency over cpufreq for this platform.
   pmu:
     instruction_count: true  # perf_event_open (P-cores only, E-cores lack support)
     l1d_misses: true         # Available via perf_event_open

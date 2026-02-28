@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define CORTEX_MAX_PLUGINS 16
+#define CORTEX_MAX_PLUGINS 32
 
 typedef struct cortex_plugin_runtime_cfg {
     uint32_t window_length_samples;         /* Input W */
