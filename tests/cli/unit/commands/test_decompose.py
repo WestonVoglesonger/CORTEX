@@ -746,13 +746,13 @@ class TestAttributeTailTier2:
         lats, freq = self._make_lats_with_freq(n=1000)
         result = attribute_tail(
             "goertzel", lats,
-            per_window_cpu_freq_mhz=freq,
+            per_window_freq_mhz=freq,
         )
         assert result.tier >= 2
         assert result.tail_cohort_size is not None
         assert result.typical_cohort_size is not None
-        assert "cpu_freq_mhz" in result.covariate_comparisons
-        comp = result.covariate_comparisons["cpu_freq_mhz"]
+        assert "freq_mhz" in result.covariate_comparisons
+        comp = result.covariate_comparisons["freq_mhz"]
         assert comp.significant is True
         assert comp.direction == "lower_in_tail"
 
@@ -761,7 +761,7 @@ class TestAttributeTailTier2:
         lats, freq = self._make_lats_with_freq(n=1000)
         result = attribute_tail(
             "goertzel", lats,
-            per_window_cpu_freq_mhz=freq,
+            per_window_freq_mhz=freq,
         )
         assert result.stable_freq_p99_us is not None
         assert result.unstable_freq_p99_us is not None
@@ -774,7 +774,7 @@ class TestAttributeTailTier2:
         freq = [3200.0] * 45 + [1600.0] * 5
         result = attribute_tail(
             "goertzel", lats,
-            per_window_cpu_freq_mhz=freq,
+            per_window_freq_mhz=freq,
         )
         assert result.tier == 1
         assert result.tail_cohort_size is None
@@ -785,10 +785,10 @@ class TestAttributeTailTier2:
         freq = [0.0] * 250
         result = attribute_tail(
             "goertzel", lats,
-            per_window_cpu_freq_mhz=freq,
+            per_window_freq_mhz=freq,
         )
         # All-zero covariates should be skipped
-        assert "cpu_freq_mhz" not in result.covariate_comparisons
+        assert "freq_mhz" not in result.covariate_comparisons
 
 
 class TestAttributeTailTier3:
@@ -809,7 +809,7 @@ class TestAttributeTailTier3:
 
         result = attribute_tail(
             "goertzel", lats.tolist(),
-            per_window_cpu_freq_mhz=freq.tolist(),
+            per_window_freq_mhz=freq.tolist(),
             per_window_osnoise_ns=noise.tolist(),
             per_window_backend_stall_counts=stall_cycles.tolist(),
             per_window_cycle_counts=cycle_counts.tolist(),
@@ -836,7 +836,7 @@ class TestAttributeTailTier3:
 
         result = attribute_tail(
             "goertzel", lats.tolist(),
-            per_window_cpu_freq_mhz=freq.tolist(),
+            per_window_freq_mhz=freq.tolist(),
             per_window_osnoise_ns=noise.tolist(),
             per_window_backend_stall_counts=stall_cycles.tolist(),
             per_window_cycle_counts=cycle_counts.tolist(),
@@ -854,7 +854,7 @@ class TestAttributeTailTier3:
 
         result = attribute_tail(
             "goertzel", lats.tolist(),
-            per_window_cpu_freq_mhz=freq.tolist(),
+            per_window_freq_mhz=freq.tolist(),
         )
         # Only one covariate → can't do Shapley
         assert result.tier == 2

@@ -108,8 +108,8 @@ def execute(args):
                    and df_real['osnoise_total_ns'].sum() > 0)
 
     # CPU frequency per window (may be all zeros on macOS)
-    has_cpu_freq = ('cpu_freq_mhz' in df_real.columns
-                    and df_real['cpu_freq_mhz'].sum() > 0)
+    has_cpu_freq = ('freq_mhz' in df_real.columns
+                    and df_real['freq_mhz'].sum() > 0)
 
     if not has_pmu:
         reason = _pmu_unavailable_reason()
@@ -168,7 +168,7 @@ def execute(args):
             plugin_name,
             latencies_us=attr_lats,
             noop_latencies_us=noop_latencies,
-            per_window_cpu_freq_mhz=(kernel_df['cpu_freq_mhz'].tolist()
+            per_window_freq_mhz=(kernel_df['freq_mhz'].tolist()
                                      if has_cpu_freq else None),
             per_window_osnoise_ns=(kernel_df['osnoise_total_ns'].tolist()
                                    if has_osnoise else None),

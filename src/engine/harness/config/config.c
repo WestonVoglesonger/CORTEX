@@ -346,8 +346,21 @@ int cortex_discover_kernels(cortex_run_config_t *cfg) {
                         sizeof(plugin->adapter_path) - 1);
                 plugin->adapter_path[sizeof(plugin->adapter_path) - 1] = '\0';
 
-                printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
-                       kernel_name, dtype, dtype_path);
+                /* Auto-discover calibration state for trainable kernels.
+                 * Convention: calibration.cortex_state next to the .so file. */
+                char cal_path[1024];
+                snprintf(cal_path, sizeof(cal_path), "%s/calibration.cortex_state",
+                         dtype_path);
+                if (access(cal_path, F_OK) == 0) {
+                    strncpy(plugin->calibration_state, cal_path,
+                            sizeof(plugin->calibration_state) - 1);
+                    plugin->calibration_state[sizeof(plugin->calibration_state) - 1] = '\0';
+                    printf("[discovery] auto-detected kernel: %s (%s) at %s [calibrated]\n",
+                           kernel_name, dtype, dtype_path);
+                } else {
+                    printf("[discovery] auto-detected kernel: %s (%s) at %s\n",
+                           kernel_name, dtype, dtype_path);
+                }
 
                 kernel_count++;
             }
