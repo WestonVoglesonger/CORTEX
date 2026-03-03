@@ -550,6 +550,16 @@ static void dispatch_window(cortex_scheduler_t *scheduler, const void *window_da
         /* Collect osnoise after window */
         if (scheduler->osnoise_initialized) osnoise_ns = cortex_osnoise_read_ns();
 
+        /* Prefer device-reported platform state when available (non-zero = device reported).
+         * For remote execution, harness-side values are meaningless — they reflect the
+         * Mac's CPU frequency, not the Jetson's. */
+        if (device_timing.cpu_freq_mhz != 0) {
+            cpu_freq_mhz = device_timing.cpu_freq_mhz;
+        }
+        if (device_timing.osnoise_total_ns != 0) {
+            osnoise_ns = device_timing.osnoise_total_ns;
+        }
+
         int deadline_missed = 0;
         if ((end_ts.tv_sec > deadline_ts.tv_sec) ||
             (end_ts.tv_sec == deadline_ts.tv_sec && end_ts.tv_nsec > deadline_ts.tv_nsec)) {
@@ -763,6 +773,14 @@ static void dispatch_chain(cortex_scheduler_t *scheduler, const void *window_dat
             pmu.cycle_count = device_timing.pmu_cycle_count;
             pmu.instruction_count = device_timing.pmu_instruction_count;
             pmu.backend_stall_cycles = device_timing.pmu_backend_stall_cycles;
+        }
+
+        /* Prefer device-reported platform state when available */
+        if (device_timing.cpu_freq_mhz != 0) {
+            cpu_freq_mhz = device_timing.cpu_freq_mhz;
+        }
+        if (device_timing.osnoise_total_ns != 0) {
+            osnoise_ns = device_timing.osnoise_total_ns;
         }
 
         int deadline_missed = 0;

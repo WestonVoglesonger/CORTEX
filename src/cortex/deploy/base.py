@@ -63,13 +63,15 @@ class Deployer(Protocol):
         - DockerDeployer: container-based deployment [future]
     """
 
-    def deploy(self, verbose: bool = False, skip_validation: bool = False) -> DeploymentResult:
+    def deploy(self, verbose: bool = False, skip_validation: bool = False,
+               governor: str = "performance") -> DeploymentResult:
         """
         Deploy code, build (if needed), start adapter.
 
         Args:
             verbose: Stream build output to user
             skip_validation: Skip oracle validation (faster, trust correctness)
+            governor: CPU frequency governor to set on device (Linux only)
 
         Returns:
             DeploymentResult with transport_uri and metadata

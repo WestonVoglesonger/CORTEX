@@ -1,6 +1,9 @@
 """Run experiments command."""
 import sys
+import platform
+import subprocess
 import argparse
+from contextlib import contextmanager
 from pathlib import Path
 from cortex.utils.runner import HarnessRunner
 from cortex.utils.analyzer import TelemetryAnalyzer
@@ -16,6 +19,42 @@ from cortex.core import (
     SystemToolLocator,
     YamlConfigLoader,
 )
+
+
+@contextmanager
+def _inhibit_host_sleep(verbose=False):
+    """Prevent host machine from sleeping during benchmark.
+
+    macOS: caffeinate -i -s (prevent idle + system sleep)
+    Linux: systemd-inhibit (if available)
+    Other: no-op
+    """
+    proc = None
+    try:
+        if platform.system() == "Darwin":
+            proc = subprocess.Popen(
+                ["caffeinate", "-i", "-s"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if verbose:
+                print("Host sleep inhibited (caffeinate)")
+        elif platform.system() == "Linux":
+            # systemd-inhibit with sleep infinity as the held process
+            proc = subprocess.Popen(
+                ["systemd-inhibit", "--what=idle:sleep",
+                 "--who=cortex", "--why=Benchmark running",
+                 "sleep", "infinity"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if verbose:
+                print("Host sleep inhibited (systemd-inhibit)")
+        yield
+    finally:
+        if proc:
+            proc.terminate()
+            proc.wait()
 
 
 def resolve_device_arg(args, config):
@@ -83,65 +122,67 @@ def setup_parser(parser):
     )
 
 
-def _run_with_deploy(deploy_string, run_fn, verbose):
+def _run_with_deploy(deploy_string, run_fn, verbose, governor="performance"):
     """Handle deployment lifecycle around a run function.
 
     Args:
         deploy_string: Deploy string (e.g., ssh://pi@rpi) or None for local.
         run_fn: Callable(transport_uri) that runs the benchmark and returns results_dir.
         verbose: Show verbose output.
+        governor: CPU frequency governor to set on remote device.
 
     Returns:
         CLI exit code (0 = success, 1 = failure).
     """
-    if deploy_string is None:
-        results_dir = run_fn(transport_uri=None)
-        return 0 if results_dir else 1
+    with _inhibit_host_sleep(verbose=verbose):
+        if deploy_string is None:
+            results_dir = run_fn(transport_uri=None)
+            return 0 if results_dir else 1
 
-    try:
-        result = DeployerFactory.from_device_string(deploy_string)
-    except ValueError as e:
-        print(f"Error: {e}")
-        return 1
+        try:
+            result = DeployerFactory.from_device_string(deploy_string)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
 
-    if not isinstance(result, Deployer):
-        # Transport URI string (e.g., tcp://host:9000)
-        transport_uri = result
-        if transport_uri != "local://":
-            print(f"Manual mode: connecting to {transport_uri}")
-        results_dir = run_fn(transport_uri=transport_uri)
-        return 0 if results_dir else 1
+        if not isinstance(result, Deployer):
+            # Transport URI string (e.g., tcp://host:9000)
+            transport_uri = result
+            if transport_uri != "local://":
+                print(f"Manual mode: connecting to {transport_uri}")
+            results_dir = run_fn(transport_uri=transport_uri)
+            return 0 if results_dir else 1
 
-    # Auto-deploy mode
-    deployer = result
-    print(f"Auto-deploy mode: deploying to {deploy_string}")
-    try:
-        deploy_result = deployer.deploy(verbose=verbose, skip_validation=True)
-        results_dir = run_fn(transport_uri=deploy_result.transport_uri)
+        # Auto-deploy mode
+        deployer = result
+        print(f"Auto-deploy mode: deploying to {deploy_string}")
+        try:
+            deploy_result = deployer.deploy(verbose=verbose, skip_validation=True, governor=governor)
+            results_dir = run_fn(transport_uri=deploy_result.transport_uri)
 
-        if results_dir and hasattr(deployer, 'fetch_logs'):
-            from cortex.utils.paths import get_deployment_dir
-            deployment_dir = get_deployment_dir(results_dir.split('/')[-1] if '/' in str(results_dir) else results_dir)
-            try:
-                print("\nFetching deployment logs...")
-                fetch_result = deployer.fetch_logs(str(deployment_dir))
-                if not fetch_result["success"]:
-                    print(f"Log fetch issues: {fetch_result['errors']}")
-                else:
-                    print(f"Deployment logs saved: {deployment_dir}/")
-            except Exception as e:
-                print(f"Failed to fetch logs: {e}")
+            if results_dir and hasattr(deployer, 'fetch_logs'):
+                from cortex.utils.paths import get_deployment_dir
+                deployment_dir = get_deployment_dir(results_dir.split('/')[-1] if '/' in str(results_dir) else results_dir)
+                try:
+                    print("\nFetching deployment logs...")
+                    fetch_result = deployer.fetch_logs(str(deployment_dir))
+                    if not fetch_result["success"]:
+                        print(f"Log fetch issues: {fetch_result['errors']}")
+                    else:
+                        print(f"Deployment logs saved: {deployment_dir}/")
+                except Exception as e:
+                    print(f"Failed to fetch logs: {e}")
 
-        return 0 if results_dir else 1
+            return 0 if results_dir else 1
 
-    except DeploymentError as e:
-        print(f"\nDeployment failed: {e}")
-        return 1
-    finally:
-        print("\nCleaning up deployment...")
-        cleanup_result = deployer.cleanup()
-        if not cleanup_result.success:
-            print(f"Cleanup issues: {cleanup_result.errors}")
+        except DeploymentError as e:
+            print(f"\nDeployment failed: {e}")
+            return 1
+        finally:
+            print("\nCleaning up deployment...")
+            cleanup_result = deployer.cleanup()
+            if not cleanup_result.success:
+                print(f"Cleanup issues: {cleanup_result.errors}")
 
 
 def _check_preflight(filesystem, process_executor, env_provider):
@@ -282,9 +323,16 @@ def execute(args):
         logger=ConsoleLogger()
     )
 
-    # Pre-flight checks (non-blocking tips)
+    # Pre-flight checks (non-blocking tips) — skip for remote deployments
+    # (PMU access is configured by the deployer on the remote device)
     env_provider = SystemEnvironmentProvider()
-    _check_preflight(filesystem, process_executor, env_provider)
+    if not deploy_string:
+        _check_preflight(filesystem, process_executor, env_provider)
+
+    # Extract governor from config for remote deployment
+    governor = "performance"  # safe default
+    if config_dict:
+        governor = config_dict.get('power', {}).get('governor', 'performance')
 
     # Custom config mode
     if args.config:
@@ -301,7 +349,7 @@ def execute(args):
                 captured['results_dir'] = results_dir
                 return results_dir
 
-            exit_code = _run_with_deploy(deploy_string, run_fn, args.verbose)
+            exit_code = _run_with_deploy(deploy_string, run_fn, args.verbose, governor=governor)
 
             if captured.get('results_dir'):
                 _analyze_pipeline_run(captured['results_dir'], filesystem)
@@ -314,7 +362,7 @@ def execute(args):
                 args.config, run_name=run_name, verbose=args.verbose,
                 transport_uri=transport_uri, device_spec=device_spec,
             )
-        return _run_with_deploy(deploy_string, run_fn, args.verbose)
+        return _run_with_deploy(deploy_string, run_fn, args.verbose, governor=governor)
 
     # Single kernel mode
     if args.kernel:
@@ -330,7 +378,7 @@ def execute(args):
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
             )
-        return _run_with_deploy(deploy_string, run_fn, args.verbose)
+        return _run_with_deploy(deploy_string, run_fn, args.verbose, governor=governor)
 
     # Batch mode
     if args.all:
@@ -341,7 +389,7 @@ def execute(args):
                 verbose=args.verbose, transport_uri=transport_uri,
                 device_spec=device_spec,
             )
-        return _run_with_deploy(deploy_string, run_fn, args.verbose)
+        return _run_with_deploy(deploy_string, run_fn, args.verbose, governor=governor)
 
     # No mode specified
     print("Error: Must specify --kernel, --all, or --config")

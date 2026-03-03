@@ -11,7 +11,7 @@ class TestResolveDevice:
         spec = resolve_device("primitives/devices/m1-macos.yaml")
         assert spec is not None
         assert spec["device"]["name"] == "Apple M1 (macOS)"
-        assert spec["device"]["cpu_peak_gflops"] == 100.0
+        assert "frequency" in spec["device"]
 
     def test_resolve_by_short_name(self):
         """Short name maps to primitives/devices/{name}.yaml."""

@@ -195,6 +195,8 @@ int cortex_protocol_send_result_chunked(
     uint64_t pmu_cycle_count,
     uint64_t pmu_instruction_count,
     uint64_t pmu_backend_stall_cycles,
+    uint32_t cpu_freq_mhz,
+    uint64_t osnoise_total_ns,
     size_t element_size
 );
 
@@ -239,7 +241,9 @@ int cortex_protocol_recv_result_chunked(
     uint32_t *out_channels,
     uint64_t *out_pmu_cycle_count,
     uint64_t *out_pmu_instruction_count,
-    uint64_t *out_pmu_backend_stall_cycles
+    uint64_t *out_pmu_backend_stall_cycles,
+    uint32_t *out_cpu_freq_mhz,
+    uint64_t *out_osnoise_total_ns
 );
 
 /* Chunking error codes */

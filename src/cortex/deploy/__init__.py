@@ -17,6 +17,7 @@ from .base import Deployer, DeploymentResult, CleanupResult
 from .factory import DeployerFactory
 from .exceptions import DeploymentError
 from .ssh_deployer import SSHDeployer
+from .provisioner import DeviceProvisioner
 
 __all__ = [
     # Protocol and types
@@ -32,4 +33,5 @@ __all__ = [
 
     # Implementations
     "SSHDeployer",
+    "DeviceProvisioner",
 ]

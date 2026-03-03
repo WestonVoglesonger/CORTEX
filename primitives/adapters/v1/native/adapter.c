@@ -19,6 +19,7 @@
 #include "cortex_adapter_helpers.h"
 #include "cortex_wire.h"
 #include "inscount.h"
+#include "osnoise.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -98,6 +99,24 @@ static uint64_t get_timestamp_ns(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+/* Sample current CPU frequency in MHz.
+ * On Linux: reads sysfs. On macOS/other: returns 0. */
+static uint32_t sample_cpu_freq_mhz(void)
+{
+#ifdef __linux__
+    FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r");
+    if (f) {
+        unsigned long freq_khz = 0;
+        if (fscanf(f, "%lu", &freq_khz) == 1) {
+            fclose(f);
+            return (uint32_t)(freq_khz / 1000);
+        }
+        fclose(f);
+    }
+#endif
+    return 0;
 }
 
 /* Load kernel plugin via dlopen */
@@ -278,6 +297,7 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
     float *output_buf = NULL;
     kernel_plugin_t kernel_plugin = {0};
     int pmu_initialized = 0;
+    int osnoise_initialized = 0;
     size_t elem_size = sizeof(float);  /* Updated from kernel_plugin.elem_size after load */
 
     /* 1. Send HELLO */
@@ -322,6 +342,9 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 
     /* 5. Initialize PMU counters (per-thread, measured around kernel process()) */
     pmu_initialized = (cortex_inscount_init() == 0) ? 1 : 0;
+
+    /* Initialize osnoise tracer (for device-side OS noise measurement) */
+    osnoise_initialized = (cortex_osnoise_init() == 0) ? 1 : 0;
 
     /* 6. Allocate window buffers (dtype-aware sizing from kernel load).
      * Use calloc for overflow-safe allocation (calloc checks size_t overflow). */
@@ -374,17 +397,27 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
         /* Set tin AFTER reassembly complete */
         uint64_t tin = get_timestamp_ns();
 
-        /* PMU around kernel execution — same window as tstart/tend */
+        /* Sample device-side platform state before kernel execution */
+        uint32_t cpu_freq_mhz = sample_cpu_freq_mhz();
+        if (osnoise_initialized) cortex_osnoise_reset();
+
+        /* PMU inside timestamp reads — matches tstart/tend window exactly.
+         * Previous ordering had inscount_start() before tstart and
+         * inscount_stop_all() after tend, inflating cycle counts by the
+         * cost of two clock_gettime calls + kpc read.  For fast kernels
+         * (< 50 µs) this made effective_freq exceed physical CPU max. */
         cortex_pmu_counters_t pmu = {0};
-        if (pmu_initialized) cortex_inscount_start();
 
         uint64_t tstart = get_timestamp_ns();
+        if (pmu_initialized) cortex_inscount_start();
         kernel_plugin.process(kernel_plugin.kernel_handle, window_buf, output_buf);
+        if (pmu_initialized) pmu = cortex_inscount_stop_all();
         uint64_t tend = get_timestamp_ns();
 
-        if (pmu_initialized) pmu = cortex_inscount_stop_all();
+        /* Read device-side OS noise after kernel execution */
+        uint64_t osnoise_ns = osnoise_initialized ? cortex_osnoise_read_ns() : 0;
 
-        /* Send RESULT with actual output shape + PMU counters */
+        /* Send RESULT with actual output shape + PMU counters + platform state */
         uint64_t tfirst_tx = get_timestamp_ns();
         ret = cortex_adapter_send_result(
             tp,
@@ -401,6 +434,8 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
             pmu.cycle_count,
             pmu.instruction_count,
             pmu.backend_stall_cycles,
+            cpu_freq_mhz,
+            osnoise_ns,
             elem_size
         );
         uint64_t tlast_tx = get_timestamp_ns();
@@ -420,6 +455,9 @@ static int run_session(cortex_transport_t *tp, uint32_t boot_id)
 
 cleanup:
     /* Cleanup - always executed regardless of error path */
+    if (osnoise_initialized) {
+        cortex_osnoise_teardown();
+    }
     if (pmu_initialized) {
         cortex_inscount_teardown();
     }

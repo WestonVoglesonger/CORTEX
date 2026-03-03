@@ -15,7 +15,7 @@ def main():
     from cortex.commands import (
         build, run, analyze, pipeline,
         list_kernels, validate, clean, check_system, calibrate, generate,
-        check_deadline, compare, decompose,
+        check_deadline, compare, decompose, setup_device,
     )
 
     parser = argparse.ArgumentParser(
@@ -96,6 +96,10 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
     decompose_parser = subparsers.add_parser('decompose', help='Decompose measured latency into components')
     decompose.setup_parser(decompose_parser)
 
+    # Setup-device command
+    setup_device_parser = subparsers.add_parser('setup-device', help='Provision remote device for automated benchmarking')
+    setup_device.setup_parser(setup_device_parser)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -130,6 +134,8 @@ For more info: https://github.com/WestonVoglesonger/CORTEX
             sys.exit(compare.execute(args))
         elif args.command == 'decompose':
             sys.exit(decompose.execute(args))
+        elif args.command == 'setup-device':
+            sys.exit(setup_device.execute(args))
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
         sys.exit(130)

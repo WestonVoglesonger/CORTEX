@@ -215,7 +215,7 @@ class TelemetryAnalyzer:
         # Combine all telemetry (real pandas concat)
         df = pd.concat(dataframes, ignore_index=True)
 
-        # Derive latency from timestamps if not already present
+        # Derive end-to-end latency from timestamps if not already present
         if 'latency_ns' not in df.columns:
             if 'start_ts_ns' in df.columns and 'end_ts_ns' in df.columns:
                 df['latency_ns'] = df['end_ts_ns'] - df['start_ts_ns']
@@ -224,22 +224,43 @@ class TelemetryAnalyzer:
                 self.log.error("Cannot derive latency: missing start_ts_ns/end_ts_ns columns")
                 return None
 
-        # Calculate latency in microseconds
+        # Calculate end-to-end latency in microseconds
         if 'latency_us' not in df.columns and 'latency_ns' in df.columns:
             df['latency_us'] = df['latency_ns'] / 1000.0
+
+        # Derive kernel process latency from device timestamps (cortex_process only)
+        if 'device_tstart_ns' in df.columns and 'device_tend_ns' in df.columns:
+            valid = df['device_tstart_ns'].notna() & df['device_tend_ns'].notna()
+            if valid.any():
+                df.loc[valid, 'kernel_latency_us'] = (
+                    (df.loc[valid, 'device_tend_ns'] - df.loc[valid, 'device_tstart_ns']) / 1000.0
+                )
+                self.log.info("Derived kernel_latency_us from device_tstart_ns/device_tend_ns")
+
+        # Derive adapter round-trip latency (device_tin → device_tlast_tx)
+        if 'device_tin_ns' in df.columns and 'device_tlast_tx_ns' in df.columns:
+            valid = df['device_tin_ns'].notna() & df['device_tlast_tx_ns'].notna()
+            if valid.any():
+                df.loc[valid, 'adapter_latency_us'] = (
+                    (df.loc[valid, 'device_tlast_tx_ns'] - df.loc[valid, 'device_tin_ns']) / 1000.0
+                )
+                self.log.info("Derived adapter_latency_us from device_tin_ns/device_tlast_tx_ns")
 
         self.log.info(f"Loaded {len(df)} telemetry records from {len(dataframes)} kernel(s)")
         return df
 
-    def calculate_statistics(self, df: pd.DataFrame, ci_alpha: float = 0.05) -> pd.DataFrame:
+    def calculate_statistics(self, df: pd.DataFrame, ci_alpha: float = 0.05,
+                             latency_column: str = None) -> pd.DataFrame:
         """Calculate latency statistics per kernel.
 
         Uses real pandas for deterministic aggregations. Computes 95% confidence
         intervals on the mean using the t-distribution when scipy is available.
 
         Args:
-            df: Telemetry DataFrame with 'plugin', 'latency_us', 'warmup' columns
+            df: Telemetry DataFrame with 'plugin', latency columns, 'warmup' columns
             ci_alpha: Significance level for CI (default 0.05 → 95% CI)
+            latency_column: Which latency column to use. Default auto-detects:
+                kernel_latency_us (preferred) → latency_us (fallback).
 
         Returns:
             DataFrame with statistics per kernel, including CI columns when scipy available
@@ -247,9 +268,20 @@ class TelemetryAnalyzer:
         # Filter out warmup runs (real pandas filtering)
         df_no_warmup = df[df['warmup'] == 0].copy()
 
+        # Auto-detect latency column: prefer kernel process latency over E2E
+        if latency_column is None:
+            if 'kernel_latency_us' in df_no_warmup.columns and df_no_warmup['kernel_latency_us'].notna().any():
+                latency_column = 'kernel_latency_us'
+            else:
+                latency_column = 'latency_us'
+
+        if latency_column not in df_no_warmup.columns:
+            self.log.error(f"Latency column '{latency_column}' not found in telemetry")
+            return pd.DataFrame()
+
         # Calculate statistics per kernel (real pandas groupby/agg)
         stats = df_no_warmup.groupby('plugin').agg({
-            'latency_us': [
+            latency_column: [
                 'mean',
                 'median',
                 ('p95', lambda x: x.quantile(0.95)),
@@ -261,9 +293,8 @@ class TelemetryAnalyzer:
             ]
         })
 
-        # Flatten column names
-        stats.columns = ['_'.join(col).strip() if col[1] else col[0]
-                        for col in stats.columns.values]
+        # Flatten column names — normalize to latency_us_* prefix for downstream compat
+        stats.columns = [f"latency_us_{col[1]}" for col in stats.columns.values]
 
         # Rename count → sample_count for clarity
         stats.rename(columns={'latency_us_count': 'sample_count'}, inplace=True)
@@ -431,7 +462,9 @@ class TelemetryAnalyzer:
         ax.bar(kernels, latencies, color='steelblue', alpha=0.8)
         ax.set_xlabel('Kernel')
         ax.set_ylabel('Mean Latency (μs)')
-        ax.set_title('Kernel Latency Comparison')
+        # Title reflects which latency tier was used for stats
+        lat_label = getattr(df, 'attrs', {}).get('latency_tier', 'Kernel Process')
+        ax.set_title(f'{lat_label} Latency Comparison')
         ax.tick_params(axis='x', rotation=45)
 
         plt.tight_layout()
@@ -518,9 +551,12 @@ class TelemetryAnalyzer:
         plugins = df_no_warmup['plugin'].unique()
         colors = plt.cm.tab10(range(len(plugins)))
 
+        # Use kernel process latency if available, otherwise E2E
+        lat_col = 'kernel_latency_us' if 'kernel_latency_us' in df_no_warmup.columns and df_no_warmup['kernel_latency_us'].notna().any() else 'latency_us'
+
         # Plot CDF for each plugin
         for plugin, color in zip(plugins, colors):
-            plugin_data = df_no_warmup[df_no_warmup['plugin'] == plugin]['latency_us']
+            plugin_data = df_no_warmup[df_no_warmup['plugin'] == plugin][lat_col].dropna()
 
             # Sort data for CDF
             sorted_data = np.sort(plugin_data)
@@ -530,10 +566,10 @@ class TelemetryAnalyzer:
 
         # Set logarithmic x-axis scale
         ax.set_xscale('log')
-        
+
         # Set clear tick marks for presentation
         # Find reasonable range based on data
-        all_latencies = df_no_warmup['latency_us']
+        all_latencies = df_no_warmup[lat_col].dropna()
         min_lat = all_latencies.min()
         max_lat = all_latencies.max()
         
@@ -565,7 +601,8 @@ class TelemetryAnalyzer:
 
         ax.set_xlabel('Latency (μs, log scale)')
         ax.set_ylabel('Cumulative Probability')
-        ax.set_title('Kernel Latency Profiles (Log Scale)')
+        cdf_title = 'Kernel Process Latency Profiles (Log Scale)' if lat_col == 'kernel_latency_us' else 'End-to-End Latency Profiles (Log Scale)'
+        ax.set_title(cdf_title)
         ax.legend()
         ax.grid(True, alpha=0.3, which='both')
 
@@ -688,43 +725,59 @@ class TelemetryAnalyzer:
                     markdown_lines.append(f"- **OS**: {info.get('host_os') or info.get('device_os') or 'Unknown'}\n")
                 markdown_lines.append("\n")
 
-            markdown_lines.append("## Latency Statistics (μs)\n\n")
+            # Generate multi-tier latency tables
+            has_kernel_lat = 'kernel_latency_us' in df.columns and df['kernel_latency_us'].notna().any()
+            has_adapter_lat = 'adapter_latency_us' in df.columns and df['adapter_latency_us'].notna().any()
 
-            # Determine if CI data is available
-            has_ci = ('latency_us_mean_ci_half' in stats_rounded.columns
-                      and stats_rounded['latency_us_mean_ci_half'].notna().any())
+            # Define latency tiers to report
+            latency_tiers = []
+            if has_kernel_lat:
+                latency_tiers.append(('kernel_latency_us', 'Kernel Process Latency — cortex_process() only'))
+            if has_adapter_lat:
+                latency_tiers.append(('adapter_latency_us', 'Adapter Round-Trip — device_tin → device_tlast_tx'))
+            latency_tiers.append(('latency_us', 'End-to-End Latency — harness start → end'))
 
-            # Write table header
-            mean_header = "Mean ± 95% CI" if has_ci else "Mean"
-            markdown_lines.append(f"| Kernel | {mean_header} | Median | P95 | P99 | Min | Max | Std Dev | N |\n")
-            markdown_lines.append("|--------|----------------|--------|-----|-----|-----|-----|---------|---|\n")
+            for tier_col, tier_label in latency_tiers:
+                tier_stats = self.calculate_statistics(df, latency_column=tier_col)
+                if tier_stats.empty:
+                    continue
+                tier_stats_rounded = tier_stats.round(2)
 
-            # Write table rows
-            for kernel_name in stats_rounded.index:
-                row = stats_rounded.loc[kernel_name]
+                markdown_lines.append(f"## {tier_label} (μs)\n\n")
 
-                # Format mean with embedded CI using shared helper
-                mean_str = format_mean_ci(
-                    row.get('latency_us_mean', np.nan),
-                    row.get('latency_us_mean_ci_lower', np.nan) if has_ci else np.nan,
-                    row.get('latency_us_mean_ci_upper', np.nan) if has_ci else np.nan,
-                    precision=2,
-                    ci_pct=row.get('latency_us_mean_ci_pct', np.nan) if has_ci else None,
-                )
+                has_ci = ('latency_us_mean_ci_half' in tier_stats_rounded.columns
+                          and tier_stats_rounded['latency_us_mean_ci_half'].notna().any())
 
-                n_str = str(int(row.get('sample_count', 0))) if pd.notna(row.get('sample_count', np.nan)) else "N/A"
+                mean_header = "Mean ± 95% CI" if has_ci else "Mean"
+                markdown_lines.append(f"| Kernel | {mean_header} | Median | P95 | P99 | Min | Max | Std Dev | N |\n")
+                markdown_lines.append("|--------|----------------|--------|-----|-----|-----|-----|---------|---|\n")
 
-                markdown_lines.append(
-                    f"| {kernel_name} "
-                    f"| {mean_str} "
-                    f"| {row.get('latency_us_median', 'N/A')} "
-                    f"| {row.get('latency_us_p95', 'N/A')} "
-                    f"| {row.get('latency_us_p99', 'N/A')} "
-                    f"| {row.get('latency_us_min', 'N/A')} "
-                    f"| {row.get('latency_us_max', 'N/A')} "
-                    f"| {row.get('latency_us_std', 'N/A')} "
-                    f"| {n_str} |\n"
-                )
+                for kernel_name in tier_stats_rounded.index:
+                    row = tier_stats_rounded.loc[kernel_name]
+
+                    mean_str = format_mean_ci(
+                        row.get('latency_us_mean', np.nan),
+                        row.get('latency_us_mean_ci_lower', np.nan) if has_ci else np.nan,
+                        row.get('latency_us_mean_ci_upper', np.nan) if has_ci else np.nan,
+                        precision=2,
+                        ci_pct=row.get('latency_us_mean_ci_pct', np.nan) if has_ci else None,
+                    )
+
+                    n_str = str(int(row.get('sample_count', 0))) if pd.notna(row.get('sample_count', np.nan)) else "N/A"
+
+                    markdown_lines.append(
+                        f"| {kernel_name} "
+                        f"| {mean_str} "
+                        f"| {row.get('latency_us_median', 'N/A')} "
+                        f"| {row.get('latency_us_p95', 'N/A')} "
+                        f"| {row.get('latency_us_p99', 'N/A')} "
+                        f"| {row.get('latency_us_min', 'N/A')} "
+                        f"| {row.get('latency_us_max', 'N/A')} "
+                        f"| {row.get('latency_us_std', 'N/A')} "
+                        f"| {n_str} |\n"
+                    )
+
+                markdown_lines.append("\n")
 
             # Add deadline miss info if available
             if 'miss_rate' in stats_rounded.columns:
@@ -898,9 +951,12 @@ class TelemetryAnalyzer:
         plugins = df_plot['plugin'].unique()
         colors = plt.cm.tab10(range(len(plugins)))
 
+        # Use kernel process latency if available
+        timeline_lat_col = 'kernel_latency_us' if 'kernel_latency_us' in df_plot.columns and df_plot['kernel_latency_us'].notna().any() else 'latency_us'
+
         for plugin, color in zip(plugins, colors):
             subset = df_plot[df_plot['plugin'] == plugin].sort_values('window_index')
-            ax1.plot(subset['window_index'], subset['latency_us'],
+            ax1.plot(subset['window_index'], subset[timeline_lat_col],
                      label=f"{plugin} latency", color=color, alpha=0.6, linewidth=0.5)
 
         # Plot CPU frequency on secondary axis (use first kernel's data)
@@ -964,10 +1020,18 @@ class TelemetryAnalyzer:
             has_scipy = False
             t_dist = None
 
+        # Use kernel process latency if available, otherwise E2E
+        lat_col = 'latency_us'
+        for col_candidate in ('kernel_latency_us',):
+            if (col_candidate in b.columns and b[col_candidate].notna().any()
+                    and col_candidate in c.columns and c[col_candidate].notna().any()):
+                lat_col = col_candidate
+                break
+
         rows = []
         for kernel in common_kernels:
-            b_lat = b[b['plugin'] == kernel]['latency_us'].values
-            c_lat = c[c['plugin'] == kernel]['latency_us'].values
+            b_lat = b[b['plugin'] == kernel][lat_col].dropna().values
+            c_lat = c[c['plugin'] == kernel][lat_col].dropna().values
 
             # Strip NaN values (corrupted telemetry, partial writes)
             b_nan = int(np.isnan(b_lat).sum())
@@ -1115,8 +1179,13 @@ class TelemetryAnalyzer:
             self.log.error("No telemetry data loaded - aborting analysis")
             return False
 
-        # Calculate statistics
+        # Calculate statistics — uses kernel process latency when available
         stats = self.calculate_statistics(df)
+        # Tag which tier was used for downstream labeling
+        if 'kernel_latency_us' in df.columns and df['kernel_latency_us'].notna().any():
+            stats.attrs['latency_tier'] = 'Kernel Process'
+        else:
+            stats.attrs['latency_tier'] = 'End-to-End'
         chain_stats = self.calculate_chain_statistics(df)
 
         # Generate plots
@@ -1163,6 +1232,12 @@ class TelemetryAnalyzer:
 
         # Cache stats for reuse by callers (e.g., analyze.py console output)
         self.last_stats = stats
+
+        # Cache E2E stats separately when kernel latency was primary
+        if stats.attrs.get('latency_tier') == 'Kernel Process':
+            self.last_e2e_stats = self.calculate_statistics(df, latency_column='latency_us')
+        else:
+            self.last_e2e_stats = None
 
         # Print summary
         successful_plots = sum(1 for v in plot_results.values() if v)

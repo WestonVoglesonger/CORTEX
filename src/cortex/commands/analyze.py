@@ -106,10 +106,12 @@ def execute(args):
             try:
                 stats = getattr(analyzer, 'last_stats', None)
                 if stats is not None:
+                    tier = getattr(stats, 'attrs', {}).get('latency_tier', 'End-to-End')
                     has_ci = ('latency_us_mean_ci_half' in stats.columns
                               and stats['latency_us_mean_ci_half'].notna().any())
                     mean_hdr = "Mean ± 95% CI" if has_ci else "Mean"
-                    print(f"\n{'Kernel':<18} {mean_hdr:>24} {'P50':>10} {'P95':>10} {'P99':>10} {'N':>8}")
+                    print(f"\n{tier} Latency (μs)")
+                    print(f"{'Kernel':<18} {mean_hdr:>24} {'P50':>10} {'P95':>10} {'P99':>10} {'N':>8}")
                     print("-" * 84)
                     for kernel_name in stats.index:
                         row = stats.loc[kernel_name]
@@ -124,6 +126,20 @@ def execute(args):
                         p99 = f"{row.get('latency_us_p99', float('nan')):.1f}"
                         n = int(row.get('sample_count', 0))
                         print(f"{kernel_name:<18} {mean_str:>24} {p50:>10} {p95:>10} {p99:>10} {n:>8}")
+
+                    # Show E2E stats alongside if kernel latency was primary
+                    e2e_stats = getattr(analyzer, 'last_e2e_stats', None)
+                    if e2e_stats is not None and tier == 'Kernel Process':
+                        print(f"\nEnd-to-End Latency (μs) — includes harness overhead")
+                        print(f"{'Kernel':<18} {'P50':>10} {'P95':>10} {'P99':>10}")
+                        print("-" * 52)
+                        for kernel_name in e2e_stats.index:
+                            row = e2e_stats.loc[kernel_name]
+                            p50 = f"{row.get('latency_us_median', float('nan')):.1f}"
+                            p95 = f"{row.get('latency_us_p95', float('nan')):.1f}"
+                            p99 = f"{row.get('latency_us_p99', float('nan')):.1f}"
+                            print(f"{kernel_name:<18} {p50:>10} {p95:>10} {p99:>10}")
+
                     print()
             except (KeyError, ValueError, AttributeError) as e:
                 print(f"  (Console stats unavailable: {e})")

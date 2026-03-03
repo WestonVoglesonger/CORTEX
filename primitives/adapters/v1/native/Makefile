@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
-INCLUDES = -I../../../../sdk/adapter/include -I../../../../sdk/kernel/include -I../../../../src/engine/inscount
+INCLUDES = -I../../../../sdk/adapter/include -I../../../../sdk/kernel/include -I../../../../src/engine/inscount -I../../../../src/engine/osnoise
 LDFLAGS = -L../../../../sdk/adapter/lib/transport -L../../../../sdk/adapter/lib/protocol
 LIBS = -ldl -lpthread
 
@@ -23,11 +23,12 @@ ADAPTER_HELPERS_OBJS = ../../../../sdk/adapter/lib/adapter_helpers/protocol_help
                        ../../../../sdk/adapter/lib/adapter_helpers/transport_helpers.o \
                        ../../../../sdk/adapter/lib/adapter_helpers/system_info.o
 INSCOUNT_OBJ = ../../../../src/engine/inscount/inscount.o
+OSNOISE_OBJ = ../../../../src/engine/osnoise/osnoise.o
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS) $(INSCOUNT_OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS) $(INSCOUNT_OBJ) $(LIBS)
+$(TARGET): $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS) $(INSCOUNT_OBJ) $(OSNOISE_OBJ)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(PROTOCOL_OBJS) $(TRANSPORT_OBJS) $(ADAPTER_HELPERS_OBJS) $(INSCOUNT_OBJ) $(OSNOISE_OBJ) $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

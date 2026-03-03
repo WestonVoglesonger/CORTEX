@@ -58,6 +58,8 @@ typedef struct {
     uint64_t pmu_cycle_count;           /* CPU cycles during kernel execution (0 if unavailable) */
     uint64_t pmu_instruction_count;     /* Retired instructions during kernel execution (0 if unavailable) */
     uint64_t pmu_backend_stall_cycles;  /* Backend stall cycles (0 if unavailable) */
+    uint32_t cpu_freq_mhz;             /* Device CPU freq at execution (0 if unavailable) */
+    uint64_t osnoise_total_ns;         /* Device OS noise during execution (0 if unavailable) */
 } cortex_device_timing_t;
 
 /*

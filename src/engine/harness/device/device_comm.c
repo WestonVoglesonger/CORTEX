@@ -557,6 +557,8 @@ int device_comm_execute_window(
     uint32_t result_session_id;
     uint64_t tin, tstart, tend, tfirst_tx, tlast_tx;
     uint64_t pmu_cycle_count = 0, pmu_instruction_count = 0, pmu_backend_stall_cycles = 0;
+    uint32_t cpu_freq_mhz = 0;
+    uint64_t osnoise_total_ns = 0;
     uint32_t output_length, output_channels;
 
     ret = cortex_protocol_recv_result_chunked(
@@ -575,7 +577,9 @@ int device_comm_execute_window(
         &output_channels,
         &pmu_cycle_count,
         &pmu_instruction_count,
-        &pmu_backend_stall_cycles
+        &pmu_backend_stall_cycles,
+        &cpu_freq_mhz,
+        &osnoise_total_ns
     );
 
     if (ret < 0) {
@@ -597,6 +601,8 @@ int device_comm_execute_window(
         out_timing->pmu_cycle_count = pmu_cycle_count;
         out_timing->pmu_instruction_count = pmu_instruction_count;
         out_timing->pmu_backend_stall_cycles = pmu_backend_stall_cycles;
+        out_timing->cpu_freq_mhz = cpu_freq_mhz;
+        out_timing->osnoise_total_ns = osnoise_total_ns;
     }
 
     return 0;

@@ -1,0 +1,389 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% CORTEX: Real-Time Cross-Platform Benchmarking for BCI Kernels
+% Target: SOSP 2026 (12-page limit, excluding references)
+% Full version: ArXiv (no page limit)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[sigplan,10pt]{acmart}
+
+% --- SOSP 2026 submission overrides ---
+\renewcommand\footnotetextcopyrightpermission[1]{}  % suppress copyright block
+\settopmatter{printfolios=true}                      % numbered pages
+\pagestyle{plain}                                     % no ACM headers
+
+% Remove ACM-specific metadata for submission
+\setcopyright{none}
+\acmConference{}{}{}
+\acmDOI{}
+\acmISBN{}
+
+% --- Additional packages ---
+\usepackage{booktabs}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+
+\tolerance=1000
+\emergencystretch=2em
+\hyphenpenalty=50
+
+\newcommand{\cortex}{\textsc{Cortex}}
+
+\title{\cortex{}: A Real-Time, Cross-Platform Benchmarking Ecosystem for Brain--Computer Interface Signal Processing Kernels}
+
+\author{Weston Voglesonger}
+\affiliation{%
+  \institution{University of North Carolina at Chapel Hill}
+  \department{Department of Computer Science}
+}
+\email{tvogle@unc.edu}
+
+\begin{document}
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ABSTRACT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{abstract}
+Brain--computer interface (BCI) research has extensive methodology for evaluating \emph{what} algorithms compute---classification accuracy, information transfer rate---but almost none for evaluating \emph{how fast} they compute it on deployment hardware. This gap grows critical as BCI architectures shift toward compressive radio designs where thermally constrained implants offload decoding to heterogeneous edge devices. We present \cortex{}, a cross-platform benchmarking ecosystem that validates BCI kernel correctness against Python/SciPy oracles, captures full latency distributions (P50/P95/P99), and records platform state (CPU frequency, PMU counters, thermal telemetry) alongside per-invocation timing. We organize our contributions around four methodological principles---distributional latency capture, correctness as prerequisite, single-variable isolation, and platform-state observability---and show through cross-domain comparison that no existing framework satisfies more than two.
+
+Applying \cortex{} to 17 validated kernels across macOS and Linux on identical Apple M1 hardware, we report three findings. First, OS scheduling environment dominates hardware identity: macOS produces 2--3.5$\times$ worse P99 latency than Asahi Linux on the same chip (6/9 kernels, $p < 0.05$, Mann--Whitney~U). Second, idle systems produce systematically worse latency than loaded systems---the \emph{Idle Paradox}---because DVFS misinterprets bursty BCI workloads as idle (2.31$\times$ on macOS, 3.21$\times$ on Linux). Third, Linux's recommended \texttt{schedutil} governor produces 1.42$\times$ worse latency than fixed minimum frequency for BCI kernels, despite higher average clock speed. These findings invalidate prior BCI latency measurements that did not control for platform state. \cortex{} is open-source software.
+\end{abstract}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 1. INTRODUCTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Introduction}
+
+Brain--computer interfaces have achieved remarkable clinical demonstrations---paralyzed patients controlling cursors, communicating through implanted speech decoders, walking via thought-driven exoskeletons. Commercial deployment is accelerating across invasive implants (Neuralink, Synchron, Blackrock) and non-invasive systems (InteraXon, Cognixion). Application ambition scales without bound; the computational envelope of a cortical implant does not.
+
+The BCI research community has robust methodology for evaluating \emph{what} algorithms compute---classification accuracy, information transfer rate---but almost none for evaluating \emph{how fast} they compute it on deployment hardware~\cite{liu2021edge}. Studies document that decoders optimized offline ``sometimes fail to achieve optimal performance online''~\cite{willett2019principled}. This gap grows critical as BCI architectures shift toward ``compressive radio'' designs (\S\ref{sec:motivation}) where thermally constrained implants offload decoding to commodity edge devices subject to DVFS, thermal throttling, OS scheduling noise, and battery constraints---platform effects that custom silicon designed away.
+
+\cortex{}'s core insight is that \emph{standardization happens at interfaces, not implementations}. A layered architecture of composable primitives---kernels, run-configs, device adapters---allows any kernel conforming to a minimal streaming interface to be validated and benchmarked regardless of internal implementation. Oracle validation establishes numerical correctness via SciPy/NumPy references~\cite{virtanen2020scipy,harris2020numpy}; the real-time streaming harness enforces production-realistic latency deadlines. This enables specialization within domains of expertise while preserving cross-study comparability.
+
+\cortex{}'s capability to expose platform confounders became evident during its own validation. On identical Apple M1 hardware, macOS produces 2--3.5$\times$ worse P99 latency than Asahi Linux across 9 BCI kernels ($N_{\text{macOS}} = 396$, $N_{\text{Asahi}} = 744$, $p < 0.001$ for 6/9 kernels). This platform effect---driven by OS-level DVFS policies, not hardware differences---dwarfs typical algorithmic improvements and is invisible to frameworks lacking platform-state telemetry.
+
+\textbf{Contributions.} This paper makes four contributions:
+\begin{enumerate}
+    \item A \textbf{measurement methodology} organized around four principles---distributional latency capture, correctness prerequisite, single-variable isolation, and platform-state observability---with cross-domain evidence that no existing framework satisfies more than two (\S\ref{sec:methodology}).
+    \item Discovery that \textbf{OS scheduling dominates hardware identity}: on the same chip, macOS produces 3.5$\times$ worse P99 than Linux, and DVFS acts as a tail amplifier disproportionately inflating P99 relative to P50 (\S\ref{sec:eval}).
+    \item Discovery of the \textbf{Schedutil Trap}: Linux's dynamic governor produces 1.42$\times$ worse latency than fixed minimum frequency for bursty BCI kernels (\S\ref{sec:eval}).
+    \item \textbf{Open-source infrastructure} with 17 validated kernels (9 f32 + 8 Q15), automated pipelines, PMU integration, and device adapters enabling reproducible cross-platform measurement (\S\ref{sec:design}).
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 2. MOTIVATION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Motivation}
+\label{sec:motivation}
+
+The purpose of BCIs is to deliver quality-of-life improvements via software-defined applications. While the potential range of these applications is effectively infinite, the computational envelope of an intracortical implant is strictly bounded by tissue safety margins. Bio-heat modeling studies quantify maximum allowable power dissipation at 5.3--9.3~mW for a 1$^\circ$C temperature rise in cortical implants~\cite{silay2008thermal}, with ISO~14708-1 designating a 2$^\circ$C safety limit for active implantable medical devices~\cite{whalen2023thermal}. Simple closed-loop applications (seizure detection) fit within this envelope; complex decoding (speech, high-DOF motor control) cannot.
+
+This constraint is permanent: unlike consumer electronics, intracortical hardware cannot be upgraded iteratively. Surgical risks preclude swapping out an implant to support a new decoder architecture. To bypass this thermal wall and enable mass scalability, the field must adopt what we term the \emph{compressive radio architecture}. In this model, implants function primarily as high-bandwidth sensors responsible for data compression and telemetry, while application-specific decoding is offloaded to external edge devices. Demonstrated systems achieve 8$\times$ compression ratios on-implant~\cite{liu2016compressed}, and offloading neural network decoders externally reduces implant power by 10$\times$~\cite{evenchen2020power}. As Even-Chen et al.\ noted: ``it took so much power to transmit the data that the devices would generate too much heat to be safe for the patient''~\cite{evenchen2020power}.
+
+Cloud offload is precluded by closed-loop latency requirements---motor BCIs require real-time feedback that typical cloud round-trip times cannot reliably provide under variable network conditions. The processing must happen at the edge.
+
+\textbf{Scale economics reinforce this trajectory.} At research scale ($N=10$ patients), custom hardware rigs are viable. At industry scale ($N=100{,}000+$), custom ASICs require very large volumes to amortize NRE costs~\cite{lankshear2019asic}, pushing economics toward commodity-class SoCs with continuously updatable software~\cite{ttp2025bci}. These commodity devices are subject to DVFS, thermal throttling, and OS scheduling noise. Mobile inference studies document significant latency variability under CPU resource contention---``a DNN model with better latency performance than another model can become outperformed when resource contention becomes more severe''~\cite{yang2020latency}. Benchmarking methodology must lock CPU frequency to eliminate DVFS-induced measurement variability~\cite{willett2019principled}, and account for heterogeneous frequency domains across big.LITTLE architectures~\cite{reddi2022mlperf}.
+
+Platform state is not noise to be eliminated; it is a first-order experimental variable. The BCI field needs benchmarking infrastructure that treats it as such.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 3. RELATED WORK
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Related Work}
+\label{sec:related}
+
+Prior work spans three domains relevant to BCI kernel benchmarking: BCI platforms and benchmarks, systems benchmarking frameworks, and real-time measurement methodology. We evaluate ten frameworks against four methodological principles (\S\ref{sec:methodology}) and show that no existing framework satisfies more than two.
+
+\subsection{BCI Platforms and Benchmarks}
+
+Existing BCI benchmarking efforts are tightly scoped. BCI2000~\cite{schalk2004bci2000} provides end-to-end application timing but not reusable kernel benchmarks; its certification infrastructure validates system-level roundtrip latency (ADC$\to$processing$\to$stimulus), not per-kernel invocation distributions. MNE-Python~\cite{gramfort2014mne} provides extensive offline analysis tools but no real-time benchmarking harnesses. MOABB~\cite{jayaram2018moabb} provides excellent structural isolation for \emph{accuracy} comparisons but zero support for computational latency evaluation---reflecting the disciplinary blind spot noted above. Hueber et al.\ benchmark hardware-efficient decoders on specific architectures~\cite{hueber2024decoder}; Kundu et al.\ accelerate FIR filters on Zynq FPGAs~\cite{kundu2024fpga}. Each targets a particular model family or accelerator---none exposes a general plugin interface with a shared kernel registry. Survey work by Xie and Oniga explicitly calls for standardized latency and energy metrics~\cite{xie2024survey}.
+
+\subsection{Systems Benchmarking Frameworks}
+
+The systems community offers mature methodology for latency measurement, but each framework omits principles critical for BCI edge workloads.
+
+MLPerf Inference~\cite{reddi2020mlperf} is the closest competitor: it provides distributional latency capture (P50--P99.9) and single-variable isolation via LoadGen's closed-division rules. However, its correctness checking is a statistical threshold ($\geq$99\% aggregate accuracy), not per-invocation oracle validation. This is acceptable for neural networks where minor output variations are expected, but insufficient for BCI signal processing where a single corrupted FFT bin propagates through the classification pipeline.
+
+SPEC CPU 2017~\cite{spec2017} mandates output validation and single-variable isolation (base rules require identical flags across all benchmarks by language). But it reports batch throughput, not per-invocation distributions---sustained compute drives the processor to thermal steady state, making distributional analysis unnecessary.
+
+TailBench~\cite{kasture2016tailbench} and DeathStarBench~\cite{gan2019deathstar} capture per-request latency distributions but omit platform-state telemetry because datacenter servers run with fixed governors and active cooling. CoreMark~\cite{eembc_coremark} provides CRC-based self-verification but only aggregate throughput scores. No framework provides platform-state observability.
+
+\subsection{Real-Time Measurement Methodology}
+
+Davis and Cucu-Grosjean survey probabilistic timing analysis techniques~\cite{davis2019timing}, and the PROXIMA project demonstrates that naive benchmarking is brittle on modern architectures with complex power management~\cite{cazorla2016proxima}. Li et al.'s ``Tales of the Tail'' documents how hardware and OS interactions dominate tail latency in production systems~\cite{li2014tail}. Tene's analysis of coordinated omission~\cite{tene2015latency} informs \cortex{}'s constant-rate window generation. These works inform our methodology but none provides a BCI-specific harness.
+
+\subsection{Why the Gaps Exist}
+
+Each domain's gap reflects rational design choices for its target workloads. CPU-saturating benchmarks (SPEC, CoreMark) never needed per-invocation distributions because sustained workloads produce stable aggregate throughput; platform-state observability was unnecessary because sustained compute drives the processor to thermal steady state. Datacenter latency frameworks (TailBench, DeathStarBench) excel at P1 but omit P4 because servers run with fixed governors and active cooling---their focus is software-level tail latency sources (queuing, lock contention), not hardware-level frequency transitions. MLPerf treats correctness as a statistical threshold ($\geq$99\% aggregate accuracy) because ML tolerates approximate computation; it omits P4 because GPUs and TPUs operate with fixed clock profiles. BCI accuracy benchmarks (MOABB) omit all four because computational latency was never in scope---reflecting the disciplinary blind spot.
+
+BCI edge workloads break the assumptions that made these omissions rational: short bursty kernels never reach thermal steady state; floating-point divergence silently corrupts classification; passively cooled devices actively modulate clock frequency; deployment engineers must know whether to optimize compute, memory, or I/O.
+
+\subsection{Cross-Domain Comparison}
+
+Table~\ref{tab:comparison} summarizes the evaluation. The maximum number of principles any framework satisfies with ``Yes'' is two (MLPerf: P1, P3; SPEC: P2, P3). The defining deficit is P4 (platform-state observability): SPEC earns a lone ``Partial'' for its static sysinfo tool, but no framework captures per-invocation CPU frequency transitions, PMU counters, or thermal events alongside timing data. No framework combines P4 with the other three principles.
+
+\begin{table}[t]
+\centering
+\caption{Cross-domain comparison against four methodological principles. Y = Yes, P = Partial, -- = No. Detailed justifications in extended version.}
+\label{tab:comparison}
+\small
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Framework & Domain & P1 & P2 & P3 & P4 \\
+\midrule
+BCI2000 & BCI & P & -- & P & -- \\
+MOABB & BCI & -- & -- & -- & -- \\
+MLPerf Inf. & ML & Y & P & Y & -- \\
+TailBench & Datacenter & Y & -- & P & -- \\
+SPEC CPU & Compute & -- & Y & Y & P \\
+CoreMark & Embedded & -- & Y & P & -- \\
+Dhrystone & Embedded & -- & -- & -- & -- \\
+DeathStar & Microservices & Y & -- & P & -- \\
+SeBS & Serverless & Y & -- & P & -- \\
+MiBench & Embedded & -- & -- & -- & -- \\
+\midrule
+\textbf{\cortex{}} & \textbf{BCI/Edge} & \textbf{Y} & \textbf{Y} & \textbf{Y} & \textbf{P} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A reviewer might ask: why not run external monitoring tools (\texttt{turbostat}, \texttt{perf}) alongside an existing framework? Integrated telemetry enables per-invocation temporal correlation between platform state transitions and individual kernel latencies at microsecond resolution. Post-hoc joining of independently timestamped tool outputs cannot reliably achieve this alignment, particularly when the events of interest---DVFS transitions---occur on the same timescale as the measurements themselves.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 4. MEASUREMENT METHODOLOGY
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Measurement Methodology}
+\label{sec:methodology}
+
+BCI edge workloads uniquely require all four principles because they combine properties that no single prior domain possesses. They have hard real-time deadlines measured in milliseconds (requiring P1). They perform numerical signal processing where floating-point divergence can silently corrupt classification (requiring P2). They run on heterogeneous edge SoCs where the same algorithm on different cores produces different performance profiles (requiring P3). They execute on passively cooled, battery-constrained devices that actively modulate clock frequency based on thermal state (requiring P4). No prior domain combines sub-millisecond deadline sensitivity with numerical fragility with thermal-driven frequency variation.
+
+\textbf{P1: Latency Distribution Capture.}
+The framework reports full latency distributions for each kernel invocation rather than summary statistics. A user can assess the probability of exceeding a given real-time deadline from the framework's output. For closed-loop BCIs, tail events determine whether patients experience control glitches. We demonstrate in \S\ref{sec:os-dominates} that DVFS acts as a \emph{tail amplifier}---P99 ratios are 2$\times$ more extreme than P50 ratios across all kernels---an effect invisible to mean-only reporting.
+
+\textbf{P2: Numerical Correctness as Prerequisite.}
+The framework validates computational outputs against a reference oracle before reporting performance metrics. A benchmark run fails if the kernel produces numerically incorrect results. This is a structural prerequisite, not a statistical threshold. We demonstrate in \S\ref{sec:q15} that Q15 fixed-point FFT requires 50$\times$ tolerance relaxation relative to other kernels---a finding invisible to aggregate accuracy thresholds.
+
+\textbf{P3: Single-Variable Isolation.}
+The framework structures experiments so that one parameter varies between runs while all others are held constant. We demonstrate in \S\ref{sec:schedutil} that isolating the CPU governor as a single variable reveals the Schedutil Trap---dynamic scaling is categorically worse than fixed minimum frequency for BCI kernels.
+
+\textbf{P4: Platform State Observability.}
+The framework records platform-level variables (CPU frequency, governor policy, thermal state, PMU counters) alongside performance measurements. A user can correlate latency anomalies with platform state from the framework's own telemetry. We demonstrate in \S\ref{sec:pmu-cross} that standard Linux frequency reporting on Apple Silicon underreports by 55\%---PMU cross-validation detects and corrects this automatically.
+
+\textbf{Necessity argument.} Each principle independently catches findings invisible to the other three (\S\ref{sec:necessity}). Removing any principle leaves a blind spot.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 5. SYSTEM DESIGN
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{System Design}
+\label{sec:design}
+
+\cortex{} is a benchmarking ecosystem for BCI kernels built on a primitives-based architecture following Lampson's STEADY principles~\cite{lampson1983hints}: simplicity (minimal 3-function C ABI), dependability (oracle validation as structural gate), and adaptability (independently versioned, single-responsibility components).
+
+Each design decision traces to the principles it enables: the \textbf{Replayer} streams at constant rate regardless of kernel speed, inherently avoiding coordinated omission (P1) and providing the controlled cadence for single-variable experiments (P3). The \textbf{Oracle interface} gates performance measurement on correctness (P2). The \textbf{Primitives model}---kernel + run-config + device-adapter = one experiment---enables P3 structurally: changing one primitive while holding others constant produces comparable results. \textbf{PMU telemetry} captures per-window CPU frequency, cycle counts, and stall cycles alongside timing, enabling anomaly correlation with per-window timing (P4).
+
+\subsection{Primitives Model}
+
+\textbf{Kernel Primitives} are self-contained directories containing a C implementation of the plugin ABI, a Python oracle for validation, a \texttt{spec.yaml} with metadata, and a Makefile. They are versioned immutably at \texttt{primitives/kernels/v\{ver\}/\{name\}@\{dtype\}/}. Once released, a version is frozen. Data type suffixes (e.g., \texttt{@f32}, \texttt{@q15}) allow specialized implementations.
+
+\textbf{Run-Config Primitives} are YAML files specifying dataset path, real-time deadlines, load profiles, sample rate, and window parameters. They declare all execution conditions for reproducibility.
+
+\textbf{Device Adapters} abstract the target hardware behind a uniform interface: accept a kernel, invoke \texttt{process()}, return timing telemetry. Current implementations include Native (local \texttt{dlopen}, 1\,$\mu$s overhead), TCP (BSD sockets, $\sim$180\,$\mu$s localhost), and Serial (planned).
+
+The key insight: kernel + run-config + device-adapter = one reproducible experiment. Changing any single primitive while holding the others constant directly enables P3.
+
+\subsection{Kernel Plugin ABI}
+
+Every kernel implements three required C functions and one optional function, loaded dynamically via \texttt{dlopen} (signatures simplified; full ABI specification in the repository):
+
+{\small
+\begin{verbatim}
+int cortex_init(const cortex_config_t *cfg);
+int cortex_process(const float *in,
+    float *out, size_t W, size_t C);
+void cortex_teardown(void);
+// Optional, for trainable kernels:
+int cortex_calibrate(const float *data,
+    size_t N, const char *out_path);
+\end{verbatim}
+}
+
+\noindent State is managed opaquely: \texttt{init()} allocates kernel-private state via the config struct; \texttt{process()} and \texttt{teardown()} access it through the plugin's compilation unit. This minimal surface is the foundation of cross-platform portability. The \texttt{process()} function is \emph{hermetic}: zero allocations, zero syscalls, zero I/O during the measured invocation. The two-phase measurement pattern (FFTW-style init/execute separation~\cite{frigo2005fftw}) ensures one-time setup costs are excluded from per-invocation timing. The optional \texttt{calibrate()} function enables trainable kernels (ICA, CSP) to serialize learned parameters offline, which \texttt{init()} loads at benchmark time.
+
+\subsection{Execution Engine}
+
+The execution engine orchestrates benchmarking through four components. The \textbf{Harness} loads kernel plugins, parses YAML configs, and supervises execution. The \textbf{Replayer} streams EEG data at sample rate $F_s$, managing synthetic load profiles (\texttt{stress-ng}) and enforcing timing cadence---windows arrive at constant rate regardless of kernel execution time, inherently avoiding coordinated omission artifacts~\cite{tene2015latency}. The \textbf{Scheduler} buffers chunks into overlapping windows ($W$ samples, hop $H$), dispatches to plugins, and enforces deadlines. \textbf{Telemetry} captures per-window timestamps (\texttt{CLOCK\_MONOTONIC}), PMU counters (instruction count, cycle count, backend stall cycles), CPU frequency (PMU-derived or sysfs), and OS noise measurements. Records are exported to NDJSON for post-hoc analysis.
+
+Sequential execution is enforced for individual kernel benchmarking to ensure measurement isolation---CPU core contention, cache invalidation, and memory bandwidth competition are eliminated. Pipeline mode relaxes this constraint for multi-kernel chains (e.g., bandpass $\to$ CAR $\to$ CSP) where production conditions require characterizing inter-kernel resource contention as signal, not noise.
+
+\subsection{Ground-Truth-First Philosophy}
+
+\cortex{} prioritizes benchmarking on real hardware rather than relying on cycle-accurate simulators. This is not an anti-simulation stance but a calibration hierarchy: simulators are validated against real hardware measurements, not the reverse. The Idle Paradox discovery (\S\ref{sec:idle-paradox}) validates this approach empirically: the 2.31$\times$ latency degradation from DVFS is precisely the class of effect that simulators fail to model. Cycle-accurate simulators faithfully reproduce instruction-level behavior but typically assume fixed clock frequencies or simplified power state machines. The complex, undocumented heuristics governing Darwin's frequency scaling represent \emph{unknown unknowns} that cannot be simulated without first being measured.
+
+This creates a fundamental ordering constraint: real hardware measurements must precede simulation, not the other way around. For the compressive radio paradigm---where BCI processing distributes across consumer devices with OEM-specific thermal policies---ground truth on real devices is not merely preferable but necessary.
+
+\subsection{Oracle Validation}
+
+Each kernel's \texttt{oracle.py} implements a Python reference producing the same output as the C kernel for identical input. The validation pipeline loads real EEG data, runs both the C kernel and Python oracle on identical windows, and compares outputs with configurable tolerance (default: $\texttt{rtol}=10^{-5}$, $\texttt{atol}=10^{-6}$; relaxed for frequency-domain and fixed-point kernels). Validation runs structurally before any benchmark---correctness precedes performance (P2).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 6. EVALUATION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Evaluation}
+\label{sec:eval}
+
+We organize evidence into three tiers: reproduction of known findings from prior work (validating our methodology), novel findings that prior frameworks could not detect, and a principle validation matrix showing that each principle independently catches failures invisible to the others.
+
+\textbf{Experimental setup.} All experiments use Apple M1 hardware (8-core: 4P+4E, 8GB unified memory). macOS runs use Sonoma~14.2 with medium load profile (\texttt{stress-ng --cpu 4 --cpu-load 50}) to stabilize CPU frequency. Linux runs use Asahi Linux (6.6 kernel) with \texttt{performance} governor. Dataset: PhysioNet EEG Motor Movement/Imagery~\cite{goldberger2000physionet} (subject S001R03, 64 channels, 160~Hz), streamed in $H=80$ sample chunks buffered into $W=160$ sample windows. 17 validated kernels (9~f32 + 8~Q15) span the BCI computational spectrum: CAR, notch IIR, bandpass FIR, Goertzel, FFT, Welch PSD, ICA, CSP, and noop (overhead baseline). Harness overhead (noop kernel) measures 2.0\,$\mu$s P50 on macOS and 0.5\,$\mu$s on Asahi, establishing the measurement floor.
+
+\subsection{Tier 1: Reproduction of Known Findings}
+
+\subsubsection{DVFS Causes 2--4$\times$ Latency Variance}
+
+Li et al.~\cite{li2014tail} report 2--4$\times$ latency variance from DVFS and thermal effects on sub-100\,$\mu$s operations. \cortex{} reproduces this: macOS M1 shows 2.31$\times$ latency penalty (idle vs.\ medium, $n=1{,}200$/kernel, $p < 0.001$); Asahi Linux shows 3.21$\times$ (powersave vs.\ performance, $n=1{,}200$/kernel). Both values fall within the reported range. A framework lacking P4 would observe the difference but could not attribute it to DVFS.
+
+\subsubsection{Mean Latency Hides Tail Behavior}
+
+Dean and Barroso~\cite{dean2013tail} argue that P99 can be multiples of P50. On Asahi (performance governor, $N=744$): bandpass\_fir P99/P50 = 1.07$\times$, fft P99/P50 = 1.07$\times$. On macOS (DVFS active, $N=396$): bandpass\_fir P99/P50 = 2.06$\times$, fft P99/P50 = 2.27$\times$, welch\_psd P99/P50 = 2.56$\times$. The contrast demonstrates DVFS as a \emph{tail amplifier}: same kernel, same chip, P99/P50 drops from 2.27$\times$ to 1.07$\times$ when frequency is stabilized. Mean-only reporting understates the cross-platform safety gap by 52\%.
+
+\subsubsection{Fixed-Point Introduces Quantifiable Accuracy Degradation}
+\label{sec:q15}
+
+All 8 Q15 kernels validate against SciPy oracles: f32 at $\texttt{rtol}=10^{-5}$, Q15 at $\texttt{rtol}=10^{-3}$ (100$\times$ relaxation), FFT Q15 at $\texttt{rtol}=5\times10^{-2}$ (50$\times$ additional relaxation due to kiss\_fft fixed-point scaling). The graduated tolerance reveals FFT as the most numerically fragile kernel under quantization---a finding invisible to pass/fail correctness gates. MLPerf's $\geq$99\% aggregate threshold would pass a Q15 FFT producing wrong outputs for $<$1\% of windows. For a systems reviewer: this matters because BCI pipelines chain kernels sequentially (bandpass $\to$ CAR $\to$ FFT $\to$ classifier), so a single corrupted FFT bin propagates through all downstream stages. Per-invocation correctness is a structural requirement, not a quality preference.
+
+\subsection{Tier 2: Novel Findings}
+
+\subsubsection{OS Scheduling Dominates Hardware Identity}
+\label{sec:os-dominates}
+
+macOS produces 2--3.5$\times$ worse P99 latency than Asahi Linux on \emph{identical} Apple M1 hardware, with 6/9 kernels significant at $p < 0.05$ (Mann--Whitney~U). The OS scheduling environment produces larger latency differences than hardware identity---a finding invisible to any framework lacking P4. Table~\ref{tab:crossplat} presents the full comparison with PMU-enabled device-side timestamps.
+
+\begin{table}[t]
+\centering
+\caption{macOS vs.\ Asahi Linux on Apple M1. $N_{\text{macOS}}=396$ (3 merged runs), $N_{\text{Asahi}}=744$ (6 core kernels). $\dagger$: $N_{\text{Asahi}}=132$. Mann--Whitney U, two-sided. All latencies in $\mu$s.}
+\label{tab:crossplat}
+\small
+\begin{tabular}{@{}lrrrrrc@{}}
+\toprule
+Kernel & \multicolumn{2}{c}{P50} & \multicolumn{2}{c}{P99} & P99 & $p$ \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+ & macOS & Asahi & macOS & Asahi & Ratio & \\
+\midrule
+noop & 2 & 0.5 & 4 & 1 & 0.29 & $<$.001 \\
+car & 16 & 18 & 32 & 21 & 0.64 & .67 \\
+notch\_iir & 46 & 34 & 66 & 37 & 0.55 & $<$.001 \\
+goertzel & 436 & 199 & 472 & 216 & 0.46 & .33 \\
+fft & 143 & 95 & 324 & 102 & 0.31 & $<$.001 \\
+bpass\_fir & 1558 & 850 & 3207 & 910 & 0.28 & $<$.001 \\
+welch$\dagger$ & 139 & 93 & 356 & 101 & 0.28 & $<$.001 \\
+ica$\dagger$ & 414 & 442 & 986 & 475 & 0.48 & .52 \\
+csp$\dagger$ & 43 & 26 & 86 & 27 & 0.32 & $<$.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TODO: Add Figure 1 — CDF overlay of macOS vs Asahi for bandpass_fir
+% showing the dramatic P99 divergence (most persuasive single figure)
+%\begin{figure}[t]
+%\centering
+%\includegraphics[width=\columnwidth]{figures/cdf-bandpass-crossplat.pdf}
+%\caption{CDF of bandpass\_fir latency on macOS ($N=396$) vs.\ Asahi Linux ($N=744$). The distributions diverge sharply above P90, with macOS P99 reaching 3207\,$\mu$s vs.\ Asahi's 910\,$\mu$s---DVFS acts as a tail amplifier.}
+%\label{fig:cdf-crossplat}
+%\end{figure}
+
+Six of nine kernels are significant at $p < 0.05$. P99 ratios (0.28--0.55$\times$) are systematically more extreme than P50 ratios (0.25--1.10$\times$), confirming DVFS as a tail amplifier. The three non-significant kernels illuminate the DVFS-sensitivity range: \texttt{car} at 16\,$\mu$s executes fast enough that the CPU stays warm between invocations; \texttt{ica} at 414\,$\mu$s is compute-heavy enough to keep the CPU loaded; \texttt{goertzel} at 436\,$\mu$s sits at the boundary.
+
+The $N=132 \to 396$ expansion revealed hidden tail behavior: bandpass\_fir P99 increased from 2893\,$\mu$s to 3207\,$\mu$s (+11\%), confirming the original sample underestimated tail severity. \texttt{goertzel}'s significance at $N=132$ ($p=0.026$) did not replicate at $N=396$ ($p=0.33$), consistent with the small-sample instability that motivated expanded data collection.
+
+\subsubsection{The Idle Paradox}
+\label{sec:idle-paradox}
+
+Idle systems produce systematically worse latency than moderately loaded systems for BCI-scale kernels. In the original macOS-only load-profile experiment ($n \approx 1{,}200$ per kernel per condition), aggregated median latency across 4 core kernels (noop, CAR, notch IIR, bandpass FIR) is 123.1\,$\mu$s under medium load; on an idle system, this jumps to 284.3\,$\mu$s---2.31$\times$ slower ($p < 0.001$ for all kernels, Welch's $t$-test). On Asahi Linux: powersave (fixed 600~MHz) vs.\ performance governor yields 3.21$\times$.
+
+% TODO: Add Figure 2 — Checkmark pattern bar chart (idle/medium/heavy)
+%\begin{figure}[t]
+%\centering
+%\includegraphics[width=\columnwidth]{figures/checkmark-pattern.pdf}
+%\caption{The ``checkmark pattern'': latency improves from idle to medium load (DVFS eliminated) then degrades from medium to heavy (resource contention). Medium load is the optimal operating point.}
+%\label{fig:checkmark}
+%\end{figure}
+
+The mechanism: BCI kernels process data in microsecond bursts followed by millisecond waits, generating a duty cycle that fails to trigger high-performance CPU states. The CPU remains downclocked; each invocation pays both reduced clock frequency and C-state wake-up latency. Performance follows a ``checkmark pattern'': idle $\to$ medium improves 2.31$\times$ (DVFS eliminated); medium $\to$ heavy degrades 1.49$\times$ (resource contention). Medium load is the optimal operating point.
+
+\cortex{} addresses this by applying synthetic background load (\texttt{stress-ng --cpu 4 --cpu-load 50}) as a user-space proxy for a performance governor on platforms (macOS) where DVFS cannot be disabled directly.
+
+\subsubsection{The Schedutil Trap}
+\label{sec:schedutil}
+
+Linux's \texttt{schedutil} dynamic frequency governor produces worse latency than fixed \emph{minimum} frequency for BCI kernels: schedutil 762.8\,$\mu$s geometric mean vs.\ powersave (600~MHz fixed) 537.7\,$\mu$s vs.\ performance (3.2~GHz fixed) 167.6\,$\mu$s. Schedutil is 1.42$\times$ worse than powersave despite $\sim$2$\times$ higher average frequency. Root cause: frequency transition overhead during short compute bursts exceeds the benefit of higher frequency. The standard recommendation (``use schedutil for balanced performance'') is categorically wrong for BCI kernels.
+
+\subsubsection{Platforms Can Lie: PMU Cross-Validation}
+\label{sec:pmu-cross}
+
+Linux sysfs frequency reporting underreports actual CPU frequency by 55\% on Apple Silicon: cpufreq reports 2064~MHz while PMU-derived frequency ($\text{cycles}/\text{wall\_time}$) shows 2900--3200~MHz per window. Any frequency-latency analysis on Asahi Linux that trusts sysfs has a corrupted x-axis. The underlying hardware behavior is documented in the \texttt{apple-soc-cpufreq} driver (``frequency management is fully automated by the hardware''). \cortex{}'s PMU-first frequency derivation detects and corrects this automatically---what is novel is not the hardware behavior but the quantified impact on benchmark data and the automated cross-validation methodology that prevents corrupted analyses from propagating.
+
+\subsection{Tier 3: Principle Validation Matrix}
+\label{sec:necessity}
+
+Each principle independently catches findings invisible to the other three:
+
+\begin{table}[t]
+\centering
+\caption{Each principle is independently load-bearing.}
+\label{tab:necessity}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Principle & Unique Finding & Missed Without It \\
+\midrule
+P1 & DVFS is tail amplifier & Safety gap understated 52\% \\
+P2 & FFT Q15: 50$\times$ tolerance & Wrong windows pass \\
+P3 & Schedutil Trap & Attributed to kernel \\
+P4 & 55\% freq underreporting & Corrupted x-axis \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+P4's PMU integration enables anomaly correlation: the 55\% frequency underreporting finding (\S\ref{sec:pmu-cross}) demonstrates that platform-reported state can be systematically wrong, and per-window PMU counters provide the cross-validation necessary to detect and correct this.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 7. DISCUSSION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Discussion}
+\label{sec:discussion}
+
+\textbf{The predictability reframe.} Our results reframe the BCI acceleration problem. The challenge is not computational throughput---commodity processors trivially sustain EEG kernel workloads. The challenge is \emph{predictability}. A kernel that completes in 20\,$\mu$s on average but occasionally spikes to 200\,$\mu$s due to DVFS is fundamentally unreliable for closed-loop control, even if the deadline is 500~ms. For a BCI controlling a robotic arm with a 10~ms control loop, a 2$\times$ latency mischaracterization could mean the difference between certified-safe operation and unpredictable jerks during patient use. \cortex{} makes this unpredictability visible and controllable.
+
+\textbf{Why real EEG data matters.} Benchmarking with synthetic data---uniform noise, sinusoids---misrepresents memory access patterns. EEG signals exhibit temporal autocorrelation and spectral content concentrated in physiological bands (8--30~Hz), influencing cache behavior in two ways: autocorrelated signals improve spatial locality for sequential access patterns, while multi-channel interleaved formats (64 channels $\times$ 160 samples) create stride patterns that interact with hardware prefetchers differently than random or uniform data. A kernel benchmarked on white noise would exhibit different L1/L2 cache miss rates than on production EEG, biasing latency measurements. \cortex{} uses PhysioNet Motor Imagery recordings~\cite{goldberger2000physionet} to ensure kernel memory access patterns correspond to production workloads. A synthetic data generator (validated to 2048 channels) enables scalability testing beyond available clinical datasets.
+
+\textbf{Limitations.} Our cross-platform comparison uses a single chip family (Apple M1). We hypothesize the Idle Paradox generalizes to other DVFS-enabled systems---the 3.21$\times$ effect on Asahi Linux suggests it is not macOS-specific---but empirical validation on Raspberry Pi, Jetson Nano, and mobile SoCs is needed. Sample sizes ($N_{\text{macOS}}=396$, $N_{\text{Asahi}}=744$) yield approximately 4.0 and 7.4 P99 tail observations respectively; additional runs would tighten confidence intervals. Energy measurement is not yet implemented. Device adapters are architected and prototyped (TCP transport validated) but not yet deployed on non-M1 targets. Retaining warmup-window telemetry would empirically validate cold-start effects.
+
+\textbf{Generalizability.} \cortex{}'s four principles are universal in intent but vary in implementation difficulty across device classes. P4 is hardest on CPUs where it matters most---microarchitectural opacity obscures frequency transitions and thermal state---and trivially satisfied on MCUs where the platform is static. This inversion means \cortex{}'s engineering contribution is concentrated where commodity deployment targets require it.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 8. CONCLUSION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Conclusion}
+
+We presented \cortex{}, a cross-platform benchmarking ecosystem for BCI signal processing kernels organized around four methodological principles that no existing framework satisfies. By treating platform state as a first-class experimental variable, \cortex{} exposes confounders that prior benchmarking approaches have systematically ignored.
+
+Our primary empirical finding is that OS scheduling environment dominates hardware identity: on identical Apple M1 hardware, macOS produces 2--3.5$\times$ worse P99 latency than Asahi Linux, with DVFS acting as a tail amplifier that disproportionately inflates P99. The Schedutil Trap and Idle Paradox further demonstrate that standard system configurations and benchmarking practices produce systematically misleading results for bursty, low-duty-cycle BCI workloads.
+
+These findings imply that every published BCI latency measurement conducted on DVFS-enabled hardware without controlling for platform state is suspect---and DVFS is enabled by default on every commodity processor where BCI edge processing will run at scale. \cortex{} provides both the diagnosis and the remedy: validated measurement methodology, open-source infrastructure, and the instrumentation to transform hardware-specific results into comparable, cumulative progress across the heterogeneous compute landscape that the compressive radio paradigm demands.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% REFERENCES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}

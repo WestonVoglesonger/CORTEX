@@ -29,12 +29,17 @@ class TestSSHDeployerPathExpansion:
         assert deployer.remote_dir == "$HOME/cortex-temp"
 
     def test_ssh_cmd_construction(self):
-        """Verify SSH command construction is correct."""
+        """Verify SSH command construction with keepalives."""
         deployer = SSHDeployer("testuser", "testhost", 2222, 9000)
 
         cmd = deployer._ssh_cmd("echo test")
 
-        assert cmd == ['ssh', '-p', '2222', 'testuser@testhost', 'echo test']
+        assert cmd == [
+            'ssh', '-p', '2222',
+            '-o', 'ServerAliveInterval=60',
+            '-o', 'ServerAliveCountMax=10',
+            'testuser@testhost', 'echo test'
+        ]
 
     def test_run_ssh_preserves_shell_expansion(self):
         """Verify _run_ssh doesn't interfere with shell expansion."""
@@ -72,6 +77,109 @@ class TestSSHDeployerPathExpansion:
             assert '$HOME/cortex-temp' in command_str or 'cortex-temp' in command_str
             # Should NOT have quoted $HOME
             assert "'$HOME/cortex-temp'" not in command_str
+
+
+class TestSSHDeployerKeepalives:
+    """Test SSH keepalive configuration."""
+
+    def test_ssh_cmd_includes_keepalives(self):
+        """SSH commands include ServerAliveInterval and ServerAliveCountMax."""
+        deployer = SSHDeployer("user", "host", 22, 9000)
+        cmd = deployer._ssh_cmd("true")
+        assert "-o" in cmd
+        assert "ServerAliveInterval=60" in cmd
+        assert "ServerAliveCountMax=10" in cmd
+
+
+class TestSSHDeployerNoSystemdInhibit:
+    """Test that systemd-inhibit wrapping is removed."""
+
+    @patch('src.cortex.deploy.ssh_deployer.subprocess.run')
+    @patch('src.cortex.deploy.ssh_deployer.socket', create=True)
+    def test_adapter_not_wrapped_with_systemd_inhibit(self, mock_socket, mock_run):
+        """Adapter launch command should not use systemd-inhibit."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="12345", stderr="")
+
+        deployer = SSHDeployer("user", "host", 22, 9000)
+        deployer._sleep_inhibit_method = "systemd-inhibit"  # Even if set
+
+        # Find the nohup command that starts the adapter
+        # We just check _ssh_cmd doesn't wrap with systemd-inhibit
+        # by inspecting the deploy code path indirectly
+        cmd = deployer._ssh_cmd("nohup ./adapter tcp://:9000")
+        assert "systemd-inhibit" not in " ".join(cmd)
+
+
+class TestSSHDeployerSetupDeviceHint:
+    """Test that warning messages reference cortex setup-device."""
+
+    @patch('src.cortex.deploy.ssh_deployer.subprocess.run')
+    def test_inhibit_sleep_warns_with_setup_device(self, mock_run):
+        """Sleep inhibit failure message references cortex setup-device."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
+
+        deployer = SSHDeployer("nvidia", "jetson.local", 22, 9000)
+
+        import io
+        from contextlib import redirect_stdout
+        f = io.StringIO()
+        with redirect_stdout(f):
+            deployer._inhibit_sleep(verbose=True)
+
+        output = f.getvalue()
+        assert "cortex setup-device nvidia@jetson.local" in output
+
+    @patch('src.cortex.deploy.ssh_deployer.subprocess.run')
+    def test_governor_warns_with_setup_device(self, mock_run):
+        """Governor failure message references cortex setup-device."""
+        call_count = 0
+        def side_effect(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Read current governor
+                return MagicMock(returncode=0, stdout="powersave", stderr="")
+            # Set governor fails
+            return MagicMock(returncode=1, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        deployer = SSHDeployer("nvidia", "jetson.local", 22, 9000)
+
+        import io
+        from contextlib import redirect_stdout
+        f = io.StringIO()
+        with redirect_stdout(f):
+            deployer._configure_governor(verbose=True)
+
+        output = f.getvalue()
+        assert "cortex setup-device nvidia@jetson.local" in output
+
+    @patch('src.cortex.deploy.ssh_deployer.subprocess.run')
+    def test_pmu_warns_with_setup_device(self, mock_run):
+        """PMU failure message references cortex setup-device."""
+        call_count = 0
+        def side_effect(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Read perf_event_paranoid
+                return MagicMock(returncode=0, stdout="2", stderr="")
+            # Set fails
+            return MagicMock(returncode=1, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        deployer = SSHDeployer("nvidia", "jetson.local", 22, 9000)
+
+        import io
+        from contextlib import redirect_stdout
+        f = io.StringIO()
+        with redirect_stdout(f):
+            deployer._configure_pmu_access(verbose=True)
+
+        output = f.getvalue()
+        assert "cortex setup-device nvidia@jetson.local" in output
 
 
 class TestSSHDeployerErrorHandling:

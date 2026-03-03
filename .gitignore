@@ -188,6 +188,12 @@ logs/
 
 # EXCEPT: Validation runs for publication (frozen, published results)
 !results/validation-*/
+# EXCEPT: Paper benchmark runs (frozen, published results)
+!results/paper-*/
+# But still exclude derived files in paper runs
+results/paper-*/**/*.csv
+results/paper-*/**/*.html
+results/paper-*/**/harness.log
 
 # But still exclude derived files even in validation runs
 results/validation-*/**/*.csv

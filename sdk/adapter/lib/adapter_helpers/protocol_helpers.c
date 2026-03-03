@@ -178,6 +178,8 @@ int cortex_adapter_send_result(
     uint64_t pmu_cycle_count,
     uint64_t pmu_instruction_count,
     uint64_t pmu_backend_stall_cycles,
+    uint32_t cpu_freq_mhz,
+    uint64_t osnoise_total_ns,
     size_t element_size
 )
 {
@@ -197,6 +199,8 @@ int cortex_adapter_send_result(
         pmu_cycle_count,
         pmu_instruction_count,
         pmu_backend_stall_cycles,
+        cpu_freq_mhz,
+        osnoise_total_ns,
         element_size
     );
 }

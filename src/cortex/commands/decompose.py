@@ -1,7 +1,7 @@
 """Decompose command - Post-benchmark latency characterization (SE-5/SE-7).
 
-Characterizes kernel latency distributions using roofline classification,
-distribution landmarks, optional PMU enrichment, and tail-latency attribution.
+Characterizes kernel latency distributions using distribution landmarks,
+optional PMU enrichment, and tail-latency attribution.
 Every platform gets a characterization; richer platforms get richer output.
 """
 import json
@@ -11,7 +11,7 @@ from cortex.core import ConsoleLogger, RealFileSystemService
 from cortex.utils.analyzer import TelemetryAnalyzer
 
 from cortex.utils.decomposition import (
-    load_device_spec, load_kernel_specs, characterize_kernel,
+    load_device_spec, characterize_kernel,
     attribute_tail, _pmu_unavailable_reason,
 )
 
@@ -25,8 +25,9 @@ def setup_parser(parser):
     )
     parser.add_argument(
         '--device',
-        required=True,
-        help='Path to device spec YAML'
+        required=False,
+        default=None,
+        help='Path to device spec YAML (optional, enriches PMU analysis)'
     )
     parser.add_argument(
         '--output', '-o',
@@ -57,15 +58,15 @@ def execute(args):
             print(f"Error: Run not found: {run_name}")
             return 1
 
-    # Load device spec
-    try:
-        device_spec = load_device_spec(args.device)
-    except FileNotFoundError:
-        print(f"Error: Device spec not found: {args.device}")
-        return 1
-
-    # Load kernel specs
-    kernel_specs = load_kernel_specs()
+    # Load device spec (optional)
+    if args.device:
+        try:
+            device_spec = load_device_spec(args.device)
+        except FileNotFoundError:
+            print(f"Error: Device spec not found: {args.device}")
+            return 1
+    else:
+        device_spec = {}
 
     # Load telemetry
     analyzer = TelemetryAnalyzer(filesystem=fs, logger=logger)
@@ -121,10 +122,6 @@ def execute(args):
             print("\nPMU data: Not available.")
         print("Latency characterization proceeds without compute/memory decomposition.\n")
 
-    # Extract benchmark parameters from telemetry
-    window_length = int(df_real['W'].iloc[0]) if 'W' in df_real.columns and not df_real.empty else 160
-    channels = int(df_real['C'].iloc[0]) if 'C' in df_real.columns and not df_real.empty else 64
-
     # Discover kernel names (exclude noop)
     kernel_names = [name for name in df_real['plugin'].unique() if name != 'noop']
 
@@ -154,9 +151,6 @@ def execute(args):
             outer_latencies_us=outer_lats,
             device_latencies_us=device_lats,
             device_spec=device_spec,
-            kernel_specs=kernel_specs,
-            window_length=window_length,
-            channels=channels,
             noop_latencies_us=noop_latencies,
             per_window_cycle_counts=cycle_counts,
             per_window_instruction_counts=insn_counts,
@@ -180,7 +174,7 @@ def execute(args):
             results.append((char_result, tail_result))
 
     if not results:
-        print("Error: No kernels could be characterized (missing specs?)")
+        print("Error: No kernels could be characterized (no telemetry data?)")
         return 1
 
     dev = device_spec.get('device', device_spec)
@@ -218,20 +212,7 @@ def _output_table(results, dev):
         timing_src = prov.get('best_us', 'measured/timing')
 
         print(f"\nKernel: {r.kernel_name}")
-        print(f"  Bound: {r.bound} (OI={r.operational_intensity:.1f})"
-              f"{'':>20}[{prov.get('bound', 'estimated/roofline')}]")
-
-        ws_kb = r.working_set_bytes / 1024
-        l1_info = ""
-        if r.fits_in_l1 is not None:
-            l1_kb = dev.get('l1_cache_kb', '?')
-            l1_info = f" (fits in L1: {l1_kb} KB)" if r.fits_in_l1 else f" (exceeds L1: {l1_kb} KB)"
-        print(f"  Working set: {ws_kb:.0f} KB{l1_info}"
-              f"{'':>4}[{prov.get('working_set_bytes', 'estimated/static')}]")
-
-        print(f"\n  Floor (roofline): {r.roofline_floor_us:>8.4f} us"
-              f"{'':>14}[{prov.get('roofline_floor_us', 'estimated/roofline')}]")
-        print(f"  Best (p5):        {r.best_us:>8.1f} us"
+        print(f"\n  Best (p5):        {r.best_us:>8.1f} us"
               f"{'':>14}[{timing_src}]")
         print(f"  Typical (p50):    {r.typical_us:>8.1f} us"
               f"{'':>14}[{timing_src}]")
@@ -268,15 +249,16 @@ def _output_table(results, dev):
             print(f"  Frequency tax:         N/A"
                   f"{'':>13}[{r.unavailable['frequency_tax_pct']}]")
 
-        # Kernel time decomposition (compute vs memory stall)
+        # Kernel time decomposition (compute vs backend stall)
         if r.backend_stall_pct is not None:
             compute_pct = 100 - r.backend_stall_pct
             print(f"\n  Compute time:        {r.compute_time_us:>5.1f} us ({compute_pct:>4.1f}%)"
                   f"  [{prov.get('compute_time_us', 'measured/PMU+timing')}]")
-            print(f"  Memory stall:        {r.memory_stall_time_us:>5.1f} us ({r.backend_stall_pct:>4.1f}%)"
+            print(f"  Backend stall:       {r.memory_stall_time_us:>5.1f} us ({r.backend_stall_pct:>4.1f}%)"
                   f"  [{prov.get('memory_stall_time_us', 'measured/PMU+timing')}]")
+            print(f"    (includes memory, data dependency, and port contention stalls)")
         elif "backend_stall_pct" in r.unavailable:
-            print(f"\n  Compute/memory split:  N/A"
+            print(f"\n  Compute/stall split:   N/A"
                   f"{'':>10}[{r.unavailable['backend_stall_pct']}]")
 
         # Noop cross-validation
@@ -350,13 +332,6 @@ def _output_json(results, dev):
     for r, ta in results:
         entry = {
             'kernel': r.kernel_name,
-            'bound': r.bound,
-            'operational_intensity': round(r.operational_intensity, 4),
-            'working_set_bytes': r.working_set_bytes,
-            'fits_in_l1': r.fits_in_l1,
-            'roofline_floor_us': round(r.roofline_floor_us, 6),
-            'roofline_compute_us': round(r.roofline_compute_us, 6),
-            'roofline_memory_us': round(r.roofline_memory_us, 6),
             'best_us': round(r.best_us, 2),
             'typical_us': round(r.typical_us, 2),
             'tail_us': round(r.tail_us, 2),
@@ -417,8 +392,6 @@ def _generate_markdown(results, dev):
         "# Latency Characterization Report",
         "",
         f"**Device:** {dev.get('name', 'Unknown')}  ",
-        f"**CPU Peak:** {dev.get('cpu_peak_gflops', dev.get('peak_gflops', 'N/A'))} GFLOPS  ",
-        f"**Memory BW:** {dev.get('memory_bandwidth_gb_s', 'N/A')} GB/s  ",
         "",
     ]
 
@@ -431,9 +404,6 @@ def _generate_markdown(results, dev):
             "",
             f"| Metric | Value | Provenance |",
             f"|--------|-------|------------|",
-            f"| Bound | {r.bound} (OI={r.operational_intensity:.1f}) | {prov.get('bound', 'estimated/roofline')} |",
-            f"| Working set | {r.working_set_bytes / 1024:.0f} KB | {prov.get('working_set_bytes', 'estimated/static')} |",
-            f"| Floor (roofline) | {r.roofline_floor_us:.4f} us | {prov.get('roofline_floor_us', 'estimated/roofline')} |",
             f"| Best (p5) | {r.best_us:.1f} us | {timing_src} |",
             f"| Typical (p50) | {r.typical_us:.1f} us | {timing_src} |",
             f"| Tail (p99) | {r.tail_us:.1f} us | {timing_src} |",
@@ -454,7 +424,7 @@ def _generate_markdown(results, dev):
         if r.backend_stall_pct is not None:
             compute_pct = 100 - r.backend_stall_pct
             lines.append(f"| Compute time | {r.compute_time_us:.1f} us ({compute_pct:.1f}%) | {prov.get('compute_time_us', 'measured/PMU+timing')} |")
-            lines.append(f"| Memory stall | {r.memory_stall_time_us:.1f} us ({r.backend_stall_pct:.1f}%) | {prov.get('memory_stall_time_us', 'measured/PMU+timing')} |")
+            lines.append(f"| Backend stall | {r.memory_stall_time_us:.1f} us ({r.backend_stall_pct:.1f}%) | {prov.get('memory_stall_time_us', 'measured/PMU+timing')} |")
         if r.noop_p50_us is not None:
             lines.append(f"| Noop (p50) | {r.noop_p50_us:.1f} us | {prov.get('noop_p50_us', 'measured/timing/noop')} |")
 

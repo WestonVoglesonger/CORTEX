@@ -1,7 +1,8 @@
 """Latency characterization and tail-attribution (SE-5, SE-7).
 
 Provides:
-1. Characterize: post-hoc characterization with distribution landmarks + provenance
+1. Characterize: post-hoc characterization with distribution landmarks,
+   PMU enrichment, backend stall decomposition, and provenance tracking
 2. Attribute: tail-latency attribution — platform vs algorithmic decomposition
 """
 import logging
@@ -10,7 +11,6 @@ from itertools import combinations
 from math import factorial
 
 import yaml
-from pathlib import Path
 from typing import Dict, Literal, Optional, List, Tuple
 from dataclasses import dataclass, field
 
@@ -48,25 +48,8 @@ class CharacterizationResult:
     - outer_latency_us (harness-inclusive, from start_ts/end_ts) as fallback
 
     Provenance field distinguishes: measured/timing/device vs measured/timing.
-
-    Note on fits_in_l1: total addressable bytes, not active working set.
-    Streaming kernels may fit in L1 despite large total.
     """
     kernel_name: str
-
-    # Roofline classification
-    bound: str                       # "compute" or "memory"
-    operational_intensity: float
-
-    # Working set
-    working_set_bytes: int
-    fits_in_l1: Optional[bool]
-
-    # Floor estimates
-    roofline_floor_us: float         # max(compute_bound, memory_bound)
-    roofline_compute_us: float
-    roofline_memory_us: float
-    osaca_floor_us: Optional[float]  # None until OSACA integrated
 
     # Distribution landmarks (best available: device > outer)
     best_us: float                   # p5
@@ -428,10 +411,6 @@ def characterize_kernel(
     outer_latencies_us: list,
     device_latencies_us: Optional[list],
     device_spec: dict,
-    kernel_specs: dict,
-    window_length: int = 160,
-    channels: int = 64,
-    dtype_bytes: int = 4,
     noop_latencies_us: Optional[list] = None,
     per_window_cycle_counts: Optional[list] = None,
     per_window_instruction_counts: Optional[list] = None,
@@ -439,51 +418,16 @@ def characterize_kernel(
 ) -> Optional[CharacterizationResult]:
     """Post-hoc characterization of a kernel's latency distribution.
 
-    Returns a CharacterizationResult with distribution landmarks, roofline
-    classification, and optional PMU enrichment. Returns None if kernel
-    not found in specs.
+    Returns a CharacterizationResult with distribution landmarks,
+    PMU enrichment, backend stall decomposition, and provenance tracking.
+    Returns None if no latency data available.
     """
-
-    spec = kernel_specs.get(kernel_name)
-    if spec is None:
-        return None
-    comp = spec.get('computational')
-    if comp is None:
-        return None
 
     dev = device_spec.get('device', device_spec)
     provenance = {}
     unavailable = {}
 
-    # --- 1. Roofline floor ---
-    peak_gflops = dev.get('cpu_peak_gflops', dev.get('peak_gflops', 1.0))
-    mem_bw_gb_s = dev.get('memory_bandwidth_gb_s', 1.0)
-
-    flops_per_sample = comp.get('flops_per_sample', 0)
-    loads_per_sample = comp.get('memory_loads_per_sample', 0)
-    stores_per_sample = comp.get('memory_stores_per_sample', 0)
-
-    total_samples = window_length * channels
-    total_flops = flops_per_sample * total_samples
-    total_bytes = (loads_per_sample + stores_per_sample) * total_samples * dtype_bytes
-
-    oi = total_flops / total_bytes if total_bytes > 0 else 0.0
-    compute_s = total_flops / (peak_gflops * 1e9) if peak_gflops > 0 and total_flops > 0 else 0.0
-    memory_s = total_bytes / (mem_bw_gb_s * 1e9) if mem_bw_gb_s > 0 and total_bytes > 0 else 0.0
-    roofline_compute_us = compute_s * 1e6
-    roofline_memory_us = memory_s * 1e6
-    roofline_floor_us = max(roofline_compute_us, roofline_memory_us)
-    bound = "compute" if roofline_compute_us >= roofline_memory_us else "memory"
-    provenance["roofline_floor_us"] = "estimated/roofline"
-    provenance["bound"] = "estimated/roofline"
-
-    # --- 2. Working set ---
-    working_set_bytes = (loads_per_sample + stores_per_sample) * window_length * channels * dtype_bytes
-    l1_kb = dev.get('l1_cache_kb')
-    fits_in_l1 = working_set_bytes <= l1_kb * 1024 if l1_kb is not None else None
-    provenance["working_set_bytes"] = "estimated/static"
-
-    # --- 3. Distribution landmarks ---
+    # --- 1. Distribution landmarks ---
     if device_latencies_us is not None and len(device_latencies_us) > 0:
         lat_arr = np.array(device_latencies_us, dtype=float)
         timing_prov = "measured/timing/device"
@@ -507,7 +451,7 @@ def characterize_kernel(
 
     n_windows = len(lat_arr)
 
-    # --- 4. Harness overhead check (logged, not stored) ---
+    # --- 2. Harness overhead check (logged, not stored) ---
     if device_latencies_us is not None and len(device_latencies_us) > 0:
         outer_arr = np.array(outer_latencies_us, dtype=float)
         device_arr = np.array(device_latencies_us, dtype=float)
@@ -518,22 +462,18 @@ def characterize_kernel(
         pct = (overhead_p50 / median_outer * 100) if median_outer > 0 else 0.0
         logger.info("Harness overhead: %.1f us (%.1f%%)", overhead_p50, pct)
 
-    # --- 5. Noop cross-validation ---
+    # --- 3. Noop cross-validation ---
     noop_p50 = None
     if noop_latencies_us is not None and len(noop_latencies_us) > 0:
         noop_p50 = float(np.median(noop_latencies_us))
         provenance["noop_p50_us"] = "measured/timing/noop"
 
-    # --- 6. Instruction profile ---
+    # --- 4. Instruction profile ---
     profile = analyze_kernel(kernel_name)
     if profile is not None:
         provenance["instruction_profile"] = "estimated/static/disassembly"
 
-    # --- 7. OSACA stub ---
-    osaca_floor_us = None
-    unavailable["osaca_floor_us"] = "OSACA not integrated"
-
-    # --- 8. PMU enrichment ---
+    # --- 5. PMU enrichment ---
     ipc = None
     effective_freq_ghz = None
     frequency_tax_pct = None
@@ -557,36 +497,50 @@ def characterize_kernel(
         # Effective freq + frequency tax
         # PMU counters are measured around kernel process() in the adapter,
         # so pair with device_latencies_us (device_tstart/device_tend).
-        if device_latencies_us is not None and len(device_latencies_us) > 0:
-            device_wall_s = np.array(device_latencies_us, dtype=float) * 1e-6
-        else:
-            device_wall_s = np.array(outer_latencies_us, dtype=float) * 1e-6
-        min_len = min(len(cycles), len(device_wall_s))
-        c = cycles[:min_len]
-        w = device_wall_s[:min_len]
-        valid_freq = (c > 0) & (w > 0)
-        if valid_freq.any():
-            per_window_freq = c[valid_freq] / w[valid_freq]
-            effective_freq_hz = float(np.median(per_window_freq))
-            effective_freq_ghz = effective_freq_hz / 1e9
-            provenance["effective_freq_ghz"] = "measured/PMU+timing"
-
-            max_freq_hz = dev.get('frequency', {}).get('max_hz', 0)
-            if max_freq_hz > 0:
-                frequency_tax_pct = (1 - effective_freq_hz / max_freq_hz) * 100
-                provenance["frequency_tax_pct"] = "measured/PMU+timing"
+        #
+        # Guard: skip effective_freq when kernel P50 is below 50 µs.
+        # At sub-50 µs latencies, PMU counter read overhead (kpc/perf
+        # start+stop) is a significant fraction of total cycles, making
+        # cycles/wall_time exceed physical CPU frequency. IPC and stall
+        # percentages are unaffected (both numerator and denominator come
+        # from PMU, so overhead cancels).
+        if typical < 50.0:
+            unavailable["effective_freq_ghz"] = (
+                f"kernel P50 ({typical:.0f} µs) < 50 µs; "
+                "PMU overhead dominates cycle count"
+            )
+            unavailable["frequency_tax_pct"] = unavailable["effective_freq_ghz"]
+        elif True:
+            if device_latencies_us is not None and len(device_latencies_us) > 0:
+                device_wall_s = np.array(device_latencies_us, dtype=float) * 1e-6
             else:
-                unavailable["frequency_tax_pct"] = "no max_hz in device spec"
-        else:
-            unavailable["effective_freq_ghz"] = "no valid cycle/wall-time pairs"
-            unavailable["frequency_tax_pct"] = "no valid cycle/wall-time pairs"
+                device_wall_s = np.array(outer_latencies_us, dtype=float) * 1e-6
+            min_len = min(len(cycles), len(device_wall_s))
+            c = cycles[:min_len]
+            w = device_wall_s[:min_len]
+            valid_freq = (c > 0) & (w > 0)
+            if valid_freq.any():
+                per_window_freq = c[valid_freq] / w[valid_freq]
+                effective_freq_hz = float(np.median(per_window_freq))
+                effective_freq_ghz = effective_freq_hz / 1e9
+                provenance["effective_freq_ghz"] = "measured/PMU+timing"
+
+                max_freq_hz = dev.get('frequency', {}).get('max_hz', 0)
+                if max_freq_hz > 0:
+                    frequency_tax_pct = (1 - effective_freq_hz / max_freq_hz) * 100
+                    provenance["frequency_tax_pct"] = "measured/PMU+timing"
+                else:
+                    unavailable["frequency_tax_pct"] = "no max_hz in device spec"
+            else:
+                unavailable["effective_freq_ghz"] = "no valid cycle/wall-time pairs"
+                unavailable["frequency_tax_pct"] = "no valid cycle/wall-time pairs"
     else:
         reason = _pmu_unavailable_reason()
         unavailable["ipc"] = reason
         unavailable["effective_freq_ghz"] = reason
         unavailable["frequency_tax_pct"] = reason
 
-    # --- 9. Backend stall decomposition ---
+    # --- 6. Backend stall decomposition ---
     backend_stall_pct = None
     compute_time_us = None
     memory_stall_time_us = None
@@ -617,7 +571,7 @@ def characterize_kernel(
     else:
         unavailable["backend_stall_pct"] = _pmu_unavailable_reason()
 
-    # --- 10. Tail attribution summary (Tier 1) ---
+    # --- 7. Tail attribution summary (Tier 1) ---
     char_tail_ratio = tail / typical if typical > 0 else 1.0
     # Compute noop-normalized ratio if noop available
     noop_normalized = None
@@ -633,14 +587,6 @@ def characterize_kernel(
 
     return CharacterizationResult(
         kernel_name=kernel_name,
-        bound=bound,
-        operational_intensity=oi,
-        working_set_bytes=working_set_bytes,
-        fits_in_l1=fits_in_l1,
-        roofline_floor_us=roofline_floor_us,
-        roofline_compute_us=roofline_compute_us,
-        roofline_memory_us=roofline_memory_us,
-        osaca_floor_us=osaca_floor_us,
         best_us=best,
         typical_us=typical,
         tail_us=tail,
@@ -674,30 +620,3 @@ def load_device_spec(device_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def load_kernel_specs(kernels_dir: str = "primitives/kernels") -> Dict[str, dict]:
-    """Load all kernel spec.yaml files and return dict keyed by kernel name.
-
-    Computational annotations (flops_per_sample, etc.) are loaded from
-    primitives/kernels/computational.yaml and merged into each spec,
-    keeping immutable v1 spec.yaml files untouched.
-    """
-    specs = {}
-    kernels_path = Path(kernels_dir)
-    for spec_file in kernels_path.glob("v*/*/spec.yaml"):
-        with open(spec_file) as f:
-            spec = yaml.safe_load(f)
-        kernel_section = spec.get('kernel', {})
-        name = kernel_section.get('name', spec.get('name'))
-        if name:
-            specs[name] = spec
-
-    # Merge computational annotations from the standalone file
-    comp_file = kernels_path / "computational.yaml"
-    if comp_file.exists():
-        with open(comp_file) as f:
-            comp_data = yaml.safe_load(f) or {}
-        for name, comp in comp_data.items():
-            if name in specs and isinstance(comp, dict):
-                specs[name]['computational'] = comp
-
-    return specs

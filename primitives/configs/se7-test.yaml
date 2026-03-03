@@ -1,0 +1,34 @@
+cortex_version: 1
+
+system:
+  name: "se7-tail-attribution-test"
+  description: "Extended run for SE-7 tail attribution validation (Tier 2/3)"
+
+dataset:
+  path: "primitives/datasets/v1/physionet-motor-imagery/converted/S001R03.float32"
+  format: "float32"
+  channels: 64
+  sample_rate_hz: 160
+
+realtime:
+  scheduler: fifo
+  priority: 90
+  cpu_affinity: [0]
+  deadline_ms: 500
+
+power:
+  governor: "performance"
+  turbo: false
+
+benchmark:
+  metrics: [latency, jitter, throughput, memory_usage]
+  parameters:
+    duration_seconds: 300
+    repeats: 1
+    warmup_seconds: 5
+  load_profile: "medium"
+
+output:
+  directory: "results"
+  format: "ndjson"
+  include_raw_data: false
