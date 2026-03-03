@@ -341,6 +341,15 @@ class HarnessRunner:
                     self.log.info("Check output above for error details")
                 return None
 
+            # Save effective config to run directory for reproducibility
+            try:
+                import shutil
+                config_dest = f"{run_dir}/config.yaml"
+                shutil.copy2(actual_config_path, config_dest)
+                self.log.debug(f"Saved effective config to {config_dest}")
+            except Exception as e:
+                self.log.warning(f"Failed to save config to run directory: {e}")
+
             # Save generation manifest if dataset was generated
             if manifest is not None:
                 try:
