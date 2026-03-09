@@ -38,6 +38,7 @@ typedef struct cortex_dataset_cfg {
     char format[32];
     uint32_t channels;
     uint32_t sample_rate_hz;
+    uint32_t packet_samples;   /* Replayer packet size (0 = use hop_samples) */
 } cortex_dataset_cfg_t;
 
 typedef struct cortex_realtime_cfg {

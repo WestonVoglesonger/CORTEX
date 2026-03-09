@@ -593,6 +593,7 @@ int cortex_config_load(const char *path, cortex_run_config_t *out) {
             if (starts_with(raw, "format:")) { const char *v = raw + strlen("format:"); while (*v==' ') v++; char tmp[32]; strncpy(tmp, v, sizeof(tmp)-1); tmp[sizeof(tmp)-1]='\0'; trim(tmp); unquote(tmp); strncpy(out->dataset.format, tmp, sizeof(out->dataset.format)-1); out->dataset.format[sizeof(out->dataset.format)-1] = '\0'; continue; }
             if (starts_with(raw, "channels:")) { const char *v = raw + strlen("channels:"); while (*v==' ') v++; out->dataset.channels = parse_u32(v); continue; }
             if (starts_with(raw, "sample_rate_hz:")) { const char *v = raw + strlen("sample_rate_hz:"); while (*v==' ') v++; out->dataset.sample_rate_hz = parse_u32(v); continue; }
+            if (starts_with(raw, "packet_samples:")) { const char *v = raw + strlen("packet_samples:"); while (*v==' ') v++; out->dataset.packet_samples = parse_u32(v); continue; }
         }
 
         if (st == IN_REALTIME) {

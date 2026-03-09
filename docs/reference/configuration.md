@@ -20,7 +20,7 @@ for plugins. Plugins never read YAML.
 - `dataset.*` - Used by replayer for streaming EEG data
 - `realtime.scheduler`, `realtime.priority`, `realtime.cpu_affinity`, `realtime.deadline_ms` - Used by scheduler
 - `benchmark.parameters.*` (duration_seconds, repeats, warmup_seconds) - Used by harness lifecycle
-- `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see replayer.c)
+- `benchmark.load_profile` - Background load profile (✅ fully implemented with stress-ng integration; see platform/platform_load.c)
 - `output.directory`, `output.format` - Used by telemetry writer
 - `plugins[].name`, `plugins[].status`, `plugins[].spec_uri` - Used by harness for plugin loading and filtering
 - `plugins[].params` - Kernel-specific runtime parameters (✅ fully implemented with accessor API; see sdk/kernel/lib/params/README.md)
@@ -119,6 +119,16 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 
 ## Top-level keys
 
+### device (deployment)
+| Key | Type | Notes |
+|---|---|---|
+| device | string | Deployment target for HIL. `user@host` = SSH auto-deploy, `tcp://host:port` = manual connect. Omit for local execution. |
+
+### device_spec (hardware profile)
+| Key | Type | Notes |
+|---|---|---|
+| device_spec | string | Hardware profile for post-run analysis. Short name (e.g. `jetson-nano`, `m1-macos`) or path to `primitives/devices/*.yaml`. Used for PMU capabilities, roofline decomposition. |
+
 ### system
 | Key | Type | Notes |
 |---|---|---|
@@ -132,6 +142,7 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 | format | string | e.g., `raw` |
 | channels | int | C |
 | sample_rate_hz | int | Fs |
+| packet_samples | int | Replayer packet size per channel (optional; defaults to hop_samples). Set to 1 for per-sample delivery (e.g., OpenBCI Cyton), or to BLE MTU batch size. |
 
 ### realtime  → used by **Harness**
 | Key | Type | Notes |
@@ -161,7 +172,7 @@ See `docs/development/future-enhancements.md` for planned fixes and `docs/develo
 
 #### Background Load Profiles (`load_profile`)
 
-**Status:** ✅ Fully implemented in `src/engine/replayer/replayer.c`
+**Status:** ✅ Fully implemented in `src/engine/platform/platform_load.c`
 
 Background load profiles simulate system stress during benchmarking to test kernel robustness under realistic operating conditions.
 
@@ -260,7 +271,7 @@ Or use `medium` load for consistency across platforms.
 
 **Implementation Details:**
 
-See `src/engine/replayer/replayer.c` (lines 350-455) for the complete background load implementation including:
+See `src/engine/platform/platform_load.c` for the complete background load implementation including:
 - stress-ng process spawning via `fork()`/`execv()`
 - Automatic CPU count detection
 - Process lifecycle management (start/stop)
