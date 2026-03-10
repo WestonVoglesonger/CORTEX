@@ -42,12 +42,22 @@ jobs:
       - name: Build coherence bus MCP server
         run: cd .github/mcp/coherence-bus && npm ci && npm run build
 
+      - name: Load orchestrator prompt
+        id: prompt
+        run: |
+          PROMPT=$(cat .github/prompts/review-orchestrator.md)
+          {
+            echo "content<<PROMPT_EOF"
+            echo "$PROMPT"
+            echo "PROMPT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Run multi-agent review
         id: review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt_file: .github/prompts/review-orchestrator.md
+          prompt: ${{ steps.prompt.outputs.content }}
           claude_args: "--mcp-config .github/mcp/config.json"
           additional_permissions: |
             actions: read
