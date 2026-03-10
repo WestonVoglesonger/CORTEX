@@ -36,11 +36,12 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             echo "ref=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
           else
-            REF=$(gh pr view "$ISSUE_NUMBER" --json headRefName -q .headRefName)
+            REF=$(gh api "repos/$REPO/pulls/$ISSUE_NUMBER" --jq .head.ref)
             echo "ref=$REF" >> "$GITHUB_OUTPUT"
           fi
 
