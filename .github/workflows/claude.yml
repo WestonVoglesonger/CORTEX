@@ -29,10 +29,26 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Get PR head ref
+        id: pr-ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "ref=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+          else
+            REF=$(gh pr view "$ISSUE_NUMBER" --json headRefName -q .headRefName)
+            echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          ref: ${{ steps.pr-ref.outputs.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
