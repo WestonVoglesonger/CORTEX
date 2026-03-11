@@ -193,10 +193,11 @@ $PR_NUMBER
 You have access to the coherence bus MCP tools: list_topics, get, post, retract.
 Use list_topics and get to read all findings posted by the review agents.
 Deduplicate, resolve contradictions, apply the confidence gate, then post the final
-PR review using a heredoc:
-gh pr review $PR_NUMBER --event <EVENT> --body "$(cat <<'REVIEW_EOF'
+PR review by writing the body to a temp file and using --body-file:
+cat > /tmp/pr_review_body.md << 'EOF'
 <review body here>
-REVIEW_EOF
+EOF
+gh pr review $PR_NUMBER --event <EVENT> --body-file /tmp/pr_review_body.md
 )"
 After posting, output your completion summary.
 ```

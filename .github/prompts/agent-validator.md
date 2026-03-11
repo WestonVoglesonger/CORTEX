@@ -164,36 +164,30 @@ Format each finding in the body like this:
 
 Order: CRITICAL findings first, then HIGH, MEDIUM, LOW. Include a brief summary header at the top (e.g., "Multi-agent review found N findings: X critical, Y high, Z medium, W low").
 
-Post the review using a heredoc to handle multiline content:
+Post the review by writing the body to a temp file, then using `--body-file` to avoid heredoc delimiter collisions:
 
 ```bash
-gh pr review <PR_NUMBER> --event <EVENT> --body "$(cat <<'REVIEW_EOF'
+# Write review body to temp file
+cat > /tmp/pr_review_body.md << 'EOF'
 ## Multi-Agent PR Review
 
 <summary header>
 
 <all findings formatted as above>
-REVIEW_EOF
-)"
+EOF
+
+# Post the review
+gh pr review <PR_NUMBER> --event <EVENT> --body-file /tmp/pr_review_body.md
 ```
 
-**Important**: Use `--event COMMENT` or `--event REQUEST_CHANGES` (not both). Use exactly one call.
+**Important**: Use `--event COMMENT` or `--event REQUEST_CHANGES` (not both). Use exactly one call. The `--body-file` flag avoids heredoc delimiter collision issues where LLM-generated content could contain the delimiter string.
 
 ### If zero findings survive (APPROVE)
 
 Post a single approval:
 
 ```bash
-gh pr review <PR_NUMBER> --event APPROVE --body "$(cat <<'REVIEW_EOF'
-## Multi-Agent PR Review
-
-All findings from compliance, architecture, and bug detection agents were below the confidence threshold (>= 7 required). No issues to report.
-
-**Agents ran:** compliance, architecture, bugs
-**Quality gate:** confidence >= 7
-**Result:** APPROVE
-REVIEW_EOF
-)"
+gh pr review <PR_NUMBER> --event APPROVE --body "All findings from compliance, architecture, and bug detection agents were below the confidence threshold (>= 7 required). No issues to report."
 ```
 
 ---
