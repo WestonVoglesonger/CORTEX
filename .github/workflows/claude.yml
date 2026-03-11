@@ -76,6 +76,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.content }}
           claude_args: "--mcp-config .github/mcp/config.json"
+          show_full_output: "true"
           additional_permissions: |
             actions: read
         env:
