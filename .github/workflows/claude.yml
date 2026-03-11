@@ -17,7 +17,8 @@ jobs:
   review:
     name: Multi-Agent PR Review
     if: |
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '@claude review'))
@@ -39,11 +40,16 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "ref=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+            REF="$PR_HEAD_REF"
           else
             REF=$(gh api "repos/$REPO/pulls/$ISSUE_NUMBER" --jq .head.ref)
-            echo "ref=$REF" >> "$GITHUB_OUTPUT"
           fi
+          DELIMITER=$(openssl rand -hex 16)
+          {
+            echo "ref<<${DELIMITER}"
+            echo "$REF"
+            echo "${DELIMITER}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v4
