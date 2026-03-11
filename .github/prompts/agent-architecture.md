@@ -47,7 +47,7 @@ For each changed file in the diff, determine which subsystem(s) it belongs to:
 | Any device/provisioning path | Device provisioning | `paper/Device Provisioning Write-Up.{docx,pdf}` |
 | Cross-cutting / multiple subsystems | Unified architecture | `paper/CORTEX-Shelob Unified Architecture.{docx,pdf}` |
 
-When a write-up exists for the affected subsystem, read the relevant sections of that write-up before forming a finding. Record which write-up informed the finding — this is required for traceability.
+If the write-up file exists in the repository, read the relevant sections before forming a finding and record which write-up informed the finding. If the write-up file is absent (file not found), reason from REVIEW.md Section 4 rules only and set `write_up` to `null` in your finding. Do not treat a missing write-up as an error — the write-ups are planned documents that may not yet be committed.
 
 ---
 

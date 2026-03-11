@@ -18,6 +18,16 @@ echo "$GITHUB_REF" | sed 's|refs/pull/||;s|/merge||'
 
 Store the PR number in a variable for use throughout this session.
 
+### 1.1b Post Diagnostic Comment
+
+Post a diagnostic comment to confirm the review pipeline started:
+
+```bash
+gh pr comment $PR_NUMBER --body "Review pipeline started. Fetching diff and dispatching agents..."
+```
+
+This comment confirms the orchestrator ran and `gh` is authenticated. If this comment does not appear, the pipeline failed before reaching Stage 1.
+
 ### 1.2 Fetch the Diff
 
 ```bash
@@ -62,12 +72,16 @@ Read `REVIEW.md` from the repository root. Store its full contents in memory —
 
 Dispatch all three agents in a single message using the Agent tool, providing each agent with the PR diff and the relevant REVIEW.md sections. Dispatch them in parallel (three simultaneous Agent tool calls in one message). Sequential dispatch is an acceptable fallback if parallel is not possible.
 
+**MCP tool availability**: Subagents dispatched via the Agent tool have access to the same MCP tools as you (post, get, retract, list_topics). The coherence bus is a shared in-memory store — findings posted by one agent are visible to all others and to the validator.
+
 **Before dispatching each agent**, read its prompt file. The prompt files are at:
 - `.github/prompts/agent-compliance.md`
 - `.github/prompts/agent-architecture.md`
 - `.github/prompts/agent-bugs.md`
 
 Read all three prompt files, then dispatch all three agents.
+
+**After all agents complete**, verify the coherence bus has data by calling `list_topics` yourself. If agents reported findings in their summaries but the bus is empty, log this as a pipeline error and post a diagnostic comment to the PR before proceeding to Stage 3.
 
 ---
 
@@ -176,9 +190,14 @@ After all three review agents have completed:
 $PR_NUMBER
 </pr-number>
 
-Read all findings from the coherence bus using the MCP list_topics and get tools.
+You have access to the coherence bus MCP tools: list_topics, get, post, retract.
+Use list_topics and get to read all findings posted by the review agents.
 Deduplicate, resolve contradictions, apply the confidence gate, then post the final
-PR review via: gh pr review $PR_NUMBER --event <EVENT> --body "<body>"
+PR review using a heredoc:
+gh pr review $PR_NUMBER --event <EVENT> --body "$(cat <<'REVIEW_EOF'
+<review body here>
+REVIEW_EOF
+)"
 After posting, output your completion summary.
 ```
 

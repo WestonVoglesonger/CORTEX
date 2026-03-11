@@ -40,22 +40,31 @@ If a topic is absent, it means that agent found nothing in that category. This i
 
 For each topic discovered in Step 1, call `get` to retrieve all findings posted to that topic.
 
-Collect every finding into a working list. Each finding has the schema:
+The `get` tool returns an array of **bus entries**, each with this structure:
 
 ```json
 {
+  "id": "<uuid>",
   "agent": "<compliance|architecture|bugs>",
-  "file": "<path>",
-  "line": <integer>,
-  "severity": "<critical|high|medium|low>",
-  "confidence": <integer 1-10>,
-  "rule": "<identifier>",
-  "detail": "<description>",
-  "suggestion": "<fix>"
+  "topic": "<topic-key>",
+  "data": {
+    "agent": "<compliance|architecture|bugs>",
+    "file": "<path>",
+    "line": "<integer>",
+    "severity": "<critical|high|medium|low>",
+    "confidence": "<integer 1-10>",
+    "rule": "<identifier>",
+    "detail": "<description>",
+    "suggestion": "<fix>"
+  },
+  "timestamp": "<ISO 8601>",
+  "retracted": false
 }
 ```
 
-Architecture findings additionally include `"write_up": "<path or null>"`. Preserve this field in your working list.
+**Important**: The finding fields (`file`, `line`, `severity`, `confidence`, `rule`, `detail`, `suggestion`) are inside the `data` object, NOT at the top level. Extract them from `entry.data` when building your working list.
+
+Architecture findings additionally include `"write_up": "<path or null>"` inside `data`. Preserve this field in your working list.
 
 ---
 
@@ -135,43 +144,56 @@ Use exactly one event. Do not mix events.
 
 ### If findings exist (REQUEST_CHANGES or COMMENT)
 
-For each finding, post an **inline PR comment** at `file:line` using:
+Build a single consolidated review body containing ALL findings, grouped by severity. Then post it as one `gh pr review` call.
+
+Format each finding in the body like this:
+
+```
+### [SEVERITY] rule-identifier
+
+**File:** `<file>`, **Line:** `<line>`
+
+<detail from the finding, verbatim or lightly edited for clarity>
+
+**Suggested fix:** <suggestion from the finding>
+
+*Source: <agent> agent (confidence: <N>/10)*
+
+---
+```
+
+Order: CRITICAL findings first, then HIGH, MEDIUM, LOW. Include a brief summary header at the top (e.g., "Multi-agent review found N findings: X critical, Y high, Z medium, W low").
+
+Post the review using a heredoc to handle multiline content:
 
 ```bash
-gh pr review <PR_NUMBER> --event <EVENT> \
-  --body "<summary comment>" \
-  --comment-file <file>
+gh pr review <PR_NUMBER> --event <EVENT> --body "$(cat <<'REVIEW_EOF'
+## Multi-Agent PR Review
+
+<summary header>
+
+<all findings formatted as above>
+REVIEW_EOF
+)"
 ```
 
-Or use `gh api` to post inline comments per finding if your tooling supports it.
-
-Each inline comment body must follow this format exactly:
-
-```
-[SEVERITY] rule-identifier
-
-<one-line summary of the problem>
-
-File: <file>, Line: <line>
-
-Problem: <detail from the finding, verbatim or lightly edited for clarity>
-
-Suggested fix: <suggestion from the finding>
-
-Source: <agent> agent
-```
-
-**Severity tag** is one of: `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`, `[LOW]`
-
-Post findings in severity order: CRITICAL first, then HIGH, MEDIUM, LOW.
+**Important**: Use `--event COMMENT` or `--event REQUEST_CHANGES` (not both). Use exactly one call.
 
 ### If zero findings survive (APPROVE)
 
 Post a single approval:
 
 ```bash
-gh pr review <PR_NUMBER> --event APPROVE \
-  --body "All findings from compliance, architecture, and bug detection agents cleared the quality gate (confidence >= 7). No issues to report."
+gh pr review <PR_NUMBER> --event APPROVE --body "$(cat <<'REVIEW_EOF'
+## Multi-Agent PR Review
+
+All findings from compliance, architecture, and bug detection agents were below the confidence threshold (>= 7 required). No issues to report.
+
+**Agents ran:** compliance, architecture, bugs
+**Quality gate:** confidence >= 7
+**Result:** APPROVE
+REVIEW_EOF
+)"
 ```
 
 ---
