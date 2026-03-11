@@ -10,11 +10,13 @@ Execute the three stages below in order. Do not skip stages. Do not invent findi
 
 ### 1.1 Resolve the PR Number
 
-The PR number is available as the environment variable `$PR_NUMBER`. If that variable is unset or empty, extract it from the GitHub context using:
+The PR number is available as the environment variable `$PR_NUMBER` (set by the workflow). Verify it is set:
 
 ```bash
-echo "$GITHUB_REF" | sed 's|refs/pull/||;s|/merge||'
+printenv PR_NUMBER
 ```
+
+If empty, the workflow was triggered outside a PR context. Post an error and exit — do not attempt to guess the PR number.
 
 Store the PR number in a variable for use throughout this session.
 
@@ -231,7 +233,7 @@ Final PR action: <REQUEST_CHANGES | COMMENT | APPROVE | skipped>
 | `gh pr diff` returns empty string | Treat as no code changes; skip to Stage 3 with zero findings |
 | Agent fails to post to coherence bus | Log the failure; validator will proceed with whatever is on the bus |
 | Validator fails to post the final review | Re-read `.github/prompts/agent-validator.md` and retry once |
-| `$PR_NUMBER` is unset | Extract from `$GITHUB_REF`; if still unavailable, post error comment to the issue that triggered the workflow |
+| `$PR_NUMBER` is unset | Post error comment if possible, then exit. Do not guess the PR number. |
 | Coherence bus is empty after Stage 2 | Validator proceeds normally; it will post an APPROVE with zero findings |
 
 ---
